@@ -78,6 +78,27 @@ Clinical-Trace AI/
 `monitoring/drift_report.py` are intentional one-line placeholders that mark
 post-MVP scope; they are documented as out of scope, not dead code.
 
+## App interface (Tab -wise)
+
+Overview: 
+<img width="879" height="877" alt="image" src="https://github.com/user-attachments/assets/2768e70c-743f-4eab-9ddd-5cf4fdb316e0" />
+
+Model Performance
+<img width="892" height="431" alt="image" src="https://github.com/user-attachments/assets/a31ce545-2b15-4058-86fd-84b3d3b53882" />
+
+Explainability
+<img width="877" height="610" alt="image" src="https://github.com/user-attachments/assets/e919c85a-d105-4249-9b62-d722d444dcd0" />
+
+Observability
+<img width="904" height="464" alt="image" src="https://github.com/user-attachments/assets/e3dc5b61-ce48-4e65-aef0-60ef2d2a5201" />
+
+Trust - Safety & privacy
+<img width="883" height="358" alt="image" src="https://github.com/user-attachments/assets/821690a1-a98a-4f76-a383-ea542872bc26" />
+
+Activity (Recent predictions · this session)
+<img width="890" height="231" alt="image" src="https://github.com/user-attachments/assets/c5d764b1-e17e-47d8-b2f9-07e396d3a29e" />
+
+
 ## Quick Start
 
 Step 1: Install dependencies
