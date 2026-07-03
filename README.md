@@ -6,6 +6,10 @@ This is an educational, privacy-aware prototype using public and/or synthetic he
 
 Every prediction and explanation is decision-support only. The platform is not a real clinical decision system, medical device, diagnostic tool, or substitute for professional judgment.
 
+# Public demo
+The public demo runs in offline fallback mode to avoid exposing API keys or generating external API costs. The codebase supports OpenAI-powered LLM explanations and LangSmith tracing when configured with private environment secrets.
+demo link: https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai
+
 ## Architecture
 
 ```text
