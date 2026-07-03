@@ -98,6 +98,8 @@ Trust - Safety & privacy
 Activity (Recent predictions · this session)
 <img width="890" height="231" alt="image" src="https://github.com/user-attachments/assets/c5d764b1-e17e-47d8-b2f9-07e396d3a29e" />
 
+Langsmith Tracebility:
+<img width="1910" height="905" alt="image" src="https://github.com/user-attachments/assets/f30d8ad9-38ed-44ef-91cf-5a8d1713d1cd" />
 
 ## Quick Start
 
