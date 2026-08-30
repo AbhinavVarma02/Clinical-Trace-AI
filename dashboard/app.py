@@ -701,7 +701,7 @@ def render_simulator() -> bool:
         row5[0].selectbox("Diabetes medication", DIABETES_MED_OPTIONS, key="diabetesMed")
 
         with st.expander("Prior history (optional)"):
-            history_available = st.checkbox(
+            st.checkbox(
                 "Prior encounter history is available",
                 key="history_available",
             )
@@ -711,21 +711,18 @@ def render_simulator() -> bool:
                 min_value=0,
                 step=1,
                 key="prior_encounter_count",
-                disabled=not history_available,
             )
             history_row1[1].number_input(
                 "Prior inpatient visits",
                 min_value=0,
                 step=1,
                 key="prior_inpatient_count",
-                disabled=not history_available,
             )
             history_row1[2].number_input(
                 "Prior emergency visits",
                 min_value=0,
                 step=1,
                 key="prior_emergency_count",
-                disabled=not history_available,
             )
             history_row2 = st.columns(2)
             history_row2[0].number_input(
@@ -733,7 +730,6 @@ def render_simulator() -> bool:
                 min_value=0,
                 step=1,
                 key="prior_readmission_count",
-                disabled=not history_available,
             )
             history_row2[1].number_input(
                 "Mean prior hospital stay",
@@ -741,7 +737,6 @@ def render_simulator() -> bool:
                 step=0.5,
                 format="%.1f",
                 key="running_mean_time_in_hospital",
-                disabled=not history_available,
             )
 
         return st.form_submit_button("Run risk simulation", width="stretch")
