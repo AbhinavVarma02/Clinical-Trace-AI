@@ -149,6 +149,9 @@ def inject_styles() -> None:
         html, body, .stApp, .stApp * {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
         }
+        span[data-testid="stIconMaterial"] {
+            font-family: 'Material Symbols Rounded' !important;
+        }
         .stApp {
             background:
                 radial-gradient(1100px 520px at 6% -12%, rgba(20, 90, 150, 0.12), transparent 60%),
@@ -225,6 +228,17 @@ def inject_styles() -> None:
             border-radius: var(--radius);
             box-shadow: var(--shadow);
             padding: 1.15rem 1.2rem 0.7rem 1.2rem;
+        }
+        div[data-testid="stExpander"] {
+            margin-top: 0.55rem;
+            margin-bottom: 0.85rem;
+        }
+        div[data-testid="stExpander"] summary {
+            min-height: 2.75rem;
+        }
+        div[data-testid="stExpander"] summary p {
+            margin: 0 !important;
+            line-height: 1.4 !important;
         }
         /* ---------- HERO ---------- */
         .hero-card {
