@@ -98,6 +98,43 @@ def test_predict_valid_input(monkeypatch):
     assert body["model_version"] == "test-version"
 
 
+def test_predict_passes_optional_longitudinal_history(monkeypatch):
+    captured = {}
+
+    def capture_prediction(payload: dict) -> dict:
+        captured.update(payload)
+        return _fake_prediction(payload)
+
+    payload = {
+        **_payload(),
+        "prior_encounter_count": 4,
+        "prior_inpatient_count": 3,
+        "prior_emergency_count": 2,
+        "prior_readmission_count": 1,
+        "running_mean_time_in_hospital": 5.5,
+    }
+    monkeypatch.setattr(routes, "run_prediction", capture_prediction)
+    response = TestClient(app).post("/predict", json=payload)
+
+    assert response.status_code == 200
+    assert captured["prior_encounter_count"] == 4
+    assert captured["prior_inpatient_count"] == 3
+    assert captured["prior_emergency_count"] == 2
+    assert captured["prior_readmission_count"] == 1
+    assert captured["running_mean_time_in_hospital"] == 5.5
+    assert captured["is_first_encounter"] is False
+
+
+def test_predict_rejects_first_encounter_with_prior_history():
+    payload = {
+        **_payload(),
+        "prior_encounter_count": 1,
+        "is_first_encounter": True,
+    }
+    response = TestClient(app).post("/predict", json=payload)
+    assert response.status_code == 422
+
+
 def test_predict_missing_required_fields_returns_422():
     client = TestClient(app)
     response = client.post("/predict", json={"patient_id": "synthetic_001"})

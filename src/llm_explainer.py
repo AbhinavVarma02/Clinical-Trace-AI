@@ -13,7 +13,7 @@ disclaimer and banned phrases before being returned.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import re
 from typing import Any
 
 from src import config
@@ -51,6 +51,47 @@ BANNED_OUTPUT_PHRASES = [
     "potential adjustments",
 ]
 
+# Fail-closed checks for unsafe clinical assertions or recommendations. These
+# patterns intentionally target actions/assertions rather than standalone words
+# such as "diagnosis", which may legitimately appear in a supplied model feature
+# name (for example, "Number of diagnoses").
+UNSAFE_OUTPUT_PATTERNS = [
+    re.compile(
+        r"\b(?:the|a|this|patient(?:'s)?)\s+diagnosis\s+"
+        r"(?:is|was|appears|seems|indicates|suggests|confirms)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bdiagnos(?:e|ed|ing)\s+(?:the patient\s+)?(?:with|as)\b", re.IGNORECASE),
+    re.compile(r"\bprescrib(?:e|es|ed|ing)\b|\bprescription\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:you|the patient|patient)\s+"
+        r"(?:should|must|needs?\s+to|requires?\s+to)\s+"
+        r"(?:take|start|stop|begin|discontinue|increase|decrease|change|adjust|receive|undergo)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:you|the patient|patient)\s+(?:needs?|requires?|should|must)\s+"
+        r"(?:an?\s+)?(?:surgery|operation|treatment|therapy|procedure|medication|medicine|drug)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:recommend|recommends|recommended|suggest|suggests|suggested|advise|advises|advised)\b"
+        r".{0,50}\b(?:medication|medicine|drug|dose|dosage|treatment|therapy|surgery|operation)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:start|stop|begin|discontinue|increase|decrease|raise|lower|adjust|change)\b"
+        r".{0,35}\b(?:medication|medicine|drug|dose|dosage|insulin|aspirin)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:medication|medicine|drug|dose|dosage|insulin|aspirin)\b"
+        r".{0,35}\b(?:start|stop|begin|discontinue|increase|decrease|raise|lower|adjust|change)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\btreat(?:ed|ing)?\s+(?:the patient\s+)?with\b", re.IGNORECASE),
+]
+
 
 def load_prompt_template(filename: str = PROMPT_VERSION) -> str:
     """Load a prompt template from the prompts directory."""
@@ -73,11 +114,13 @@ def format_top_features(top_features: list[Any]) -> str:
 
 
 def explanation_is_safe(text: str) -> bool:
-    """Validate core LLM safety requirements."""
+    """Validate the disclaimer and reject unsafe clinical language."""
     lower_text = text.lower()
     if SAFETY_DISCLAIMER not in text:
         return False
-    return not any(phrase in lower_text for phrase in BANNED_OUTPUT_PHRASES)
+    if any(phrase in lower_text for phrase in BANNED_OUTPUT_PHRASES):
+        return False
+    return not any(pattern.search(text) for pattern in UNSAFE_OUTPUT_PATTERNS)
 
 
 def _feature_names(top_features: list[Any]) -> list[str]:

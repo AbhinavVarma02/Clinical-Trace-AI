@@ -14,6 +14,7 @@ venv/
 # ===== Editors / OS =====
 .vscode/
 .idea/
+.claude/settings.local.json
 *.swp
 *.swo
 .DS_Store

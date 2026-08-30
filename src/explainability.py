@@ -17,7 +17,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.preprocessing import MEDICATION_COLUMNS
+from src.preprocessing import (
+    CATEGORICAL_FEATURES,
+    GROUPED_CATEGORICAL_SOURCE,
+    MEDICATION_COLUMNS,
+    humanize_feature_name,
+)
 
 
 # Numeric/utilization features that make clear, demo-friendly explanations.
@@ -41,6 +46,16 @@ _PRIORITY_STATUS_COLUMNS: tuple[str, ...] = ("insulin", "change", "diabetesMed")
 # to the bottom of the display ranking rather than dropping the signal.
 _RARE_MEDICATION_COLUMNS: tuple[str, ...] = tuple(
     column for column in MEDICATION_COLUMNS if column != "insulin"
+)
+
+# Encoded categorical columns are one-hot features. Only the active category
+# should be described as a patient factor; an inactive category can have a real
+# SHAP contribution, but displaying its label as patient state is misleading.
+_ONE_HOT_PREFIXES: tuple[str, ...] = tuple(
+    humanize_feature_name(column) for column in CATEGORICAL_FEATURES
+) + tuple(
+    humanize_feature_name(f"{column}_grouped")
+    for column in GROUPED_CATEGORICAL_SOURCE
 )
 
 
@@ -83,8 +98,17 @@ def display_feature(raw_name: str) -> tuple[str, int]:
     return name, 1
 
 
-def rank_features_for_display(top_features: list[Any], limit: int = 5) -> list[dict[str, Any]]:
-    """Relabel model feature contributions and rank demo-friendly signals first."""
+def rank_features_for_display(
+    top_features: list[Any],
+    limit: int = 5,
+    feature_values: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Relabel and rank signals, excluding inactive one-hot categories.
+
+    ``feature_values`` contains the transformed row keyed by encoded feature
+    name. When supplied, a categorical one-hot feature is display-eligible only
+    when its value is active (1). Numeric features are never filtered this way.
+    """
     enriched: list[dict[str, Any]] = []
     for feature in top_features:
         if isinstance(feature, dict):
@@ -96,6 +120,11 @@ def rank_features_for_display(top_features: list[Any], limit: int = 5) -> list[d
         else:
             raw_name = str(getattr(feature, "feature", "model feature"))
             contribution = float(getattr(feature, "contribution", 0.0))
+
+        if feature_values is not None and _match_column(raw_name, _ONE_HOT_PREFIXES):
+            if float(feature_values.get(raw_name, 0.0)) < 0.5:
+                continue
+
         display_name, tier = display_feature(raw_name)
         enriched.append(
             {

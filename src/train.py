@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,6 @@ if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import joblib
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -38,6 +38,10 @@ from src.evaluate import (
     write_json_artifact,
 )
 from src.preprocessing import PreprocessingResult, load_raw_data, preprocess_dataset
+
+
+LOGGER = logging.getLogger(__name__)
+MLFLOW_EXPERIMENT_NAME = "clinical-trace-ai-readmission"
 
 
 def dataset_hash(path: Path) -> str:
@@ -114,17 +118,27 @@ def build_model_candidates(y_train: pd.Series, quick: bool = False) -> dict[str,
 
 
 def _maybe_start_mlflow(enable_mlflow: bool) -> Any:
+    """Configure supported local SQLite tracking when training enables MLflow."""
     if not enable_mlflow:
         return None
     try:
         import mlflow
 
         config.MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
-        mlflow.set_tracking_uri(config.MLRUNS_DIR.as_uri())
-        mlflow.set_experiment("clinical-trace-ai-readmission")
+        database_path = (config.MLRUNS_DIR / "mlflow.db").resolve()
+        tracking_uri = f"sqlite:///{database_path.as_posix()}"
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+        LOGGER.info("MLflow tracking enabled at %s", tracking_uri)
         return mlflow
-    except Exception:
-        return None
+    except Exception as exc:
+        message = (
+            "MLflow initialization failed while training was configured to track runs. "
+            "Disable MLflow explicitly with enable_mlflow=False or correct the local "
+            "SQLite tracking configuration."
+        )
+        LOGGER.exception(message)
+        raise RuntimeError(message) from exc
 
 
 def _log_mlflow_run(
