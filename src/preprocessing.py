@@ -387,9 +387,20 @@ def _frame_from_records(records: dict[str, Any] | list[dict[str, Any]] | pd.Data
 
 def _ensure_raw_columns(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
+    supplied_first_encounter = result.get("is_first_encounter")
     for column, default in RAW_DEFAULTS.items():
         if column not in result.columns:
             result[column] = default
+
+    history_values = result[
+        [column for column in LONGITUDINAL_FEATURES if column != "is_first_encounter"]
+    ].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    inferred_first_encounter = history_values.eq(0.0).all(axis=1).astype(int)
+    if supplied_first_encounter is None:
+        result["is_first_encounter"] = inferred_first_encounter
+    else:
+        explicit = pd.to_numeric(supplied_first_encounter, errors="coerce")
+        result["is_first_encounter"] = explicit.fillna(inferred_first_encounter)
     return result
 
 

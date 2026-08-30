@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -56,6 +56,31 @@ class PredictRequest(BaseModel):
     diag_3: str = "other"
     max_glu_serum: str = "None"
     A1Cresult: str = "None"
+    prior_encounter_count: int = Field(0, ge=0)
+    prior_inpatient_count: int = Field(0, ge=0)
+    prior_emergency_count: int = Field(0, ge=0)
+    prior_readmission_count: int = Field(0, ge=0)
+    running_mean_time_in_hospital: float = Field(0.0, ge=0)
+    is_first_encounter: bool = True
+
+    @model_validator(mode="after")
+    def validate_prior_history(self) -> "PredictRequest":
+        """Keep first-encounter status consistent with supplied history."""
+        has_history = any(
+            value > 0
+            for value in (
+                self.prior_encounter_count,
+                self.prior_inpatient_count,
+                self.prior_emergency_count,
+                self.prior_readmission_count,
+                self.running_mean_time_in_hospital,
+            )
+        )
+        if "is_first_encounter" not in self.model_fields_set:
+            self.is_first_encounter = not has_history
+        elif self.is_first_encounter and has_history:
+            raise ValueError("is_first_encounter cannot be true when prior history is supplied.")
+        return self
 
 
 class FeatureContribution(BaseModel):

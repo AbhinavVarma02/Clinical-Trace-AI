@@ -237,6 +237,29 @@ def test_longitudinal_inference_defaults_to_first_encounter():
             assert row[column] == 0
 
 
+def test_longitudinal_inference_preserves_supplied_history():
+    features = prepare_inference_features(
+        {
+            "patient_id": "synthetic_history_001",
+            "age": "[70-80)",
+            "time_in_hospital": 7,
+            "prior_encounter_count": 4,
+            "prior_inpatient_count": 3,
+            "prior_emergency_count": 2,
+            "prior_readmission_count": 1,
+            "running_mean_time_in_hospital": 5.5,
+            "is_first_encounter": False,
+        }
+    )
+    row = features.iloc[0]
+    assert row["prior_encounter_count"] == 4
+    assert row["prior_inpatient_count"] == 3
+    assert row["prior_emergency_count"] == 2
+    assert row["prior_readmission_count"] == 1
+    assert row["running_mean_time_in_hospital"] == 5.5
+    assert row["is_first_encounter"] == 0
+
+
 def test_longitudinal_features_feed_model_and_shape_stable(raw_diabetes_frame):
     result = preprocess_dataset(raw_diabetes_frame, save_artifacts=False, test_size=0.3, val_size=0.25)
     encoded = set(result.X_train.columns)

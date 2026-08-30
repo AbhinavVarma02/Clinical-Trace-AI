@@ -77,6 +77,14 @@ SAMPLE_PATIENTS: dict[str, dict[str, Any]] = {
 }
 
 FIELD_DEFAULTS = SAMPLE_PATIENTS["Synthetic high-utilization encounter"]
+HISTORY_DEFAULTS: dict[str, Any] = {
+    "history_available": False,
+    "prior_encounter_count": 0,
+    "prior_inpatient_count": 0,
+    "prior_emergency_count": 0,
+    "prior_readmission_count": 0,
+    "running_mean_time_in_hospital": 0.0,
+}
 AGE_OPTIONS = [
     "[0-10)",
     "[10-20)",
@@ -466,6 +474,8 @@ def initialize_form_state() -> None:
     """Seed Streamlit session state with synthetic sample values."""
     for key, value in FIELD_DEFAULTS.items():
         st.session_state.setdefault(key, value)
+    for key, value in HISTORY_DEFAULTS.items():
+        st.session_state.setdefault(key, value)
     st.session_state.setdefault("recent_predictions", [])
     st.session_state.setdefault("last_result", None)
 
@@ -474,10 +484,13 @@ def apply_sample(sample_name: str) -> None:
     """Load a synthetic patient example into form fields."""
     for key, value in SAMPLE_PATIENTS[sample_name].items():
         st.session_state[key] = value
+    for key, value in HISTORY_DEFAULTS.items():
+        st.session_state[key] = value
 
 
 def current_payload() -> dict[str, Any]:
     """Build the simulator payload from Streamlit session state."""
+    history_available = bool(st.session_state.history_available)
     return {
         "patient_id": str(st.session_state.patient_id),
         "age": str(st.session_state.age),
@@ -492,6 +505,14 @@ def current_payload() -> dict[str, Any]:
         "insulin": str(st.session_state.insulin),
         "change": str(st.session_state.change),
         "diabetesMed": str(st.session_state.diabetesMed),
+        "prior_encounter_count": int(st.session_state.prior_encounter_count) if history_available else 0,
+        "prior_inpatient_count": int(st.session_state.prior_inpatient_count) if history_available else 0,
+        "prior_emergency_count": int(st.session_state.prior_emergency_count) if history_available else 0,
+        "prior_readmission_count": int(st.session_state.prior_readmission_count) if history_available else 0,
+        "running_mean_time_in_hospital": (
+            float(st.session_state.running_mean_time_in_hospital) if history_available else 0.0
+        ),
+        "is_first_encounter": not history_available,
     }
 
 
@@ -651,7 +672,7 @@ def render_simulator() -> bool:
     st.write("")
     sample_cols = st.columns([2, 1])
     sample_name = sample_cols[0].selectbox("Synthetic example", list(SAMPLE_PATIENTS), label_visibility="collapsed")
-    if sample_cols[1].button("Load sample patient", use_container_width=True):
+    if sample_cols[1].button("Load sample patient", width="stretch"):
         apply_sample(sample_name)
         st.rerun()
 
@@ -679,7 +700,51 @@ def render_simulator() -> bool:
         row5 = st.columns(3)
         row5[0].selectbox("Diabetes medication", DIABETES_MED_OPTIONS, key="diabetesMed")
 
-        return st.form_submit_button("Run risk simulation", use_container_width=True)
+        with st.expander("Prior history (optional)"):
+            history_available = st.checkbox(
+                "Prior encounter history is available",
+                key="history_available",
+            )
+            history_row1 = st.columns(3)
+            history_row1[0].number_input(
+                "Prior encounters",
+                min_value=0,
+                step=1,
+                key="prior_encounter_count",
+                disabled=not history_available,
+            )
+            history_row1[1].number_input(
+                "Prior inpatient visits",
+                min_value=0,
+                step=1,
+                key="prior_inpatient_count",
+                disabled=not history_available,
+            )
+            history_row1[2].number_input(
+                "Prior emergency visits",
+                min_value=0,
+                step=1,
+                key="prior_emergency_count",
+                disabled=not history_available,
+            )
+            history_row2 = st.columns(2)
+            history_row2[0].number_input(
+                "Prior 30-day readmissions",
+                min_value=0,
+                step=1,
+                key="prior_readmission_count",
+                disabled=not history_available,
+            )
+            history_row2[1].number_input(
+                "Mean prior hospital stay",
+                min_value=0.0,
+                step=0.5,
+                format="%.1f",
+                key="running_mean_time_in_hospital",
+                disabled=not history_available,
+            )
+
+        return st.form_submit_button("Run risk simulation", width="stretch")
 
 
 def render_prediction_result(result: dict[str, Any] | None) -> None:
@@ -779,7 +844,7 @@ def render_feature_contributions(result: dict[str, Any] | None) -> None:
     with st.expander("View contribution values"):
         st.dataframe(
             display_df[["Feature", "Direction", "Contribution", "Magnitude"]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -904,7 +969,7 @@ def render_recent_predictions() -> None:
             "explanation_mode": "Explanation",
         }
     )
-    st.dataframe(frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame, width="stretch", hide_index=True)
 
 
 NAV_SECTIONS = [

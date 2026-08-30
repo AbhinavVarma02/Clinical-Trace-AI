@@ -24,7 +24,6 @@ from src.security import is_synthetic_patient_id
 
 _MODEL: Any | None = None
 _PIPELINE: Any | None = None
-_CANDIDATE_POOL_SIZE = 30
 
 
 def is_model_loaded() -> bool:
@@ -70,13 +69,20 @@ def predict(raw_input: dict[str, Any], top_n: int = 5) -> dict[str, Any]:
         model,
         transformed.iloc[[0]],
         feature_names=list(transformed.columns),
-        top_n=max(top_n, _CANDIDATE_POOL_SIZE),
+        top_n=len(transformed.columns),
     )
     candidate_features = [
         {"feature": feature, "contribution": float(contribution)}
         for feature, contribution in contributions
     ]
-    ranked = rank_features_for_display(candidate_features, limit=top_n)
+    ranked = rank_features_for_display(
+        candidate_features,
+        limit=top_n,
+        feature_values={
+            str(feature): float(value)
+            for feature, value in transformed.iloc[0].items()
+        },
+    )
     top_features = [
         {"feature": item["display_name"], "contribution": item["contribution"]}
         for item in ranked
