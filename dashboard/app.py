@@ -27,6 +27,8 @@ from src.fallback_explainer import generate_explanation as generate_fallback_exp
 from src.llm_explainer import generate_explanation as generate_llm_explanation
 from src.predict import get_model_info, is_model_loaded, predict as run_prediction
 
+from dashboard.components.shap_explorer import render_shap_explorer
+
 
 SAMPLE_PATIENTS: dict[str, dict[str, Any]] = {
     "Synthetic baseline encounter": {
@@ -808,6 +810,25 @@ def render_prediction_result(result: dict[str, Any] | None) -> None:
     )
 
 
+def render_static_feature_bars(feature_df: pd.DataFrame) -> None:
+    """Render contributions as static HTML bars (fallback for the React explorer)."""
+    max_magnitude = float(feature_df["absolute_contribution"].max()) or 1.0
+
+    rows_html = []
+    for _, row in feature_df.iterrows():
+        raises = row["contribution"] >= 0
+        width = max(4.0, (float(row["absolute_contribution"]) / max_magnitude) * 100)
+        dir_class = "up" if raises else "down"
+        dir_glyph = "▲" if raises else "▼"
+        rows_html.append(
+            f'<div class="feat-row"><div class="feat-top">'
+            f'<span class="feat-name">{safe_text(row["feature"])}</span>'
+            f'<span class="feat-dir {dir_class}">{dir_glyph} {safe_text(row["direction"])} &middot; {float(row["contribution"]):+.3f}</span>'
+            f'</div><div class="feat-track"><div class="feat-fill {dir_class}" style="width:{width:.1f}%"></div></div></div>'
+        )
+    write_html(f'<div class="section-card">{"".join(rows_html)}</div>')
+
+
 def render_feature_contributions(result: dict[str, Any] | None) -> None:
     """Render model-contributing factors as premium horizontal bars."""
     write_html(
@@ -826,21 +847,12 @@ def render_feature_contributions(result: dict[str, Any] | None) -> None:
     feature_df["absolute_contribution"] = feature_df["contribution"].abs()
     feature_df["direction"] = feature_df["contribution"].map(lambda value: "Raises risk" if value >= 0 else "Lowers risk")
     feature_df = feature_df.sort_values("absolute_contribution", ascending=False)
-    max_magnitude = float(feature_df["absolute_contribution"].max()) or 1.0
 
-    rows_html = []
-    for _, row in feature_df.iterrows():
-        raises = row["contribution"] >= 0
-        width = max(4.0, (float(row["absolute_contribution"]) / max_magnitude) * 100)
-        dir_class = "up" if raises else "down"
-        dir_glyph = "▲" if raises else "▼"
-        rows_html.append(
-            f'<div class="feat-row"><div class="feat-top">'
-            f'<span class="feat-name">{safe_text(row["feature"])}</span>'
-            f'<span class="feat-dir {dir_class}">{dir_glyph} {safe_text(row["direction"])} &middot; {float(row["contribution"]):+.3f}</span>'
-            f'</div><div class="feat-track"><div class="feat-fill {dir_class}" style="width:{width:.1f}%"></div></div></div>'
-        )
-    write_html(f'<div class="section-card">{"".join(rows_html)}</div>')
+    # Interactive React + TypeScript explorer over the same stored result; falls
+    # back to the original static bars if its compiled assets are unavailable.
+    disclaimer = (result.get("explanation") or {}).get("safety_disclaimer", config.SAFETY_DISCLAIMER)
+    if not render_shap_explorer(result, disclaimer=disclaimer):
+        render_static_feature_bars(feature_df)
 
     display_df = feature_df.rename(
         columns={

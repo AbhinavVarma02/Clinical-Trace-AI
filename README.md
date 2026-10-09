@@ -46,11 +46,14 @@ Streamlit dashboard + optional LangSmith traces
 - Offline demo mode with rule-based explanations and no API keys.
 - Optional LangChain and LangSmith LLM explanation path.
 - Streamlit dashboard for predictions, explanations, metrics, and trace status.
+- Interactive Risk & SHAP Explainability Explorer: a React + TypeScript Streamlit custom component with a sortable, filterable SHAP contribution chart.
 - Security checks for ignored `.env` files and common secret patterns.
 
 ## Tech Stack
 
 Python, pandas, scikit-learn, XGBoost, SHAP, MLflow, FastAPI, Pydantic, LangChain, LangSmith, Streamlit, pytest, Docker.
+
+Frontend component: React, TypeScript, Vite, Vitest. Node.js/npm is used only as frontend build tooling (dev server, type checking, tests, production build) — it is not a backend runtime and no Node server runs in production.
 
 ## Project Structure
 
@@ -58,6 +61,8 @@ Python, pandas, scikit-learn, XGBoost, SHAP, MLflow, FastAPI, Pydantic, LangChai
 Clinical-Trace AI/
 ├── api/                    FastAPI service (routes, schemas, app entry point)
 ├── dashboard/              Streamlit product dashboard (app.py)
+│   └── components/             Python bridge for the React SHAP explorer component
+├── frontend/               React + TypeScript SHAP explorer (Vite; builds to frontend/dist)
 ├── src/                    Core library
 │   ├── config.py               Paths, env flags, safety statements
 │   ├── preprocessing.py        Loading, feature engineering, patient-safe splits
@@ -156,6 +161,45 @@ streamlit run dashboard/app.py --server.port 8501
 
 The dashboard works in offline demo mode without OpenAI or LangSmith keys and uses rule-based explanations when the LLM layer is not configured.
 
+## Risk & SHAP Explainability Explorer (React + TypeScript)
+
+The Explainability tab embeds an interactive explorer built with React, TypeScript, and Vite as a Streamlit custom component.
+
+**What it does**
+
+- Shows the prediction probability, the backend risk label (`readmission_risk` from `src.predict`), and the decision threshold, with a probability-vs-threshold gauge.
+- Plots the existing SHAP feature contributions as a diverging bar chart (bars right raise the model score, bars left lower it).
+- Sorts by impact, raises-first, lowers-first, or A–Z; filters by direction; and clicking a bar opens an inspector with the exact contribution, impact rank, and share of the displayed signal.
+- Always shows the medical disclaimer, and shows an empty state when no valid prediction is available.
+
+**How it talks to Streamlit/Python**
+
+```text
+st.session_state.last_result  (existing prediction + SHAP top_features)
+        |  dashboard/components/shap_explorer.py: build_explorer_props()  (reshape only)
+        v
+components.declare_component(path="frontend/dist")  ->  sandboxed iframe
+        |  postMessage "streamlit:render" with the props as JSON
+        v
+React app (frontend/src) renders, sorts, and inspects in the browser
+```
+
+The component is display-only: it runs no inference, recomputes no SHAP values, makes no API calls, and sends nothing back to Python, so interacting with it never triggers a Streamlit rerun. If `frontend/dist` has not been built (or `CLINICAL_TRACE_DISABLE_REACT_EXPLORER=1` is set), the dashboard falls back to the original static Streamlit bars. The "View contribution values" table is always available beneath it.
+
+**Build and test** (requires Node.js 20.19+; build tooling only)
+
+```bash
+cd frontend
+npm ci              # install exactly what package-lock.json pins
+npm run typecheck   # tsc --noEmit
+npm test            # Vitest + Testing Library
+npm run build       # production assets -> frontend/dist (served by Streamlit)
+```
+
+For component development, run `npm run dev` (Vite on port 3001) and start Streamlit with `CLINICAL_TRACE_EXPLORER_DEV_URL=http://localhost:3001` for hot reload. Opening the Vite page directly renders a sample fixture.
+
+**Hugging Face packaging:** the Space's Dockerfile uses a multi-stage build. A `node` stage runs `npm ci` and `npm run build`; only the compiled `frontend/dist` is copied into the existing `python:3.12-slim` runtime image. The final container still runs just FastAPI (internal port 8000) and Streamlit (public port 7860) — no Node.js runtime or extra service.
+
 ## API
 
 Health:
@@ -249,7 +293,16 @@ pytest tests/ -v
 The suite covers the API routes, preprocessing and leakage-safe patient splits,
 model training on small synthetic fixtures, the rule-based fallback, LLM safety
 validation, and the secret / `.env` security guardrails. No external LLM is
-called during tests.
+called during tests. `tests/test_shap_explorer_component.py` also runs the real
+dashboard script with Streamlit's `AppTest` to check that the React explorer is
+mounted with the stored prediction values unchanged, and that the static
+fallback renders when the explorer is unavailable.
+
+Frontend tests for the React component run separately:
+
+```bash
+cd frontend && npm ci && npm run typecheck && npm test
+```
 
 ## Security And Privacy Notes
 
@@ -270,6 +323,8 @@ private and are intentionally excluded via `.gitignore`:
 - `models/*.joblib` and `models/*.json` — trained model and pipeline artifacts.
 - `mlruns/` and `mlartifacts/` — local MLflow tracking runs and artifacts.
 - `.pytest_cache/`, `.pytest_run_tmp/`, `__pycache__/` — test and bytecode caches.
+- `frontend/node_modules/` and `frontend/dist/` — npm packages and compiled
+  component assets, reproducible with `npm ci && npm run build`.
 
 `.env.example`, the model/data cards under `docs/`, and `models/.gitkeep` are
 committed so the project stays reproducible.
