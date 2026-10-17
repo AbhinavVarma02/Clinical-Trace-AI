@@ -127,7 +127,7 @@ def _encounters(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]
     for enc in items:
         stay = f", ending {_date(enc['end'])}, length of stay {enc['length_of_stay_days']} days" \
             if enc["length_of_stay_days"] is not None else ", no end time recorded"
-        text = f"{enc['class_display']} encounter starting {_date(enc['start'])} for {enc['reason']}{stay}."
+        text = f"{enc['class_display'].removesuffix(' encounter')} encounter starting {_date(enc['start'])} for {enc['reason']}{stay}."
         evidence.append(_evidence(ctx, enc["source"], text, "encounter", enc["reason"], enc["start"] or ""))
     return items, evidence
 

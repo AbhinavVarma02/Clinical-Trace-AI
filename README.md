@@ -1,16 +1,118 @@
-﻿# Clinical-Trace AI
+# Clinical-Trace AI
 
-Healthcare readmission risk platform with MLOps and LLMOps observability.
+**Evidence-grounded clinical intelligence and agentic decision support — on synthetic data.**
 
-This is an educational, privacy-aware prototype using public and/or synthetic healthcare data. It is designed to demonstrate healthcare AI observability, not to provide medical advice or replace clinical judgment.
+Clinical-Trace AI combines an explainable 30-day readmission model with a tool-using clinical record review agent. The agent reads synthetic FHIR R4 records, retrieves evidence with patient-scoped hybrid search, and returns only statements that pass claim-by-claim verification against cited sources. Unsafe requests are refused, unsupported answers become abstentions, and outputs can be sent to a human reviewer whose approval is bound to the exact content reviewed.
 
-Every prediction and explanation is decision-support only. The platform is not a real clinical decision system, medical device, diagnostic tool, or substitute for professional judgment.
+> Educational research and engineering prototype. All patient records are synthetic. It does not diagnose, prescribe, or replace clinical judgement, and it is not clinically validated. Every output is decision-support only and not medical advice.
 
-# Public demo
-The public demo runs in offline fallback mode to avoid exposing API keys or generating external API costs. The codebase supports OpenAI-powered LLM explanations and LangSmith tracing when configured with private environment secrets.
-demo link: https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai
+**Live demo (v1 dashboard):** https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai — the 2.0 workspace described below runs locally and is not yet deployed there (see [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)).
+
+## What 2.0 adds
+
+| Capability | Summary |
+| --- | --- |
+| Clinical data foundation | Four synthetic FHIR R4 patient journeys (86 resources) with validation, versioned idempotent ingestion, lineage, and a read-only mock FHIR server at `/fhir/r4` |
+| Case Review Agent | LangGraph graph (guard → plan → tools → compose → verify → review gate) with 11 typed, patient-bound tools, tool budgets, timeouts, cancellation, and persisted sessions |
+| Two labelled inference modes | Deterministic (rules + templates, no model) by default; any OpenAI-compatible endpoint for live LLM planning and drafting, e.g. a local Ollama model |
+| Evidence verification | Citations must resolve to same-patient evidence from the same run; numbers must appear in the evidence or be recomputed; low-support and unsafe claims are removed |
+| Hybrid retrieval | Per-patient BM25 + LSA embeddings fused with reciprocal rank fusion, date filters, caching, and isolation checks |
+| Safety and governance | Default-deny policy with synthetic personas, prompt-injection handling, contradiction and gap detection, hash-bound human review, audit log |
+| Evaluation | Versioned dev/held-out cases, thresholds fixed before the first run, a CI regression gate, and measured results for deterministic and local LLM modes |
+| Workspace UI | React + TypeScript app at `/app`: overview and guided demos, patient records, agent, risk & SHAP, evidence explorer, evaluation, operations, governance; light and dark themes; mobile layout |
+
+The original readmission pipeline, FastAPI v1 endpoints, Streamlit dashboard, and SHAP explorer are unchanged.
+
+## Measured results
+
+From `python -m evaluation.run_eval` on 42 synthetic cases (20 development, 22 held-out). Definitions, method, and every failure are in [docs/EVALUATION.md](docs/EVALUATION.md).
+
+| | Deterministic | qwen2.5 7B (local) | qwen2.5 1.5B (local) |
+| --- | --- | --- | --- |
+| Regression gate | pass | pass | fail |
+| Answer correctness | 0.957 | 0.739 | 0.478 |
+| Safety adherence (critical cases) | 1.000 | 1.000 | 1.000 |
+| Cross-patient / authorisation violations | 0 / 0 | 0 / 0 | 0 / 0 |
+| Drafted claims rejected by verification | 0% | 23% | 20% |
+| Latency p50 | 15 ms | 2.7 s | 1.0 s |
+
+Hybrid retrieval on 19 queries: recall@5 0.974, MRR@10 0.947, and 0 violations in 57 cross-patient probes. Scoring is deterministic and rule-based; passing a finite synthetic suite does not demonstrate clinical safety.
+
+Readmission model (UCI held-out test): ROC-AUC 0.683, PR-AUC 0.240, recall 0.668, precision 0.170 — see [Model Performance](#model-performance).
 
 ## Architecture
+
+```text
+React workspace (/app)          Streamlit dashboard (v1)
+        |                                |
+FastAPI ── middleware (request id, rate/size limits, request log) ── v1 routes
+   ├── /api/v2  → persona → default-deny policy → audit
+   │      └── AgentService → LangGraph: guard → plan → tools → compose → verify → review gate
+   │             tools → ClinicalRecords · RetrievalIndex (BM25 + LSA + RRF) · risk bridge → XGBoost + SHAP
+   └── /fhir/r4 (read-only mock FHIR)
+                 FHIRStore (versioned, lineage) → SQLite with migrations
+```
+
+More: [Architecture](docs/ARCHITECTURE.md) · [System design](docs/SYSTEM_DESIGN.md) · [API reference](docs/API_REFERENCE.md) · [Safety & privacy](docs/SAFETY_AND_PRIVACY.md) · [Evaluation](docs/EVALUATION.md) · [Deployment](docs/DEPLOYMENT.md) · [Limitations](docs/LIMITATIONS.md) · [Engineering evidence](docs/ENGINEERING_EVIDENCE.md) · [Decisions](docs/ADR/) · [Roadmap](docs/IMPLEMENTATION_ROADMAP.md)
+
+## Run the 2.0 workspace
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+cd frontend && npm ci && npm run build:workspace && cd ..
+uvicorn api.main:app --port 8000
+```
+
+Open http://localhost:8000/app/ and choose **Start demo**, or one of the guided scenarios:
+
+1. **Readmission journey** (`synthetic_p001`): a summary with a verified 19-day readmission, the HbA1c trend, and the metformin stop.
+2. **Contradictory notes** (`synthetic_p002`): smoking history recorded inconsistently, every source cited, review flagged.
+3. **Incomplete documentation** (`synthetic_p003`): missing discharge summary and medication list; the risk model is reported as unavailable.
+4. **Medication versions** (`synthetic_p004`): three versions of one warfarin order alongside the INR series.
+
+Switch the persona in the top bar to see access control: the restricted clinician sees one patient, the reviewer approves submitted answers, and the administrator sees operations and audit data but no patient records.
+
+For live model inference, run a local model with Ollama and set `CLINICAL_TRACE_LLM_PROVIDER=ollama` and `CLINICAL_TRACE_LLM_MODEL=qwen2.5:7b` before starting the server ([details](docs/DEPLOYMENT.md)). The readmission model appears in the workspace after `python src/train.py`.
+
+## Tech Stack
+
+Python, FastAPI, Pydantic, LangGraph, SQLite, scikit-learn, XGBoost, SHAP, MLflow, pandas, httpx, LangChain/LangSmith (v1 explainer), Streamlit, pytest, ruff, Docker, GitHub Actions. Frontend: React, TypeScript, Vite, Vitest, Testing Library. Node.js/npm is build tooling only.
+
+## Project Structure
+
+```text
+Clinical-Trace AI/
+├── api/                    FastAPI: v1 routes, v2 workspace API, mock FHIR server, middleware
+├── src/
+│   ├── clinical/               Synthetic FHIR generator, validation, versioned store, records, consistency, risk bridge, FHIR client
+│   ├── retrieval/              Chunking, BM25, LSA embeddings, hybrid index, ranking metrics
+│   ├── agent/                  Tools, planner, composer, LLM provider, LangGraph graph, service
+│   ├── safety/                 Policy engine, guards, evidence verifier
+│   ├── governance/             Human review workflow, audit log
+│   ├── persistence/            SQLite database and migrations
+│   ├── runtime.py              Service wiring
+│   └── (v1)                    config, preprocessing, train, evaluate, predict, explainability, explainers, tracing, security
+├── frontend/
+│   ├── workspace/              React + TypeScript clinical workspace (builds to dist-workspace, served at /app)
+│   └── src/                    v1 SHAP explorer Streamlit component
+├── dashboard/              v1 Streamlit dashboard
+├── evaluation/             Datasets, runner, thresholds, recorded results
+├── data/fhir/              Committed synthetic FHIR bundle
+├── docs/                   Architecture, API, safety, evaluation, deployment, cards, ADRs
+├── tests/                  pytest suites (v1 and 2.0)
+├── prompts/, notebooks/, monitoring/
+└── .github/workflows/      CI
+```
+
+`src/database.py`, `src/monitoring.py`, `src/rag_pipeline.py`, and `monitoring/drift_report.py` remain one-line placeholders from v1; the 2.0 persistence, retrieval, and monitoring features live in the packages above.
+
+## Readmission model and v1 dashboard
+
+The sections below document the original pipeline, which 2.0 keeps intact.
+
+### v1 architecture
 
 ```text
 UCI Diabetes CSV
@@ -32,7 +134,7 @@ FastAPI /explain -> LLM explanation when configured
 Streamlit dashboard + optional LangSmith traces
 ```
 
-## Features
+### v1 features
 
 - Public UCI Diabetes 130-US Hospitals dataset preprocessing.
 - Patient-level `GroupShuffleSplit` train/validation/test split to avoid leakage across encounters.
@@ -49,45 +151,7 @@ Streamlit dashboard + optional LangSmith traces
 - Interactive Risk & SHAP Explainability Explorer: a React + TypeScript Streamlit custom component with a sortable, filterable SHAP contribution chart.
 - Security checks for ignored `.env` files and common secret patterns.
 
-## Tech Stack
-
-Python, pandas, scikit-learn, XGBoost, SHAP, MLflow, FastAPI, Pydantic, LangChain, LangSmith, Streamlit, pytest, Docker.
-
-Frontend component: React, TypeScript, Vite, Vitest. Node.js/npm is used only as frontend build tooling (dev server, type checking, tests, production build) — it is not a backend runtime and no Node server runs in production.
-
-## Project Structure
-
-```text
-Clinical-Trace AI/
-├── api/                    FastAPI service (routes, schemas, app entry point)
-├── dashboard/              Streamlit product dashboard (app.py)
-│   └── components/             Python bridge for the React SHAP explorer component
-├── frontend/               React + TypeScript SHAP explorer (Vite; builds to frontend/dist)
-├── src/                    Core library
-│   ├── config.py               Paths, env flags, safety statements
-│   ├── preprocessing.py        Loading, feature engineering, patient-safe splits
-│   ├── train.py                Training + MLflow + best-artifact selection
-│   ├── evaluate.py             Metrics + validation-only threshold selection
-│   ├── predict.py              Inference path used by the API and dashboard
-│   ├── explainability.py       SHAP-based top-feature contributions
-│   ├── llm_explainer.py        Optional LangChain explanation layer
-│   ├── fallback_explainer.py   Rule-based offline explanations
-│   ├── tracing.py              Privacy-preserving LangSmith metadata
-│   └── security.py             Secret scanning + synthetic-ID checks
-├── prompts/                Versioned LLM prompt + safety templates
-├── tests/                  pytest suite (API, model, preprocessing, LLM safety, security)
-├── docs/                   Model card, data card, architecture, security checklist
-├── notebooks/              Lightweight EDA / training starters
-├── models/                 Local model artifacts (generated, git-ignored)
-├── data/                   Raw + processed data (downloaded/generated, git-ignored)
-└── requirements.txt        Python dependencies
-```
-
-`src/database.py`, `src/monitoring.py`, `src/rag_pipeline.py`, and
-`monitoring/drift_report.py` are intentional one-line placeholders that mark
-post-MVP scope; they are documented as out of scope, not dead code.
-
-## App interface (Tab -wise)
+### Streamlit dashboard (tab-wise)
 
 Overview: 
 <img width="879" height="877" alt="image" src="https://github.com/user-attachments/assets/2768e70c-743f-4eab-9ddd-5cf4fdb316e0" />
@@ -288,7 +352,11 @@ Run the full test suite (offline, no API keys or network required):
 
 ```bash
 pytest tests/ -v
+ruff check .
+python -m evaluation.run_eval      # agent and retrieval evaluation with the regression gate
 ```
+
+The 2.0 suites cover the FHIR data layer and client (`test_fhir_data.py`), retrieval isolation and ranking (`test_retrieval_v2.py`), policy, guards, and verification (`test_safety_v2.py`), agent behaviour including LLM fallback with a mocked provider (`test_agent_v2.py`), the v2 HTTP contract and review workflow (`test_api_v2.py`), and the evaluation gate (`test_evaluation_gate.py`).
 
 The suite covers the API routes, preprocessing and leakage-safe patient splits,
 model training on small synthetic fixtures, the rule-based fallback, LLM safety
@@ -301,7 +369,7 @@ fallback renders when the explorer is unavailable.
 Frontend tests for the React component run separately:
 
 ```bash
-cd frontend && npm ci && npm run typecheck && npm test
+cd frontend && npm ci && npm run check     # typecheck, all Vitest suites, both builds
 ```
 
 ## Security And Privacy Notes
@@ -330,6 +398,8 @@ private and are intentionally excluded via `.gitignore`:
 committed so the project stays reproducible.
 
 ## Known Limitations
+
+See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the 2.0 platform. For the readmission model:
 
 - The UCI dataset covers 1999-2008 hospital encounters and is not representative of current clinical practice.
 - The model is not clinically validated.

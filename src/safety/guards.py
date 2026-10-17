@@ -79,7 +79,7 @@ def classify_question(
                 "This session is scoped to one synthetic patient. Questions about other patients are not answered here.",
                 (marker,),
             )
-    for name, patterns, category, message in (
+    for _name, patterns, category, message in (
         ("injection", INJECTION_PATTERNS, "prompt_injection",
          "The request asks the assistant to override its rules, so it was not processed."),
         ("exfiltration", EXFILTRATION_PATTERNS, "data_exfiltration",
