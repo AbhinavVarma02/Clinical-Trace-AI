@@ -93,6 +93,9 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        if path.startswith("/app") and not path.startswith("/app/assets/"):
+            # The workspace shell must revalidate so new hashed asset names are picked up.
+            response.headers["Cache-Control"] = "no-cache"
         route = request.scope.get("route")
         template = getattr(route, "path", None) or ("static" if not protected else "unmatched")
         if protected and self.request_logger is not None:

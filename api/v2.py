@@ -31,7 +31,7 @@ from src.clinical.risk_bridge import assess
 from src.persistence.db import utc_now
 from src.errors import NotFoundError
 from src.runtime import Runtime, get_runtime
-from src.safety.policy import PERSONAS, AccessContext, Action, resolve_persona
+from src.safety.policy import ALL_SYNTHETIC_PATIENTS, PERSONAS, PATIENT_SCOPED_ACTIONS, AccessContext, Action,     evaluate, resolve_persona
 
 router = APIRouter(prefix="/api/v2", tags=["clinical workspace v2"])
 EVALUATION_RESULTS = config.PROJECT_ROOT / "evaluation" / "results" / "latest.json"
@@ -102,6 +102,23 @@ def personas() -> list[dict[str, Any]]:
          "description": p.description}
         for p in PERSONAS.values()
     ]
+
+
+@router.get("/policy/matrix")
+def policy_matrix() -> dict[str, Any]:
+    """Evaluate the live policy for every persona x action (patient actions against each patient)."""
+    rows = []
+    for persona in PERSONAS.values():
+        context = AccessContext(persona)
+        for action in Action:
+            if action in PATIENT_SCOPED_ACTIONS:
+                cells = {pid: evaluate(context, action, pid).allowed for pid in ALL_SYNTHETIC_PATIENTS}
+            else:
+                cells = {"-": evaluate(context, action).allowed}
+            rows.append({"persona": persona.persona_id, "role": persona.role, "action": action.value,
+                         "patient_scoped": action in PATIENT_SCOPED_ACTIONS, "decisions": cells})
+    return {"patients": list(ALL_SYNTHETIC_PATIENTS), "rows": rows,
+            "note": "Computed from src/safety/policy.py at request time (default deny)."}
 
 
 @router.get("/tools")
@@ -391,4 +408,11 @@ def evaluation_latest(ctx: AccessContext = Depends(access), rt: Runtime = Depend
         for line in Path(EVALUATION_HISTORY).read_text(encoding="utf-8").splitlines()[-30:]:
             if line.strip():
                 history.append(json.loads(line))
-    return {**data, "history": history}
+    comparisons = []
+    for path in sorted(EVALUATION_RESULTS.parent.glob("llm_*.json")):
+        other = json.loads(path.read_text(encoding="utf-8"))
+        comparisons.append({"file": path.name, "run_at": other.get("run_at"), "mode": other.get("mode"),
+                            "provider": other.get("provider"), "gate": other.get("gate"),
+                            "summary": other.get("summary"),
+                            "failed_cases": [c for c in other.get("cases", []) if not c.get("passed")]})
+    return {**data, "history": history, "comparisons": comparisons}

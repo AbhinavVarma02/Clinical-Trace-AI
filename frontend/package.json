@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "build": "vite build",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build && npm run build:workspace",
+    "dev:workspace": "vite --config vite.workspace.config.ts",
+    "build:workspace": "vite build --config vite.workspace.config.ts"
   },
   "dependencies": {
     "react": "19.3.0",
