@@ -37,7 +37,7 @@
 - Demo personas are not authentication.
 - Rate limits and caches are in-process and reset on restart; they do not coordinate across replicas.
 - OpenTelemetry export is opt-in and local-file only; no network collector is configured. Operators must rotate trace files separately from SQLite retention.
-- The handoff container passed real build/smoke tests in Actions 39074327485. Updated dependencies/runtime need fresh CI verification; local Docker remains unavailable through WSL integration.
+- The handoff container passed real build/smoke tests in Actions 39074327485. Updated dependencies/runtime passed all four jobs in Actions 39077304115 at 6541d9b; inspect newer branch-tip CI separately. Local Docker remains unavailable through WSL integration.
 
 ## Evaluation
 

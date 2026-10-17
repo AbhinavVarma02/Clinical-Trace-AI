@@ -53,3 +53,7 @@ cd frontend && npm ci && npm run check
 | UI screenshots | `docs/images/workspace-*.png` | Captured in passing real-backend tests; desktop dark/mobile light inspected |
 
 The previous Actions run 39074327485 passed at f4f785c, but its Python audit was advisory and reported six known findings in two packages. That run must not be described as vulnerability-free. Security remediation and new CI results are recorded separately.
+
+## Current core verification
+
+Actions [39077304115](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/39077304115) at 6541d9b passed all four jobs, including real-backend Chromium and a mandatory clean dependency audit plus actual container smoke. The new local 7B report at the same source preserves historical results and passes the locked gate (35/42). Current follow-up coverage is 216 Python/36 frontend tests plus 24 real browser cases. Calibration evidence appears only for matching model/metadata SHA-256s; the paired-review runner rejects empty, partial or duplicate annotations. The header-only template contains no ratings and no human agreement result is claimed.

@@ -41,6 +41,11 @@ export function RiskPage() {
               <Card title="Probability versus decision threshold">
                 <ProbabilityMeter probability={r.prediction.risk_probability} threshold={r.prediction.risk_threshold} />
               </Card>
+              {r.model?.calibration && <Card title="Calibration and uncertainty" subtitle={r.model.calibration.dataset}>
+                <p>Average model score {pct(r.model.calibration.mean_probability)} versus observed readmission rate {pct(r.model.calibration.prevalence)} across {r.model.calibration.rows.toLocaleString()} test encounters.</p>
+                <p>Brier score {r.model.calibration.brier.toFixed(3)} · ECE {r.model.calibration.ece.toFixed(3)}.</p>
+                <p className="muted">These scores overestimate observed event frequency. No recalibration has been applied. Calibration for this synthetic patient population is unknown; the score is not an individual confidence estimate.</p>
+              </Card>}
               <Card title="SHAP feature contributions" subtitle="Contribution to the model score for this mapped encounter">
                 <ContributionBars features={r.prediction.top_features} />
               </Card>

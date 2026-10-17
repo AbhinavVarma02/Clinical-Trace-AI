@@ -59,3 +59,6 @@ frontend/test-results/
 
 # Local Python static-check cache
 .mypy_cache/
+
+# Private reviewer annotations (publish aggregate results only after review)
+evaluation/annotations/

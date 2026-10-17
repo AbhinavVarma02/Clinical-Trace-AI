@@ -1,74 +1,41 @@
 # Project Status
 
-**Version:** 2.0.0-dev on branch `feature/clinical-trace-2.0` (branched from `main` at `ecd1973`). Pushed to GitHub for CI; not merged into `main`; not deployed.
-**Updated:** 2026-10-17
+**Updated:** 2026-10-17 · **Version:** 2.0.0-dev · **Branch:** `feature/clinical-trace-2.0` · **Public demo:** v1 unchanged. No merge or 2.0 deployment.
 
-## Summary
+The existing project was continued from `f4f785c`. The local core implementation milestone is implemented and tested; the full master plan is **not a completed public release**. The separate reviewer-ready deployment/validation phase and conditional advanced extensions remain visible in the [roadmap](IMPLEMENTATION_ROADMAP.md). See [VALIDATION_HANDOFF.md](VALIDATION_HANDOFF.md) for the release boundary.
 
-| Area | State |
+| Area | Verified evidence |
 | --- | --- |
-| v1 readmission pipeline, API, Streamlit dashboard, SHAP explorer | Unchanged and passing (54 original tests) |
-| Synthetic FHIR data layer + mock FHIR server | Implemented, tested |
-| Clinical Case Review Agent (LangGraph) | Implemented, tested; deterministic and local-LLM modes measured |
-| Hybrid retrieval | Implemented, benchmarked |
-| Safety, policy, review, audit | Implemented, tested, review flow checked in the browser |
-| Evaluation harness + CI gate | Implemented; deterministic gate passing |
-| React workspace (`/app`) | 32 frontend unit tests; 24 real-backend Chromium E2E tests pass across desktop/tablet/mobile, including source-version resolution and review approval |
-| CI workflow, hardened Dockerfile | All four jobs passed in Actions run 39074327485 at f4f785c, independently verified; local Docker remains unavailable |
-| Public Hugging Face demo | Still v1; update **blocked** on owner approval |
-| ML enhancements (P5) | Calibration/subgroup audit measured without changing model: Brier 0.133610, ECE 0.190108; drift pending |
-| Advanced extensions (P13) | Pending stable core |
+| v1 preprocessing, three model families, patient splits, SHAP, MLflow, API and Streamlit | Original functionality retained; original model/processed artifacts unchanged; compatibility tests pass |
+| Synthetic FHIR, hybrid retrieval, citations, review and policy | Four synthetic journeys; versioned sources; API/integration/safety tests |
+| Agent persistence/reliability | SQLite node checkpoints, explicit restart/resume, owner-only cancellation, idempotency, bounded capacity, retained review evidence and cooperative shutdown |
+| Streaming/UI isolation | Real progress then verified final answer; stream interruption handling, cancellation, stale-persona response protection and accessible evidence drawers |
+| Readmission audit | Existing held-out metrics reproduced; Brier 0.133610, ECE 0.190108; subgroup/errors/validation sweep; no recalibration or threshold change |
+| Drift diagnostics | Reference-only bins/vocabulary; actual train/test prediction PSI 0.000411358; not temporal/live drift |
+| Metadata/observability | Index/evaluation metadata persisted; typed agent/retrieval/status responses; optional local OpenTelemetry traces exclude source text |
+| Dependencies/CI | Exact roots and transitive constraints; final local runtime audit: 144 packages, no known findings; mandatory audit/type/format/browser gates |
+| Local performance | 40 requests each at concurrency 1/4/8; at four: p95 248.9 ms, 40/40 answered; at eight: 28/40 capacity rejections, 12 answered; zero observed isolation violations |
 
-Detailed task status: [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
+## Reproducible checks
 
-## Baseline (Phase 0, before changes)
-
-- Git: `main` at `ecd1973`, clean apart from four intentionally untracked private documents.
-- Python: `pytest tests/` → **54 passed** (Python 3.13 venv).
-- Frontend: `npm run check` → typecheck OK, **24 passed**, build OK.
-- Model: XGBoost `20260703051249-local`, held-out test ROC-AUC 0.683, PR-AUC 0.240, recall 0.668, precision 0.170 at threshold 0.30.
-- Placeholders found: `src/database.py`, `src/monitoring.py`, `src/rag_pipeline.py`, `monitoring/drift_report.py` (one-line stubs; still stubs — the 2.0 features live in new packages).
-- Deployment: the HF Space is a separate repository with its own Dockerfile/`start.sh` and an HTTP-calling dashboard fork.
-
-## Current checks (latest run)
-
-| Check | Result |
+| Check | Result / scope |
 | --- | --- |
-| `pytest tests/ -q` | 183 passed (54 original + 129 new, including the evaluation gate) |
-| `ruff check .` | passed |
-| `npm run check` (frontend) | typecheck OK; 32 tests passed; both builds OK |
-| `python -m evaluation.run_eval` | gate passed; 41/42 cases; 0 isolation / authorisation violations |
-| Local LLM evaluation | 7B gate passed (correctness 0.739); 1.5B gate failed (0.478) |
+| Python suite | **216 passed**, including compatibility, recovery, streaming, metadata, HTTP limits and annotation validation |
+| Frontend `npm run check` | **36 tests**, TypeScript and both builds passed |
+| Playwright | **24 real-backend Chromium cases**, desktop/tablet/mobile; source versions, SSE, review approval, safety, persona/session isolation, themes and focus |
+| Ruff / format / mypy | Lint passed; formatting scoped to new modules; mypy explicitly covers four new contract/persistence/telemetry modules |
+| Deterministic evaluation | Gate PASS; 41/42 cases; `ho-013` lexical miss retained; no known test isolation/authorization violations |
+| Actual local 7B inference | At `6541d9b`: gate PASS, 35/42, correctness 0.7391, rejected draft-claim rate 0.2308, p50 2.673 s/p95 8.018 s; historical reports retained |
+| Linux CI/container | [Actions 39077304115](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/39077304115) at `6541d9b`: all four jobs passed, including real browsers, mandatory security audit and actual container build/smoke |
 
-## Blockers requiring the owner
+The latest branch run is available in [GitHub Actions](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions?query=branch%3Afeature%2Fclinical-trace-2.0). Keep commit-specific evidence separate from subsequent changes. The earlier run 39074327485 also passed, but its advisory security step contained findings; those were inspected and fixed, not treated as a clean audit.
 
-| ID | Blocker | Needed |
-| --- | --- | --- |
-| BLK-001 | Updating the public Hugging Face Space would overwrite the working v1 demo | Approval to deploy (and to keep or retire the Streamlit landing page) |
-| BLK-002 | Live LLM inference in the public demo | Decision: in-container small model (slow/weak on free CPU) or a free hosted endpoint with a token stored as a Space secret |
-| BLK-003 | Local Docker unavailable in WSL; CI container build/smoke passed | Enable Docker Desktop WSL integration for local image-size/cold-start measurements |
+## Remaining work and constraints
 
-## Priority task results
+- Local Docker image-size/cold-start/native-memory measurements require Docker Desktop WSL integration, currently unavailable. CI container verification is real but is not a local benchmark.
+- Keep the existing Hugging Face v1 demo unchanged. A separately authorized free 2.0 deployment needs infrastructure/credential decisions and unauthenticated external validation.
+- Public free-CPU inference suitability remains unmeasured; local 7B results do not establish hosting responsiveness. No paid provider was enabled.
+- Human-review agreement has a tested protocol/runner, but no actual annotations or clinical validation study. No score is fabricated.
+- Conditional advanced work remains: sequence-model research, biomedical/general embedding comparison, optional reranking/PostgreSQL, simulated SMART launch, kind/Kubernetes, deeper memory/stress tests and structured referral/discharge extraction. None is silently marked complete.
 
-| ID | Task |
-| --- | --- |
-| CT-P05-T01 / T03 | VERIFIED: aggregate report and reproducible runner in `docs/READMISSION_ANALYSIS.md`; no model changes |
-| CT-P07-T02 | VERIFIED locally: 24 real-backend tests; new CI step added, remote execution pending |
-
-Other open roadmap items: P5 drift monitoring, durable checkpoints, streaming, reranking, PostgreSQL/pgvector, OpenTelemetry, image-size measurement, Hugging Face deployment, and P13 extensions — see the roadmap.
-
-## How to resume
-
-```bash
-git checkout feature/clinical-trace-2.0
-pip install -r requirements.txt -r requirements-dev.txt
-pytest tests/ -q
-python -m evaluation.run_eval
-cd frontend && npm ci && npm run check
-```
-
-Then continue with the "Next executable tasks" in the roadmap.
-
-## Requirements reconciliation
-
-Original specification mapped to existing implementation and remaining gates in [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). Core implementation is not yet complete. Public v1 remains unchanged; the separate reviewer-ready deployment/validation phase has not begun.
+Reproduction and evidence: [requirements reconciliation](REQUIREMENTS_TRACEABILITY.md), [reliability](RELIABILITY.md), [readmission audit](READMISSION_ANALYSIS.md), [dependency security](DEPENDENCY_SECURITY.md), [engineering evidence](ENGINEERING_EVIDENCE.md).
