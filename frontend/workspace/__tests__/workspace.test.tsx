@@ -47,6 +47,24 @@ afterEach(() => {
 });
 
 describe("api client", () => {
+  it("parses fragmented progress and returns only the final verified result", async () => {
+    const run = makeRun();
+    const wire = new TextEncoder().encode(`event: progress\ndata: ${JSON.stringify({ run_id: run.run_id, node: "verify", duration_ms: 1 })}\n\nevent: result\ndata: ${JSON.stringify(run)}\n\n`);
+    const stream = new ReadableStream<Uint8Array>({ start(controller) {
+      for (let i = 0; i < wire.length; i += 7) controller.enqueue(wire.slice(i, i + 7));
+      controller.close();
+    } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { headers: { "Content-Type": "text/event-stream" } })));
+    const progress = vi.fn();
+    expect(await api.runAgentStream({ patient_id: run.patient_id, question: run.question }, progress)).toEqual(run);
+    expect(progress).toHaveBeenCalledWith({ run_id: run.run_id, node: "verify", duration_ms: 1 });
+  });
+
+  it("rejects a stream that ends before its verified result", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('event: progress\ndata: {"run_id":"r","node":"guard","duration_ms":1}\n\n')));
+    await expect(api.runAgentStream({ patient_id: "synthetic_p001", question: "metformin history" }, vi.fn())).rejects.toMatchObject({ code: "stream_interrupted" });
+  });
+
   it("sends the persona header and maps structured errors", async () => {
     const fetchMock = mockFetch(() =>
       new Response(JSON.stringify({ error: { code: "forbidden", message: "patient is outside the panel", request_id: "req-1" } }), { status: 403 }),
@@ -158,7 +176,7 @@ describe("App shell", () => {
       return {};
     });
     let resolveRun!: (run: ReturnType<typeof makeRun>) => void;
-    vi.spyOn(api, "runAgent").mockImplementation(() => new Promise((resolve) => { resolveRun = resolve; }));
+    vi.spyOn(api, "runAgentStream").mockImplementation(() => new Promise((resolve) => { resolveRun = resolve; }));
     render(<AppProvider><App /></AppProvider>);
     await userEvent.type(screen.getByRole("textbox", { name: "Question" }), "Why was metformin stopped?");
     await userEvent.click(screen.getByRole("button", { name: "Ask" }));

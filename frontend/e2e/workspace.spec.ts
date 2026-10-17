@@ -14,11 +14,29 @@ test.beforeEach(async ({ page }) => {
 
 for (const demo of DEMOS) {
   test(`guided scenario: ${demo.title}`, async ({ page }) => {
-    const response = page.waitForResponse(r => r.url().endsWith("/api/v2/agent/runs") && r.request().method() === "POST");
+    // Chromium does not expose consumed SSE bodies through Network.getResponseBody.
+    // Observe a clone of the real fetch response without replacing its data or timing.
+    await page.evaluate(() => {
+      const observed = window as typeof window & { __streamText?: string };
+      const original = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const response = await original(input, init);
+        if (String(input).endsWith("/api/v2/agent/runs/stream")) {
+          void response.clone().text().then(text => { observed.__streamText = text; });
+        }
+        return response;
+      };
+    });
+    const response = page.waitForResponse(r => r.url().endsWith("/api/v2/agent/runs/stream") && r.request().method() === "POST");
     await page.getByRole("button", { name: new RegExp(demo.title) }).click();
     const http = await response;
     expect(http.ok()).toBeTruthy();
-    const run = await http.json();
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { __streamText?: string }).__streamText ?? "")).toContain("event: result");
+    const frames = (await page.evaluate(() => (window as typeof window & { __streamText: string }).__streamText)).split("\n\n");
+    expect(frames.some(frame => frame.startsWith("event: progress"))).toBeTruthy();
+    const final = frames.find(frame => frame.startsWith("event: result"));
+    expect(final).toBeTruthy();
+    const run = JSON.parse(final!.split("\ndata: ")[1]!);
     expect(run.patient_id).toBe(demo.patientId);
     expect(run.question).toBe(demo.question);
     expect(run.outcome).toBe("answered");

@@ -24,6 +24,10 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Lint
         run: ruff check .
+      - name: Type-check response contracts and new persistence/telemetry modules
+        run: mypy api/v2_schemas.py src/persistence/metadata.py src/persistence/retention.py src/observability.py --follow-imports=silent --ignore-missing-imports --check-untyped-defs
+      - name: Format new modules (preserve legacy formatting)
+        run: ruff format --check evaluation/readmission.py evaluation/readmission_drift.py evaluation/benchmark.py monitoring/drift_report.py src/agent/checkpoints.py src/persistence/metadata.py src/persistence/retention.py src/observability.py api/v2_schemas.py tests/test_agent_recovery.py tests/test_readmission_analysis.py tests/test_drift.py tests/test_retention.py tests/test_http_limits.py tests/test_metadata_contracts.py tests/test_observability.py api/agent_stream.py tests/test_agent_stream.py
       - name: Tests (includes the offline evaluation gate)
         run: pytest tests/ -q --basetemp="$RUNNER_TEMP/pytest"
       - name: Offline agent evaluation report
@@ -88,7 +92,7 @@ jobs:
       - name: Python dependency audit
         run: |
           pip install pip-audit==2.9.0
-          pip-audit -r requirements.txt --progress-spinner off || echo "::warning::pip-audit reported findings; review the log"
+          pip-audit -r requirements.txt --progress-spinner off
 
   docker:
     name: Container build and smoke test

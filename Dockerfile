@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CLINICAL_TRACE_DB_PATH=/app/var/clinical_trace.db
 WORKDIR /app
 RUN useradd --create-home --uid 10001 appuser
-COPY requirements.txt .
+COPY requirements.txt requirements-constraints.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=appuser:appuser . .
 COPY --from=frontend --chown=appuser:appuser /build/frontend/dist ./frontend/dist

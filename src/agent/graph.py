@@ -30,6 +30,7 @@ from src.agent.planner import MAX_TOOL_CALLS, Plan, deterministic_plan, detect_i
 from src.agent.tools import ToolContext, ToolResult, run_tool
 from src.safety.guards import GuardResult, classify_question
 from src.safety.verifier import EvidenceItem, verify_claims
+from src.observability import span as telemetry_span
 
 RECURSION_LIMIT = 40
 
@@ -84,7 +85,8 @@ CANCELLATION = _Cancellation()
 
 
 def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None,
-                checkpointer: Any = None, check_cancel: Callable[[], bool] | None = None) -> Any:
+                checkpointer: Any = None, check_cancel: Callable[[], bool] | None = None,
+                observer: Callable[[dict[str, Any]], None] | None = None) -> Any:
     """Compile a graph bound to one access context (session isolation by construction)."""
 
     def traced(name: str, fn: Callable[[AgentState], dict[str, Any]]) -> Callable[[AgentState], dict[str, Any]]:
@@ -93,10 +95,19 @@ def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None,
             if event.is_set() or (check_cancel is not None and check_cancel()):
                 raise CancelledRun(state["run_id"])
             started = time.perf_counter()
-            update = fn(state)
+            with telemetry_span("clinical.agent.node", {"run_id": state["run_id"], "node": name}) as current:
+                update = fn(state)
+                details = update.get("_span", {})
+                if current is not None:
+                    for key in ("tool", "ok", "error_type"):
+                        if details.get(key) is not None:
+                            current.set_attribute(key, details[key])
             span = {"node": name, "duration_ms": round((time.perf_counter() - started) * 1000, 2)}
             span.update(update.pop("_span", {}))
             update["trace"] = [*state.get("trace", []), span]
+            if observer is not None:
+                observer({"run_id": state["run_id"], **{k: v for k, v in span.items()
+                                                       if k in {"node", "duration_ms", "tool", "ok", "error_type"}}})
             return update
         return node
 

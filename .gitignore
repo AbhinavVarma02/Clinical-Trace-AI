@@ -56,3 +56,6 @@ frontend/dist-workspace/
 # Browser test artifacts (may contain synthetic record text)
 frontend/playwright-report/
 frontend/test-results/
+
+# Local Python static-check cache
+.mypy_cache/

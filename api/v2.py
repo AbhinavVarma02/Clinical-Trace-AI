@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.responses import StreamingResponse
 
 from api.v2_schemas import (
     AgentRunRequest,
@@ -29,6 +30,7 @@ from api.v2_schemas import (
     RunFeedbackRequest,
 )
 from src import config
+from src import observability
 from src.agent.tools import tool_catalog
 from src.clinical.risk_bridge import assess
 from src.persistence.db import utc_now
@@ -241,6 +243,15 @@ def agent_run(body: AgentRunRequest, ctx: AccessContext = Depends(access), rt: R
                         idempotency_key=idempotency_key)
 
 
+@router.post("/agent/runs/stream", response_class=StreamingResponse)
+async def agent_run_stream(request: Request, body: AgentRunRequest, ctx: AccessContext = Depends(access),
+                           rt: Runtime = Depends(runtime),
+                           idempotency_key: str | None = Header(None, min_length=1, max_length=128)) -> Any:
+    from api.agent_stream import stream_run
+
+    return await stream_run(request, body, ctx, rt, idempotency_key)
+
+
 @router.get("/agent/runs/{run_id}/status", response_model=RunStatusResponse)
 def agent_run_status(run_id: str, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
                      ) -> dict[str, Any]:
@@ -401,6 +412,7 @@ def ops_metrics(ctx: AccessContext = Depends(access), rt: Runtime = Depends(runt
         "retrieval": rt.index.stats(),
         "provider": rt.provider.describe() if rt.provider else {"provider": "none", "mode": "deterministic"},
         "execution": rt.agent.describe(),
+        "telemetry": observability.describe(),
         "rate_limit": RATE_LIMITER.describe(),
         "note": "Metrics are computed from requests served by this process since its database was created; "
                 "no values are simulated.",

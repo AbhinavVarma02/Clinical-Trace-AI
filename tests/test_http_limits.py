@@ -6,10 +6,12 @@ from api.middleware import MAX_BODY_BYTES, RequestContextMiddleware, TokenBucket
 
 def test_chunked_or_understated_body_is_rejected_before_app():
     async def probe(headers):
-        messages = iter([
-            {"type": "http.request", "body": b"x" * 20000, "more_body": True},
-            {"type": "http.request", "body": b"y" * 20000, "more_body": False},
-        ])
+        messages = iter(
+            [
+                {"type": "http.request", "body": b"x" * 20000, "more_body": True},
+                {"type": "http.request", "body": b"y" * 20000, "more_body": False},
+            ]
+        )
         sent, logs = [], []
 
         async def never_called(scope, receive, send):
@@ -22,8 +24,17 @@ def test_chunked_or_understated_body_is_rejected_before_app():
             sent.append(message)
 
         middleware = RequestContextMiddleware(never_called, lambda *args: logs.append(args))
-        await middleware({"type": "http", "method": "POST", "path": "/api/v2/agent/runs", "headers": headers,
-                          "client": ("body-test", 100)}, receive, send)
+        await middleware(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/v2/agent/runs",
+                "headers": headers,
+                "client": ("body-test", 100),
+            },
+            receive,
+            send,
+        )
         assert sent[0]["status"] == 413
         assert b"x-request-id" in dict(sent[0]["headers"])
         assert json.loads(sent[1]["body"])["error"]["code"] == "payload_too_large"
@@ -41,8 +52,12 @@ def test_spoofed_forwarded_header_cannot_reset_rate_limit(api_client):
     RATE_LIMITER._buckets.clear()
     RATE_LIMITER.limits["default"] = 2
     try:
-        responses = [api_client.get("/api/v2/patients", headers={"X-Demo-Persona": "clinician.demo",
-                                                               "X-Forwarded-For": f"203.0.113.{i}"}) for i in range(4)]
+        responses = [
+            api_client.get(
+                "/api/v2/patients", headers={"X-Demo-Persona": "clinician.demo", "X-Forwarded-For": f"203.0.113.{i}"}
+            )
+            for i in range(4)
+        ]
         assert [r.status_code for r in responses] == [200, 200, 429, 429]
         assert responses[-1].headers["x-request-id"] == responses[-1].json()["error"]["request_id"]
     finally:

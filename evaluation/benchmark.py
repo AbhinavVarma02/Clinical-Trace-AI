@@ -33,10 +33,12 @@ from src.runtime import build_runtime, set_runtime
 def benchmark(requests: int = 40, concurrency: tuple[int, ...] = (1, 4, 8)) -> dict:
     if requests < 1 or not concurrency or min(concurrency) < 1:
         raise ValueError("positive requests/concurrency are required")
-    scenarios = [("synthetic_p001", "Why was metformin stopped?"),
-                 ("synthetic_p002", "Is the smoking history consistent across notes?"),
-                 ("synthetic_p003", "What information is missing from this record?"),
-                 ("synthetic_p004", "How has the warfarin dose changed and what were the INR values?")]
+    scenarios = [
+        ("synthetic_p001", "Why was metformin stopped?"),
+        ("synthetic_p002", "Is the smoking history consistent across notes?"),
+        ("synthetic_p003", "What information is missing from this record?"),
+        ("synthetic_p004", "How has the warfarin dose changed and what were the INR values?"),
+    ]
     rows = []
     old_limits = RATE_LIMITER.limits.copy()
     RATE_LIMITER.limits.update(default=100000, agent=100000)
@@ -54,13 +56,17 @@ def benchmark(requests: int = 40, concurrency: tuple[int, ...] = (1, 4, 8)) -> d
                     def request(index):
                         patient, question = scenarios[index % len(scenarios)]
                         start = time.perf_counter()
-                        response = client.post("/api/v2/agent/runs", headers={"X-Demo-Persona": "clinician.demo"},
-                                               json={"patient_id": patient, "question": question})
+                        response = client.post(
+                            "/api/v2/agent/runs",
+                            headers={"X-Demo-Persona": "clinician.demo"},
+                            json={"patient_id": patient, "question": question},
+                        )
                         latency = (time.perf_counter() - start) * 1000
                         result = response.json()
                         isolated = response.status_code != 200 or (
                             result["patient_id"] == patient
-                            and all(e["patient_id"] == patient for e in result.get("evidence", [])))
+                            and all(e["patient_id"] == patient for e in result.get("evidence", []))
+                        )
                         return latency, response.status_code, result.get("outcome"), isolated
 
                     for count in concurrency:
@@ -70,16 +76,22 @@ def benchmark(requests: int = 40, concurrency: tuple[int, ...] = (1, 4, 8)) -> d
                         elapsed = time.perf_counter() - start
                         latencies = [r[0] for r in outcomes]
                         successful = [r[0] for r in outcomes if r[1] == 200]
-                        rows.append({"concurrency": count, "requests": requests, "elapsed_s": elapsed,
-                                     "offered_throughput_rps": requests / elapsed,
-                                     "successful_throughput_rps": len(successful) / elapsed,
-                                     "status_codes": dict(Counter(str(r[1]) for r in outcomes)),
-                                     "outcomes": dict(Counter(str(r[2]) for r in outcomes)),
-                                     "p50_ms": float(np.percentile(latencies, 50)),
-                                     "p95_ms": float(np.percentile(latencies, 95)),
-                                     "successful_p95_ms": float(np.percentile(successful, 95)) if successful else None,
-                                     "http_error_rate": sum(r[1] >= 400 for r in outcomes) / requests,
-                                     "isolation_violations": sum(not r[3] for r in outcomes)})
+                        rows.append(
+                            {
+                                "concurrency": count,
+                                "requests": requests,
+                                "elapsed_s": elapsed,
+                                "offered_throughput_rps": requests / elapsed,
+                                "successful_throughput_rps": len(successful) / elapsed,
+                                "status_codes": dict(Counter(str(r[1]) for r in outcomes)),
+                                "outcomes": dict(Counter(str(r[2]) for r in outcomes)),
+                                "p50_ms": float(np.percentile(latencies, 50)),
+                                "p95_ms": float(np.percentile(latencies, 95)),
+                                "successful_p95_ms": float(np.percentile(successful, 95)) if successful else None,
+                                "http_error_rate": sum(r[1] >= 400 for r in outcomes) / requests,
+                                "isolation_violations": sum(not r[3] for r in outcomes),
+                            }
+                        )
                     # Allocation profiling is separate so it does not distort latency results.
                     tracemalloc.start()
                     request(0)
@@ -93,15 +105,28 @@ def benchmark(requests: int = 40, concurrency: tuple[int, ...] = (1, 4, 8)) -> d
         RATE_LIMITER.limits.update(old_limits)
         RATE_LIMITER._buckets.clear()
     revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
-    return {"schema_version": 1, "generated_at": utc_now(), "source_commit": revision,
-            "environment": {"os": platform.system(), "python": platform.python_version(),
-                            "cpu_count": os.cpu_count(), "mode": "deterministic", "risk_model": "disabled"},
-            "runtime_initialization_ms": initialization_ms, "single_request_python_allocation_peak_bytes": allocation_peak,
-            "execution": diagnostics, "workloads": rows,
-            "limitations": ["In-process HTTP; no network/container/cold-process or live-inference claim.",
-                            "One run on local hardware; cache/warmup and scheduler affect timings.",
-                            "Python allocation peak excludes native libraries and total process RSS.",
-                            "HTTP errors include deliberate capacity rejection; successful latency is reported separately."]}
+    return {
+        "schema_version": 1,
+        "generated_at": utc_now(),
+        "source_commit": revision,
+        "environment": {
+            "os": platform.system(),
+            "python": platform.python_version(),
+            "cpu_count": os.cpu_count(),
+            "mode": "deterministic",
+            "risk_model": "disabled",
+        },
+        "runtime_initialization_ms": initialization_ms,
+        "single_request_python_allocation_peak_bytes": allocation_peak,
+        "execution": diagnostics,
+        "workloads": rows,
+        "limitations": [
+            "In-process HTTP; no network/container/cold-process or live-inference claim.",
+            "One run on local hardware; cache/warmup and scheduler affect timings.",
+            "Python allocation peak excludes native libraries and total process RSS.",
+            "HTTP errors include deliberate capacity rejection; successful latency is reported separately.",
+        ],
+    }
 
 
 def main() -> None:

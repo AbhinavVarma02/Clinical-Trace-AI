@@ -21,6 +21,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from src.observability import span
+
 logger = logging.getLogger("clinical_trace.http")
 MAX_BODY_BYTES = int(os.getenv("CLINICAL_TRACE_MAX_BODY_BYTES", str(32 * 1024)))
 BODY_TIMEOUT_S = 10.0
@@ -85,6 +87,15 @@ class RequestContextMiddleware:
             return
         request_id = str(uuid.uuid4())
         scope.setdefault("state", {})["request_id"] = request_id
+        request = Request(scope)
+        with span("clinical.http", {"request_id": request_id, "http.request.method": request.method},
+                  request.headers.get("traceparent")) as current:
+            if current is not None:
+                scope["state"]["trace_id"] = format(current.get_span_context().trace_id, "032x")
+            await self._http(scope, receive, send, current)
+
+    async def _http(self, scope: Scope, receive: Receive, send: Send, current: Any) -> None:
+        request_id = scope["state"]["request_id"]
         started = time.perf_counter()
         path = scope.get("path", "")
         protected = path.startswith(PROTECTED_PREFIXES)
@@ -97,6 +108,8 @@ class RequestContextMiddleware:
                 status_code = message["status"]
                 headers = MutableHeaders(scope=message)
                 headers["X-Request-ID"] = request_id
+                if scope["state"].get("trace_id"):
+                    headers["X-Trace-ID"] = scope["state"]["trace_id"]
                 headers["X-Content-Type-Options"] = "nosniff"
                 headers["Referrer-Policy"] = "no-referrer"
                 if path.startswith("/app") and not path.startswith("/app/assets/"):
@@ -156,10 +169,18 @@ class RequestContextMiddleware:
         finally:
             latency_ms = (time.perf_counter() - started) * 1000
             template = getattr(scope.get("route"), "path", None) or ("unmatched" if protected else "static")
+            if current is not None:
+                from opentelemetry.trace import StatusCode
+
+                current.set_attribute("http.route", template)
+                current.set_attribute("http.response.status_code", status_code)
+                if status_code >= 500:
+                    current.set_status(StatusCode.ERROR)
             if protected and self.request_logger is not None:
                 try:
                     self.request_logger(request_id, request.method, template, status_code, latency_ms)
                 except Exception:  # pragma: no cover - diagnostics never break a request
                     logger.error("request log write failed")
-            logger.info(json.dumps({"event": "http_request", "request_id": request_id, "route": template,
+            logger.info(json.dumps({"event": "http_request", "request_id": request_id,
+                                    "trace_id": scope["state"].get("trace_id"), "route": template,
                                     "status": status_code, "latency_ms": round(latency_ms, 2)}))

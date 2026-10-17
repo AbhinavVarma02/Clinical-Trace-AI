@@ -37,6 +37,7 @@ from src.retrieval.index import IsolationError
 from src.runtime import close_runtime, get_runtime
 from src.safety.policy import AuthorizationError
 from src.tracing import configure_langsmith
+from src import observability
 
 WORKSPACE_DIST = PROJECT_ROOT / "frontend" / "dist-workspace"
 
@@ -44,10 +45,12 @@ WORKSPACE_DIST = PROJECT_ROOT / "frontend" / "dist-workspace"
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_langsmith()
+    observability.configure()
     try:
         yield
     finally:
         close_runtime()
+        observability.shutdown()
 
 
 def _log_request(request_id: str, method: str, route: str, status_code: int, latency_ms: float) -> None:
