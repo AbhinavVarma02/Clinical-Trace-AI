@@ -425,3 +425,11 @@ npm run test:e2e
 ```
 
 The suite starts its own real API with a disposable database, no LLM calls, and unavailable model artifacts. Set `E2E_PYTHON` to a Python executable if needed (the existing `venv` is detected automatically). It covers all four guided scenarios, versioned citations, fresh questions, refusals, persona/session isolation, hash-bound review approval, themes, keyboard focus and desktop/tablet/mobile layouts. This verifies deterministic integration; real inference measurements remain separate. See [requirements reconciliation](docs/REQUIREMENTS_TRACEABILITY.md) and [readmission calibration audit](docs/READMISSION_ANALYSIS.md).
+
+### Clinical workspace screenshots
+
+Screenshots from real-backend browser verification (deterministic mode, synthetic records; model unavailable in the test configuration):
+
+![Clinical workspace, desktop light theme](docs/images/workspace-desktop-light.png)
+
+[Desktop dark theme](docs/images/workspace-desktop-dark.png) · [Mobile layout](docs/images/workspace-mobile-light.png)

@@ -36,3 +36,20 @@ python -m evaluation.run_eval
 python -m evaluation.run_eval --provider ollama --model qwen2.5:7b     # needs a local Ollama model
 cd frontend && npm ci && npm run check
 ```
+
+## Continued verification on 2026-10-17
+
+| Claim | Evidence | Scope |
+| --- | --- | --- |
+| Real frontend/backend integration | `frontend/e2e/workspace.spec.ts`: 24 passing Chromium cases across desktop/tablet/mobile | Deterministic, disposable DB, risk artifacts deliberately unavailable; actual LLM runs are separate |
+| Calibration/subgroup/errors | `evaluation/readmission.py`, `evaluation/results/readmission_report.json`, `tests/test_readmission_analysis.py` | Exact preserved split/model hashes, no training/threshold changes |
+| Drift diagnostics | `monitoring/drift_report.py`, `evaluation/results/readmission_drift.json`, `tests/test_drift.py` | Historical train/test comparison, not live or temporal drift |
+| Durable recovery | `tests/test_agent_recovery.py` | Real graph interruption after tool, DB reopen/resume, completed-tool replay avoided |
+| Retention | `tests/test_retention.py` | Transactional checkpoints/runs cleanup; active/review holds; dry-run by default |
+| Concurrency/latency | `evaluation/benchmark.py`, `evaluation/results/performance_local.json` | Real local in-process HTTP; saturation and errors disclosed |
+| Streamed body/rate limits | `tests/test_http_limits.py` | Headerless/understated oversized bodies, spoofed forwarded headers, bucket memory bound |
+| Response contracts/provenance | `tests/test_metadata_contracts.py` | OpenAPI/runtime agent schema, persisted index/evaluation aggregates, safe errors |
+| Persona changes during requests | `frontend/workspace/__tests__/workspace.test.tsx` | Old persona responses discarded; scoped data cleared |
+| UI screenshots | `docs/images/workspace-*.png` | Captured in passing real-backend tests; desktop dark/mobile light inspected |
+
+The previous Actions run 39074327485 passed at f4f785c, but its Python audit was advisory and reported six known findings in two packages. That run must not be described as vulnerability-free. Security remediation and new CI results are recorded separately.

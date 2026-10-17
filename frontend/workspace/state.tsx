@@ -131,10 +131,15 @@ export function useApi<T>(fetcher: () => Promise<T>, key: string, enabled = true
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [nonce, setNonce] = useState(0);
+  const scope = `${persona}:${key}:${nonce}:${enabled}`;
+  const [loadedScope, setLoadedScope] = useState("");
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
   useEffect(() => {
+    setData(null);
+    setError(null);
+    setLoadedScope(scope);
     if (!enabled) {
       setLoading(false);
       return;
@@ -160,5 +165,7 @@ export function useApi<T>(fetcher: () => Promise<T>, key: string, enabled = true
     };
   }, [key, persona, nonce, enabled]);
 
-  return { data, error, loading, reload: () => setNonce((n) => n + 1) };
+  const current = enabled && loadedScope === scope;
+  return { data: current ? data : null, error: current ? error : null,
+    loading: enabled && (!current || loading), reload: () => setNonce((n) => n + 1) };
 }

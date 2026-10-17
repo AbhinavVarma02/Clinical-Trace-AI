@@ -42,6 +42,9 @@ for (const demo of DEMOS) {
     await answer.getByRole("button", { name: /^Open evidence / }).first().click();
     const drawer = page.getByRole("dialog");
     await expect(drawer.getByText("Evidence text given to the verifier")).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Close panel" })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(drawer.getByRole("button", { name: "Close panel" })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(drawer).toBeHidden();
   });
@@ -90,11 +93,13 @@ test("submit, inspect, and approve an exact review artifact", async ({ page }) =
   await expect(page.getByText("Approval is valid for the exact artifact version shown.")).toBeVisible();
 });
 
-test("responsive navigation, keyboard focus, persisted themes, and real errors", async ({ page }) => {
+test("responsive navigation, keyboard focus, persisted themes, and real errors", async ({ page }, testInfo) => {
+  await page.screenshot({ path: testInfo.outputPath("overview-light.png"), fullPage: true, animations: "disabled" });
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.screenshot({ path: testInfo.outputPath("overview-dark.png"), fullPage: true, animations: "disabled" });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("button", { name: "Switch to light theme" }).click();

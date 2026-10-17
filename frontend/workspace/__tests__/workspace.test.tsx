@@ -42,6 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -144,6 +145,29 @@ describe("LabTrendChart", () => {
 });
 
 describe("App shell", () => {
+  it("discards an old persona's pending agent response", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    window.location.hash = "#/agent";
+    mockFetch((url) => {
+      if (url.endsWith("/system/status")) return STATUS;
+      if (url.endsWith("/personas")) return [
+        { persona_id: "clinician.demo", display_name: "Demo Clinician" },
+        { persona_id: "admin.demo", display_name: "Demo Administrator" },
+      ];
+      if (url.endsWith("/patients")) return [];
+      return {};
+    });
+    let resolveRun!: (run: ReturnType<typeof makeRun>) => void;
+    vi.spyOn(api, "runAgent").mockImplementation(() => new Promise((resolve) => { resolveRun = resolve; }));
+    render(<AppProvider><App /></AppProvider>);
+    await userEvent.type(screen.getByRole("textbox", { name: "Question" }), "Why was metformin stopped?");
+    await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Demo persona" }), "admin.demo");
+    await act(async () => resolveRun(makeRun()));
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Verified claims" })).not.toBeInTheDocument();
+  });
+
   it("renders the overview from live API data and navigates with the sidebar", async () => {
     mockFetch((url) => {
       if (url.endsWith("/system/status")) return STATUS;
