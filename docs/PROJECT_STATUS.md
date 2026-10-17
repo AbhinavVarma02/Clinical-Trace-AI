@@ -13,10 +13,11 @@
 | Hybrid retrieval | Implemented, benchmarked |
 | Safety, policy, review, audit | Implemented, tested, review flow checked in the browser |
 | Evaluation harness + CI gate | Implemented; deterministic gate passing |
-| React workspace (`/app`) | Implemented, unit-tested, checked in the browser (desktop, mobile width, light and dark) |
-| CI workflow, hardened Dockerfile | CI triggered by the branch push (first run's result: see GitHub Actions); container not built locally (Docker daemon not running) |
+| React workspace (`/app`) | 32 frontend unit tests; 24 real-backend Chromium E2E tests pass across desktop/tablet/mobile, including source-version resolution and review approval |
+| CI workflow, hardened Dockerfile | All four jobs passed in Actions run 39074327485 at f4f785c, independently verified; local Docker remains unavailable |
 | Public Hugging Face demo | Still v1; update **blocked** on owner approval |
-| ML enhancements (P5), advanced extensions (P13) | Not started |
+| ML enhancements (P5) | Calibration/subgroup audit measured without changing model: Brier 0.133610, ECE 0.190108; drift pending |
+| Advanced extensions (P13) | Pending stable core |
 
 Detailed task status: [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
 
@@ -45,14 +46,14 @@ Detailed task status: [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
 | --- | --- | --- |
 | BLK-001 | Updating the public Hugging Face Space would overwrite the working v1 demo | Approval to deploy (and to keep or retire the Streamlit landing page) |
 | BLK-002 | Live LLM inference in the public demo | Decision: in-container small model (slow/weak on free CPU) or a free hosted endpoint with a token stored as a Space secret |
-| BLK-003 | Container not built or smoke-tested locally; first CI run unconfirmed | Start Docker Desktop locally and build; review the first GitHub Actions run |
+| BLK-003 | Local Docker unavailable in WSL; CI container build/smoke passed | Enable Docker Desktop WSL integration for local image-size/cold-start measurements |
 
-## Pending tasks (not started)
+## Priority task results
 
 | ID | Task |
 | --- | --- |
-| CT-P05-T01 / T03 | Readmission model calibration (Brier, ECE, reliability bins, threshold sweep) and subgroup/error analysis, without retraining |
-| CT-P07-T02 | Playwright end-to-end smoke tests for the four guided demos, safety probe, persona scoping, review approval, mobile, themes |
+| CT-P05-T01 / T03 | VERIFIED: aggregate report and reproducible runner in `docs/READMISSION_ANALYSIS.md`; no model changes |
+| CT-P07-T02 | VERIFIED locally: 24 real-backend tests; new CI step added, remote execution pending |
 
 Other open roadmap items: P5 drift monitoring, durable checkpoints, streaming, reranking, PostgreSQL/pgvector, OpenTelemetry, image-size measurement, Hugging Face deployment, and P13 extensions — see the roadmap.
 
@@ -67,3 +68,7 @@ cd frontend && npm ci && npm run check
 ```
 
 Then continue with the "Next executable tasks" in the roadmap.
+
+## Requirements reconciliation
+
+Original specification mapped to existing implementation and remaining gates in [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). Core implementation is not yet complete. Public v1 remains unchanged; the separate reviewer-ready deployment/validation phase has not begun.

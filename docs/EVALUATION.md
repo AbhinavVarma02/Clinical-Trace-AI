@@ -103,3 +103,7 @@ Run feedback (`POST /api/v2/agent/runs/{id}/feedback`) is stored with a structur
 - Substring scoring under-credits correct paraphrases and over-credits answers that happen to contain the strings.
 - The lexical-support check in the verifier is a heuristic, not semantic entailment.
 - LLM numbers are for one machine and one quantisation; they will differ on the free hosted tier.
+
+## Readmission calibration and subgroup audit
+
+See [READMISSION_ANALYSIS.md](READMISSION_ANALYSIS.md) and the aggregate reproducible artifact. Held-out Brier 0.133610, ECE 0.190108; mean score 0.302015 versus prevalence 0.111908. Scores are poorly calibrated; no retraining or threshold change was made.

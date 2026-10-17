@@ -66,3 +66,7 @@ Outputs must be treated as model behavior demonstrations, not clinical evidence.
 ## Use inside the Clinical-Trace AI 2.0 workspace
 
 The workspace can show this model's output for a synthetic FHIR patient only when `src/clinical/risk_bridge.py` can map the record to the model's inputs (diabetes diagnosis, completed inpatient encounter with a discharge time, recorded medications). Two of the four synthetic patients qualify. Every such output is labelled out of distribution and lists the approximations: ICD-10 codes mapped to broad ICD-9 categories, laboratory counts derived from far fewer synthetic observations than UCI encounters contain, procedures set to zero, race unknown, and prior history limited to the synthetic record. The benchmark metrics above describe UCI held-out performance, not performance on synthetic records, and calibration on that population is unknown. Ineligible records return "model unavailable" with reasons rather than a prediction.
+
+## Readmission calibration and subgroup audit
+
+See [READMISSION_ANALYSIS.md](READMISSION_ANALYSIS.md) and the aggregate reproducible artifact. Held-out Brier 0.133610, ECE 0.190108; mean score 0.302015 versus prevalence 0.111908. Scores are poorly calibrated; no retraining or threshold change was made.
