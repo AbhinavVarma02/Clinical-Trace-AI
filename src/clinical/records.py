@@ -267,6 +267,9 @@ class ClinicalRecords:
     # ------------------------------------------------- missing information
     def missing_information(self, patient_id: str) -> list[dict[str, Any]]:
         """Deterministic documentation-completeness checks with cited sources."""
+        patient = self.store.get("Patient", patient_id)
+        if patient is None:
+            return []
         findings: list[dict[str, Any]] = []
         documents = self.documents(patient_id)
         discharge_encounters = {d["encounter"] for d in documents if d["type"] == "Discharge summary"}
@@ -287,8 +290,7 @@ class ClinicalRecords:
         if not self.medications(patient_id, include_history=False):
             findings.append({"category": "medication_list_missing", "severity": "high",
                              "message": "No medication orders are recorded for this patient.",
-                             "source": {"reference": f"Patient/{patient_id}", "version": None,
-                                        "last_updated": None, "synthetic": True}})
+                             "source": source_of(patient)})
         for doc in documents:
             text = (self.document_text(patient_id, doc["id"]) or {}).get("text", "").lower()
             for marker in ("[documentation incomplete]", "not documented", "not completed", "not listed"):

@@ -52,3 +52,7 @@ data/synthetic/
 # ===== Local runtime state (SQLite database, caches) =====
 var/
 frontend/dist-workspace/
+
+# Browser test artifacts (may contain synthetic record text)
+frontend/playwright-report/
+frontend/test-results/

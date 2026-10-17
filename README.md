@@ -411,3 +411,17 @@ See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the 2.0 platform. For the rea
 ## License
 
 MIT
+
+### Browser end-to-end checks
+
+After installing Python dependencies and building the frontend:
+
+```bash
+cd frontend
+npm ci
+npx playwright install chromium
+npm run build:workspace
+npm run test:e2e
+```
+
+The suite starts its own real API with a disposable database, no LLM calls, and unavailable model artifacts. Set `E2E_PYTHON` to a Python executable if needed (the existing `venv` is detected automatically). It covers all four guided scenarios, versioned citations, fresh questions, refusals, persona/session isolation, hash-bound review approval, themes, keyboard focus and desktop/tablet/mobile layouts. This verifies deterministic integration; real inference measurements remain separate. See [requirements reconciliation](docs/REQUIREMENTS_TRACEABILITY.md) and [readmission calibration audit](docs/READMISSION_ANALYSIS.md).
