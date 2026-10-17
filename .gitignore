@@ -45,3 +45,10 @@ monitoring/reports/*.json
 clinical-trace-ai-guide.md
 
 data/synthetic/
+
+# ===== Private local execution records (never published) =====
+.project-state/
+
+# ===== Local runtime state (SQLite database, caches) =====
+var/
+frontend/dist-workspace/
