@@ -61,6 +61,7 @@ export interface ModelSummary {
   risk_threshold: number;
   test_metrics: Record<string, number | null>;
   evaluation_protocol: string;
+  calibration?: { model_version: string; dataset: string; brier: number; ece: number; prevalence: number; mean_probability: number; rows: number } | null;
 }
 
 export interface PatientListItem {

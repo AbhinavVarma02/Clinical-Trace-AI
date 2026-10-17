@@ -18,7 +18,7 @@ POST /api/v2/agent/runs {patient_id, question, session_id?}
   5. result shaped (claims, evidence, tool calls, trace, inference label) and persisted
 ```
 
-Cancellation: every node checks a per-run event (`POST /agent/runs/{id}/cancel`). Exceptions inside the graph produce `outcome=error` with only the exception class recorded.
+Cancellation: every node checks owner-controlled persisted cancellation plus a per-run event (`POST /agent/runs/{id}/cancel`); running Python functions finish or time out cooperatively. Exceptions inside the graph produce `outcome=error` with only the exception class recorded.
 
 ### Graph state (`src/agent/graph.py::AgentState`)
 
@@ -56,6 +56,9 @@ A claim is accepted only if all hold:
 | `audit_event` | Policy decisions and governance actions (identifiers only) |
 | `feedback` | Structured run feedback |
 | `request_log` | Method, route template, status, latency for `/api/v2` and `/fhir` |
+| `checkpoints`, `writes` | LangGraph adapter-owned private node state/pending writes; no arbitrary pickle restoration |
+| `retrieval_manifest`, `retrieval_metadata` | Index/version/embedding identity and text-free chunk/source/hash provenance |
+| `evaluation_run` | Idempotent aggregate evaluation metadata, excluding case excerpts |
 
 ### Ingestion semantics
 
@@ -86,3 +89,5 @@ Decisions must present the artifact hash the reviewer saw; a mismatch returns 40
 ## Telemetry
 
 Request middleware assigns `X-Request-ID`, applies per-client token buckets (120 req/min; 20 agent runs/min, configurable) and a 32 KB body limit, and logs route templates and latency. Agent traces store node name, duration, tool name, success, evidence count, and error type — never record text. `/api/v2/ops/metrics` computes p50/p95 from these rows.
+
+Execution admission is bounded; exact idempotency-key retries return the stored artifact. Startup marks unfinished runs interrupted rather than automatically replaying them; owner-only resume validates source/dependency/inference/data fingerprints. Real progress uses SSE and verified result text arrives at completion. Optional local OpenTelemetry exports safe correlated HTTP/node spans. Retention and operational constraints are documented in RELIABILITY.md.

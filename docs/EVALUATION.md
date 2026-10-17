@@ -107,3 +107,9 @@ Run feedback (`POST /api/v2/agent/runs/{id}/feedback`) is stored with a structur
 ## Readmission calibration and subgroup audit
 
 See [READMISSION_ANALYSIS.md](READMISSION_ANALYSIS.md) and the aggregate reproducible artifact. Held-out Brier 0.133610, ECE 0.190108; mean score 0.302015 versus prevalence 0.111908. Scores are poorly calibrated; no retraining or threshold change was made.
+
+## Durable-runtime inference revalidation
+
+At committed source `6541d9b`, the already-downloaded local Ollama `qwen2.5:latest` (7B) was re-evaluated against all 42 locked cases without replacing historical reports. [llm_qwen2.5_7b_durable.json](../evaluation/results/llm_qwen2.5_7b_durable.json) records gate PASS, 35/42 cases, correctness 0.7391, unsupported draft-claim rate 0.2308 (rejected by verification), safety adherence 1.0 on the finite critical cases, and zero isolation/authorization violations. p50 2672.5 ms, p95 8018.02 ms; 34,513 prompt tokens and 5,014 completion tokens, no API charge. These are local hardware results, not free-CPU hosting latency or clinical validation. Lower LLM quality and fallback use remain visible; the 1.5B historical failure remains unchanged. No cloud-tagged Ollama model was called.
+
+Human agreement remains unmeasured. A complete-pair annotation validator and agreement runner are provided in `evaluation/review_agreement.py`; see [REVIEW_VALIDATION_PROTOCOL.md](REVIEW_VALIDATION_PROTOCOL.md). Its artificial unit-test labels are not reviewer evidence.

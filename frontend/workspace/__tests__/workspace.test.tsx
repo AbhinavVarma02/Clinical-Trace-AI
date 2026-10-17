@@ -7,6 +7,7 @@ import { AnswerCard } from "../components/AnswerCard";
 import { LabTrendChart } from "../components/charts";
 import { AppProvider } from "../state";
 import { makeRun } from "./fixtures";
+import { RiskPage } from "../pages/Risk";
 
 type Handler = (url: string, init?: RequestInit) => unknown;
 
@@ -159,6 +160,22 @@ describe("LabTrendChart", () => {
         points: [point(7.2, "2025-01-08T00:00:00Z", "o1"), point(9.4, "2025-10-15T00:00:00Z", "o16")] }} />,
     );
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("7.2 % on 2025-01-08; 9.4 % on 2025-10-15");
+  });
+});
+
+describe("calibration evidence", () => {
+  it("shows benchmark miscalibration separately from the individual estimate", async () => {
+    mockFetch(url => url.endsWith("/risk") ? {
+      available: true, patient_id: "synthetic_p001", encounter_id: "test",
+      prediction: { risk_probability: 0.4, readmission_risk: "high", risk_threshold: 0.3, model_version: "test", top_features: [] },
+      model: { model_type: "XGBoost", model_version: "test", test_metrics: {}, evaluation_protocol: "held out",
+        calibration: { dataset: "held-out UCI Diabetes benchmark", model_version: "test", brier: 0.13361, ece: 0.1901,
+          prevalence: 0.111908, mean_probability: 0.302015, rows: 19802 } },
+    } : []);
+    render(<AppProvider><RiskPage /></AppProvider>);
+    expect(await screen.findByText("Calibration and uncertainty")).toBeInTheDocument();
+    expect(screen.getByText(/Average model score 30.2% versus observed readmission rate 11.2%/)).toBeInTheDocument();
+    expect(screen.getByText(/No recalibration has been applied/)).toBeInTheDocument();
   });
 });
 

@@ -129,7 +129,9 @@ class RequestContextMiddleware:
                 if length and (len(length) > 10 or not length.isdigit() or int(length) > MAX_BODY_BYTES):
                     await reject(413, "payload_too_large", f"request body exceeds {MAX_BODY_BYTES} bytes or has invalid length")
                     return
-                bucket = "agent" if path.startswith("/api/v2/agent/runs") and request.method == "POST" else "default"
+                execution = path in {"/api/v2/agent/runs", "/api/v2/agent/runs/stream"} or (
+                    path.startswith("/api/v2/agent/runs/") and path.endswith("/resume"))
+                bucket = "agent" if execution and request.method == "POST" else "default"
                 # Uvicorn may set client from forwarded headers only for configured trusted proxies.
                 peer = request.client.host if request.client else "unknown"
                 allowed, retry_after = RATE_LIMITER.allow(peer, bucket)

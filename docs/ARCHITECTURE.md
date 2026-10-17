@@ -40,7 +40,7 @@ Clinical-Trace AI 2.0 is a **modular monolith**: one FastAPI process serves the 
 | Clinical data | `src/clinical/` | Synthetic generator, FHIR validation, versioned store, patient views, consistency checks, model-compatibility bridge, FHIR HTTP client. |
 | Retrieval | `src/retrieval/` | Section chunking, BM25, LSA embeddings, RRF fusion, cache, metrics. |
 | Governance | `src/governance/` | Artifact-versioned human review, audit log. |
-| Persistence | `src/persistence/db.py` | SQLite connection, migrations (4 versions). |
+| Persistence | `src/persistence/db.py` | SQLite connection, migrations (6 application versions). |
 | ML (v1) | `src/train.py`, `predict.py`, `explainability.py` … | Unchanged readmission pipeline. |
 | Evaluation | `evaluation/` | Datasets, runner, thresholds, results. |
 
@@ -64,4 +64,6 @@ See [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) for request flows and data models, and 
 | Rule-based deterministic composer | Fast, reproducible, verifiable | Narrow coverage; abstains outside intents |
 | Lexical-support verification | Cheap, explainable, catches off-topic text | Not semantic entailment; can reject valid paraphrases |
 | Header-selected demo personas | No login for a public synthetic demo | Not authentication |
-| No streaming | Answers only appear after verification | Long LLM runs show a progress state instead of tokens |
+| Progress streaming | Real node/tool progress over SSE; answers only after verification | Unverified draft tokens are never streamed |
+
+Durable checkpoints, explicit compatible resume, idempotency, cancellation ownership, retention and opt-in local OpenTelemetry are detailed in [RELIABILITY.md](RELIABILITY.md). Application migrations now include execution controls and persistent retrieval/evaluation metadata.

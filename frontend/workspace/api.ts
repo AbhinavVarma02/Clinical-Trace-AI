@@ -79,7 +79,7 @@ async function runAgentStream(
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Demo-Persona": currentPersona },
     body: JSON.stringify(body),
-  });
+  }).catch(() => { throw new ApiError(0, "network_error", "The API could not be reached. Check that the server is running."); });
   if (!response.ok) {
     const error = await response.json() as ApiErrorBody;
     throw new ApiError(response.status, error.error?.code ?? "stream_error",

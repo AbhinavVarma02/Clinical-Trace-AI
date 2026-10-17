@@ -27,7 +27,7 @@ jobs:
       - name: Type-check response contracts and new persistence/telemetry modules
         run: mypy api/v2_schemas.py src/persistence/metadata.py src/persistence/retention.py src/observability.py --follow-imports=silent --ignore-missing-imports --check-untyped-defs
       - name: Format new modules (preserve legacy formatting)
-        run: ruff format --check evaluation/readmission.py evaluation/readmission_drift.py evaluation/benchmark.py monitoring/drift_report.py src/agent/checkpoints.py src/persistence/metadata.py src/persistence/retention.py src/observability.py api/v2_schemas.py tests/test_agent_recovery.py tests/test_readmission_analysis.py tests/test_drift.py tests/test_retention.py tests/test_http_limits.py tests/test_metadata_contracts.py tests/test_observability.py api/agent_stream.py tests/test_agent_stream.py
+        run: ruff format --check evaluation/readmission.py evaluation/readmission_drift.py evaluation/benchmark.py monitoring/drift_report.py src/agent/checkpoints.py src/persistence/metadata.py src/persistence/retention.py src/observability.py api/v2_schemas.py tests/test_agent_recovery.py tests/test_readmission_analysis.py tests/test_drift.py tests/test_retention.py tests/test_http_limits.py tests/test_metadata_contracts.py tests/test_observability.py api/agent_stream.py tests/test_agent_stream.py evaluation/review_agreement.py tests/test_review_agreement.py src/clinical/model_audit.py tests/test_model_audit.py
       - name: Tests (includes the offline evaluation gate)
         run: pytest tests/ -q --basetemp="$RUNNER_TEMP/pytest"
       - name: Offline agent evaluation report

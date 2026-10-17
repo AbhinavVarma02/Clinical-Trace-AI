@@ -33,6 +33,7 @@ from src import config
 from src import observability
 from src.agent.tools import tool_catalog
 from src.clinical.risk_bridge import assess
+from src.clinical.model_audit import calibration_summary
 from src.persistence.db import utc_now
 from src.errors import NotFoundError
 from src.runtime import Runtime, get_runtime
@@ -97,6 +98,8 @@ def _model_summary() -> dict[str, Any]:
         "test_metrics": {k: metrics.get(k) for k in ("roc_auc", "pr_auc", "recall_positive", "precision_positive",
                                                      "specificity", "f1_positive", "f2_positive")},
         "evaluation_protocol": metadata.get("evaluation_protocol"),
+        "calibration": calibration_summary(config.PROJECT_ROOT / "evaluation/results/readmission_report.json",
+                                             config.MODEL_PATH, config.MODEL_METADATA_PATH),
     }
 
 

@@ -22,29 +22,29 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P4 | CT-P04-T02 | Input guards, injection flagging, output rules | TESTED | `src/safety/guards.py` |
 | P4 | CT-P04-T03 | Claim-level evidence verification | TESTED | `src/safety/verifier.py` |
 | P4 | CT-P04-T04 | Hash-bound human review workflow | VERIFIED | `src/governance/review.py`, `tests/test_api_v2.py`, browser check |
-| P4 | CT-P04-T05 | Rate/size limits, structured errors, container hardening | TESTED (container: IMPLEMENTED) | `api/middleware.py`, `Dockerfile` |
+| P4 | CT-P04-T05 | Rate/size limits, structured errors, container hardening | VERIFIED | HTTP tests and actual non-root container smoke in CI 39077304115 |
 | P5 | CT-P05-T01 | Calibration analysis, threshold report | VERIFIED | `docs/READMISSION_ANALYSIS.md`, aggregate artifact |
-| P5 | CT-P05-T02 | Data/prediction drift monitoring | VERIFIED on historical splits | `docs/DRIFT_MONITORING.md`, tests and aggregate artifact; no live/temporal claim |
+| P5 | CT-P05-T02 | Data/prediction drift monitoring | VERIFIED | VERIFIED on historical splits; `docs/DRIFT_MONITORING.md`, tests and aggregate artifact; no live/temporal claim |
 | P5 | CT-P05-T03 | Subgroup evaluation and error analysis | VERIFIED | `evaluation/readmission.py`, `tests/test_readmission_analysis.py` |
 | P6 | CT-P06-T01 | Versioned dev/held-out datasets, thresholds, runner | VERIFIED | `evaluation/` |
 | P6 | CT-P06-T02 | CI regression gate | TESTED | `tests/test_evaluation_gate.py` |
 | P6 | CT-P06-T03 | Feedback capture (no automatic learning) | TESTED | `POST /agent/runs/{id}/feedback` |
 | P7 | CT-P07-T01 | React workspace: 8 sections, light/dark, responsive | VERIFIED | `frontend/workspace/`, Vitest, browser checks |
-| P7 | CT-P07-T02 | Playwright end-to-end tests | VERIFIED locally | 24 Chromium tests across desktop/tablet/mobile; CI step pending remote execution |
+| P7 | CT-P07-T02 | Playwright end-to-end tests | VERIFIED | 24 Chromium tests across desktop/tablet/mobile; Linux CI 39077304115 passed |
 | P8 | CT-P08-T01 | v2 API, error contract, migrations, persistence | TESTED | `api/v2.py`, `src/persistence/db.py` |
 | P8 | CT-P08-T02 | PostgreSQL + pgvector backend | NOT_STARTED | ADR 0003 |
 | P9 | CT-P09-T01 | Request ids, request log, identifier-only traces, ops metrics | TESTED | `api/middleware.py`, `/api/v2/ops/metrics` |
 | P9 | CT-P09-T02 | OpenTelemetry exporter | TESTED | Local-only SDK exporter; trace correlation/content exclusion tests |
 | P10 | CT-P10-T01 | Latency measured per mode | VERIFIED | `docs/EVALUATION.md` |
 | P10 | CT-P10-T02 | Image size / cold start measurement | BLOCKED | Docker daemon not running locally |
-| P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | VERIFIED at f4f785c | Actions 39074327485: all four jobs passed; subsequent E2E additions pending CI |
-| P11 | CT-P11-T02 | Hugging Face Space update to 2.0 | BLOCKED | Owner approval required |
-| P12 | CT-P12-T01 | Architecture, API, safety, evaluation, deployment, limitations docs | IMPLEMENTED | `docs/` |
+| P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | VERIFIED | VERIFIED at 6541d9b; Actions 39077304115: all four jobs passed including real E2E, audit and container smoke |
+| P11 | CT-P11-T02 | Separate 2.0 public deployment and external validation | BLOCKED | Future phase; preserve existing HF v1 unchanged; approval/credentials required |
+| P12 | CT-P12-T01 | Architecture, API, safety, evaluation, deployment, limitations docs | VERIFIED | `docs/` |
 | P13 | CT-P13-T01 | Sequence model vs tabular baseline | NOT_STARTED | — |
 | P13 | CT-P13-T02 | Neural general vs biomedical embedding comparison | NOT_STARTED | needs model downloads (free) and benchmark time |
 | P13 | CT-P13-T03 | Simulated SMART on FHIR launch | NOT_STARTED | — |
 | P13 | CT-P13-T04 | Local Kubernetes (kind) manifests | NOT_STARTED | — |
-| P13 | CT-P13-T05 | Concurrency / load tests | NOT_STARTED | — |
+| P13 | CT-P13-T05 | Concurrency / load tests | VERIFIED | VERIFIED bounded local workload; deeper stress pending; 40 requests at 1/4/8 concurrency; no native-memory/replica/large-corpus claim |
 
 ## Reconciled requirements
 
@@ -54,23 +54,25 @@ See [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). The following 
 | --- | --- | --- | --- | --- |
 | P4 | CT-P04-T06 | Configurable retention of sessions, checkpoints, traces, audit and feedback | TESTED | `tests/test_retention.py`, explicit CLI with holds |
 | P4 | CT-P04-T07 | Streaming request-size enforcement and trusted-proxy rate-limit identity | TESTED | Actual bytes, body timeout, peer-based bucket, memory bound; HTTP tests |
-| P6 | CT-P06-T04 | Recovery/failure evaluations and human-review agreement protocol | NOT_STARTED | Actual reviewer annotations required for agreement claims |
-| P7 | CT-P07-T03 | Tablet, loading/empty/error and keyboard QA, representative screenshots | NOT_STARTED | P7-T02 |
+| P6 | CT-P06-T04 | Recovery/failure evaluations and human-review agreement protocol | TESTED | TESTED; human agreement unmeasured; Recovery/provider-outage tests; paired annotation validator; real annotations required |
+| P7 | CT-P07-T03 | Tablet, loading/empty/error and keyboard QA, representative screenshots | TESTED | TESTED; representative views inspected; Real browser states, focus, stream tests and `docs/images`; broader manual release QA remains in validation phase |
 | P8 | CT-P08-T03 | Persist retrieval/index and evaluation metadata with reproducible migrations | TESTED | Migration6, metadata-contract tests; resources/runs/reviews unchanged |
-| P8 | CT-P08-T04 | Typed response contracts, API contract validation, Python type checks | TESTED (scoped) | Agent/retrieval/status response schemas, contract tests; mypy covers four new modules |
+| P8 | CT-P08-T04 | Typed response contracts, API contract validation, Python type checks | TESTED | TESTED (scoped); Agent/retrieval/status response schemas, contract tests; mypy covers four new modules |
 | P9 | CT-P09-T03 | Controlled concurrency, restart recovery, cancellation ownership, graceful shutdown | TESTED | `tests/test_agent_recovery.py`, `docs/RELIABILITY.md` |
 | P9 | CT-P09-T04 | Token/retry/cache/cost diagnostic completeness | TESTED | Provider retry/token/circuit/local-cost counters; cache stats retained; hosted costs unknown |
-| P10 | CT-P10-T03 | Reproducible throughput, memory, startup and bundle measurements | VERIFIED locally (partial memory scope) | `evaluation/results/performance_local.json`; excludes native RSS/container startup |
-| P11 | CT-P11-T03 | Review dependency audit findings and explicit security gate policy | VERIFIED locally | Patched constrained runtime: 144 packages / no known findings; mandatory CI audit |
-| P11 | CT-P11-T04 | Reproducible Python constraints, formatter/type/contract CI coverage | TESTED locally; Linux CI pending | Exact roots/transitive snapshot; scoped formatter/mypy gates |
-| P12 | CT-P12-T02 | Core evidence reconciliation and final reviewer-ready recovery handoff | IN_PROGRESS | Do not declare completion with open core gates |
+| P10 | CT-P10-T03 | Reproducible throughput, memory, startup and bundle measurements | VERIFIED | VERIFIED locally (partial memory scope); `evaluation/results/performance_local.json`; excludes native RSS/container startup |
+| P11 | CT-P11-T03 | Review dependency audit findings and explicit security gate policy | VERIFIED | VERIFIED locally; Patched constrained runtime: 144 packages / no known findings; mandatory CI audit |
+| P11 | CT-P11-T04 | Reproducible Python constraints, formatter/type/contract CI coverage | VERIFIED | VERIFIED at 6541d9b; Exact roots/transitive snapshot; Linux CI scoped formatter/mypy/security gates passed |
+| P12 | CT-P12-T02 | Core evidence reconciliation and final reviewer-ready recovery handoff | VERIFIED | docs/VALIDATION_HANDOFF.md; local/CI/LLM evidence and visible remaining release gates |
 | P13 | CT-P13-T06 | Structured referral/discharge ingestion, provenance, extraction uncertainty | NOT_STARTED | P4 safe parsing; stable core |
+| P6 | CT-P06-T05 | Independent paired human-review assessment | BLOCKED | No real reviewer annotations; protocol/runner implemented, no agreement claim |
+| P13 | CT-P13-T07 | Extended native-memory, long-duration, replica/large-corpus stress experiments | NOT_STARTED | Bounded local workload already measured; extension beyond core acceptance |
 
-## Next executable tasks (in order)
+## Next phase and remaining dependencies
 
-1. CI run 39074327485: all four jobs passed, independently verified 2026-10-17. Preserve this historical evidence.
-2. Start Docker locally, build the image, and record size and cold-start time (CT-P10-T02).
-3. Playwright real-backend smoke tests for guided demos (CT-P07-T02, IN_PROGRESS).
-4. Readmission model calibration and subgroup report (P5).
-5. Neural embedding comparison (CT-P13-T02).
-6. Hugging Face Space update after approval (CT-P11-T02).
+1. Follow the separate [reviewer-ready validation handoff](VALIDATION_HANDOFF.md); pin branch HEAD, confirm its current CI and repeat external-user checks when a 2.0 target is authorized.
+2. Verify the local Docker daemon/WSL integration only when available; then measure image size, native memory and true container/process cold start. Do not substitute in-process timings.
+3. Select and measure a truly free public inference configuration; local 7B gate passage is insufficient evidence for free-CPU hosting.
+4. Collect independent human annotations only with real reviewers; use the paired rubric/runner without fabricating agreement.
+5. Advanced extensions remain dependency-gated and conditional: no timestamp invention for sequence models; predeclare a larger independent retrieval benchmark before embedding/reranking selection; keep SMART launch simulated and kind optional; implement structured document extraction with provenance/uncertainty. PostgreSQL/pgvector remains optional under ADR 0003 for the current 117-chunk corpus.
+6. Preserve HF v1, default branch, private files and current model artifacts throughout. No merge, paid service or public overwrite is authorized.
