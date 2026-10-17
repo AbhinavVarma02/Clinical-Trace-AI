@@ -117,7 +117,7 @@ def chunk_patient(records: ClinicalRecords, patient_id: str, flagger: Any = None
     for enc in records.encounters(patient_id):
         stay = f", length of stay {enc['length_of_stay_days']} days" if enc["length_of_stay_days"] is not None else \
             ", no end time recorded"
-        text = (f"{enc['class_display']} encounter for {enc['reason']} starting {(enc['start'] or '')[:10]}"
+        text = (f"{enc['class_display'].removesuffix(' encounter')} encounter for {enc['reason']} starting {(enc['start'] or '')[:10]}"
                 f"{stay}.")
         add(chunk_id=f"{enc['id']}@v{enc['source']['version']}", source_ref=enc["source"]["reference"],
             source_version=enc["source"]["version"], source_type="Encounter", title=enc["reason"],

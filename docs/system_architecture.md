@@ -1,5 +1,7 @@
 # System Architecture
 
+> Clinical-Trace AI 2.0 adds the clinical workspace, agent, retrieval, and governance layers. See [ARCHITECTURE.md](ARCHITECTURE.md) and [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md); this page describes the original readmission pipeline, which is unchanged.
+
 ```text
 data/raw/diabetic_data.csv
         |

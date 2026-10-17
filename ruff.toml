@@ -1,0 +1,16 @@
+# Lint configuration (ruff). Run: ruff check .
+line-length = 120
+target-version = "py312"
+extend-exclude = ["venv", "notebooks", "frontend", "mlruns", "var"]
+
+[lint]
+select = ["E", "F", "W", "B"]
+ignore = ["E501", "B905"]
+
+[lint.flake8-bugbear]
+# FastAPI dependency declarations are evaluated once by design.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query"]
+
+[lint.per-file-ignores]
+# The Streamlit entry point adjusts sys.path before importing project modules.
+"dashboard/app.py" = ["E402"]
