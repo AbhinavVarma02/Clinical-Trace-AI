@@ -1,0 +1,19 @@
+{"id": "r-001", "split": "dev", "patient_id": "synthetic_p001", "query": "why was metformin stopped", "relevant": ["DocumentReference/p001-d3", "MedicationRequest/p001-m1", "DocumentReference/p001-d5"]}
+{"id": "r-002", "split": "dev", "patient_id": "synthetic_p001", "query": "missed follow-up visit transportation", "relevant": ["DocumentReference/p001-d4"]}
+{"id": "r-003", "split": "dev", "patient_id": "synthetic_p001", "query": "BNP on admission in January", "relevant": ["Observation/p001-o3", "DocumentReference/p001-d1"]}
+{"id": "r-004", "split": "dev", "patient_id": "synthetic_p002", "query": "smoking status", "relevant": ["DocumentReference/p002-d1", "DocumentReference/p002-d2", "DocumentReference/p002-d3", "Observation/p002-o4"]}
+{"id": "r-005", "split": "dev", "patient_id": "synthetic_p002", "query": "prednisone course for exacerbation", "relevant": ["DocumentReference/p002-d2", "MedicationRequest/p002-m3"]}
+{"id": "r-006", "split": "dev", "patient_id": "synthetic_p004", "query": "INR above target dose reduced", "relevant": ["DocumentReference/p004-d1", "MedicationRequest/p004-m1", "Observation/p004-o3"]}
+{"id": "r-007", "split": "dev", "patient_id": "synthetic_p003", "query": "home glucose readings", "relevant": ["DocumentReference/p003-d1"]}
+{"id": "r-101", "split": "heldout", "patient_id": "synthetic_p001", "query": "potassium high lisinopril held", "relevant": ["DocumentReference/p001-d4", "Observation/p001-o15"]}
+{"id": "r-102", "split": "heldout", "patient_id": "synthetic_p001", "query": "patient missing evening doses adherence", "relevant": ["DocumentReference/p001-d2"]}
+{"id": "r-103", "split": "heldout", "patient_id": "synthetic_p001", "query": "daily weights at home after discharge", "relevant": ["DocumentReference/p001-d1"]}
+{"id": "r-104", "split": "heldout", "patient_id": "synthetic_p001", "query": "specialist review of diabetes regimen with reduced kidney function", "relevant": ["DocumentReference/p001-d5"]}
+{"id": "r-105", "split": "heldout", "patient_id": "synthetic_p002", "query": "lung function decline FEV1", "relevant": ["Observation/p002-o1", "Observation/p002-o5", "DocumentReference/p002-d3", "DocumentReference/p002-d1"]}
+{"id": "r-106", "split": "heldout", "patient_id": "synthetic_p002", "query": "low oxygen in the emergency department", "relevant": ["Observation/p002-o3", "DocumentReference/p002-d2"]}
+{"id": "r-107", "split": "heldout", "patient_id": "synthetic_p002", "query": "pulmonary rehabilitation referral", "relevant": ["DocumentReference/p002-d4", "DocumentReference/p002-d3"]}
+{"id": "r-108", "split": "heldout", "patient_id": "synthetic_p003", "query": "medication reconciliation not completed", "relevant": ["DocumentReference/p003-d2"]}
+{"id": "r-109", "split": "heldout", "patient_id": "synthetic_p003", "query": "allergy documentation", "relevant": ["DocumentReference/p003-d1"]}
+{"id": "r-110", "split": "heldout", "patient_id": "synthetic_p004", "query": "nosebleed and dark stools", "relevant": ["DocumentReference/p004-d2"]}
+{"id": "r-111", "split": "heldout", "patient_id": "synthetic_p004", "query": "low INR after missed doses", "relevant": ["DocumentReference/p004-d3", "Observation/p004-o6"]}
+{"id": "r-112", "split": "heldout", "patient_id": "synthetic_p004", "query": "antibiotic interaction", "relevant": ["DocumentReference/p004-d1"]}
