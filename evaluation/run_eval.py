@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 import warnings
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -183,7 +184,7 @@ def aggregate(records: list[dict[str, Any]], provider: OpenAICompatibleProvider 
         "fallback_rate": round(sum(1 for r in records if r.get("fallback_used")) / len(records), 4),
         "latency_p50_ms": percentile([r["latency_ms"] for r in records], 50),
         "latency_p95_ms": percentile([r["latency_ms"] for r in records], 95),
-        "estimated_cost_usd": 0.0,
+        "estimated_cost_usd": provider.describe().get("estimated_cost_usd") if provider else 0.0,
         "token_usage": ({"prompt": provider.prompt_tokens, "completion": provider.completion_tokens}
                         if provider else None),
     }
@@ -263,51 +264,57 @@ def git_commit() -> str | None:
 
 
 def run(provider_kind: str = "none", model: str | None = None, base_url: str | None = None,
-        write: bool = True) -> dict[str, Any]:
+        write: bool = True, database: Path | None = None) -> dict[str, Any]:
     provider = None
     if provider_kind != "none":
         provider = OpenAICompatibleProvider(base_url or "http://127.0.0.1:11434/v1", model or "qwen2.5:1.5b",
                                             provider_kind, timeout_s=120)
-    rt = build_runtime(":memory:", provider=provider, enable_model=True)
-    cases = [{**c, "split": "dev"} for c in load_jsonl(DATASETS / "agent_dev_v1.jsonl")]
-    cases += [{**c, "split": "heldout"} for c in load_jsonl(DATASETS / "agent_heldout_v1.jsonl")]
-    records = [score_case(rt, case) for case in cases]
-    mode = "llm" if provider else "deterministic"
-    summary = {split: aggregate([r for r in records if split == "all" or r["split"] == split], provider)
-               for split in ("dev", "heldout", "all")}
-    retrieval = evaluate_retrieval(rt)
-    gate = check_gate(summary["all"], retrieval, mode)
-    report = {
-        "run_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "git_commit": git_commit(),
-        "dataset_version": DATASET_VERSION,
-        "mode": mode,
-        "provider": provider.describe() if provider else None,
-        "readmission_model_loaded": rt.model_available,
-        "environment": {"python": platform.python_version(), "platform": platform.system()},
-        "scoring": "deterministic rule-based checks against versioned synthetic cases (no LLM judge, no human "
-                   "ratings)",
-        "summary": summary,
-        "retrieval": retrieval,
-        "gate": gate,
-        "cases": records,
-    }
-    if write:
-        RESULTS.mkdir(parents=True, exist_ok=True)
-        name = "latest.json" if mode == "deterministic" else f"llm_{(model or 'model').replace(':', '_')}.json"
-        (RESULTS / name).write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
-        with (RESULTS / "history.jsonl").open("a", encoding="utf-8") as history:
-            history.write(json.dumps({
-                "run_at": report["run_at"], "git_commit": report["git_commit"], "mode": mode,
-                "model": provider.model if provider else None, "gate_passed": gate["passed"],
-                "outcome_accuracy": summary["all"]["outcome_accuracy"],
-                "answer_correctness": summary["all"]["answer_correctness"],
-                "safety_adherence": summary["all"]["safety_adherence"],
-                "unsupported_claim_rate": summary["all"]["unsupported_claim_rate"],
-                "hybrid_recall_at_5": retrieval["modes"]["hybrid"]["all"]["recall_at_5"],
-                "latency_p50_ms": summary["all"]["latency_p50_ms"],
-            }) + "\n")
-    return report
+    with closing(build_runtime(":memory:", provider=provider, enable_model=True)) as rt:
+        cases = [{**c, "split": "dev"} for c in load_jsonl(DATASETS / "agent_dev_v1.jsonl")]
+        cases += [{**c, "split": "heldout"} for c in load_jsonl(DATASETS / "agent_heldout_v1.jsonl")]
+        records = [score_case(rt, case) for case in cases]
+        mode = "llm" if provider else "deterministic"
+        summary = {split: aggregate([r for r in records if split == "all" or r["split"] == split], provider)
+                   for split in ("dev", "heldout", "all")}
+        retrieval = evaluate_retrieval(rt)
+        gate = check_gate(summary["all"], retrieval, mode)
+        report = {
+            "run_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "git_commit": git_commit(),
+            "dataset_version": DATASET_VERSION,
+            "mode": mode,
+            "provider": provider.describe() if provider else None,
+            "readmission_model_loaded": rt.model_available,
+            "environment": {"python": platform.python_version(), "platform": platform.system()},
+            "scoring": "deterministic rule-based checks against versioned synthetic cases (no LLM judge, no human "
+                       "ratings)",
+            "summary": summary,
+            "retrieval": retrieval,
+            "gate": gate,
+            "cases": records,
+        }
+        if write:
+            RESULTS.mkdir(parents=True, exist_ok=True)
+            name = "latest.json" if mode == "deterministic" else f"llm_{(model or 'model').replace(':', '_')}.json"
+            (RESULTS / name).write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+            with (RESULTS / "history.jsonl").open("a", encoding="utf-8") as history:
+                history.write(json.dumps({
+                    "run_at": report["run_at"], "git_commit": report["git_commit"], "mode": mode,
+                    "model": provider.model if provider else None, "gate_passed": gate["passed"],
+                    "outcome_accuracy": summary["all"]["outcome_accuracy"],
+                    "answer_correctness": summary["all"]["answer_correctness"],
+                    "safety_adherence": summary["all"]["safety_adherence"],
+                    "unsupported_claim_rate": summary["all"]["unsupported_claim_rate"],
+                    "hybrid_recall_at_5": retrieval["modes"]["hybrid"]["all"]["recall_at_5"],
+                    "latency_p50_ms": summary["all"]["latency_p50_ms"],
+                }) + "\n")
+        if database is not None:
+            from src.persistence.db import Database
+            from src.persistence.metadata import record_evaluation
+
+            with closing(Database(database)) as metadata_db:
+                record_evaluation(metadata_db, report)
+        return report
 
 
 def main() -> int:
@@ -316,8 +323,9 @@ def main() -> int:
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--database", type=Path, help="optional SQLite destination for aggregate evaluation metadata")
     args = parser.parse_args()
-    report = run(args.provider, args.model, args.base_url, write=not args.no_write)
+    report = run(args.provider, args.model, args.base_url, write=not args.no_write, database=args.database)
     overall = report["summary"]["all"]
     print(json.dumps({k: overall[k] for k in ("cases", "passed", "outcome_accuracy", "answer_correctness",
                                               "tool_selection_correctness", "safety_adherence",

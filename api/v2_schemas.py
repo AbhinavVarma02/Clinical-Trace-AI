@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,3 +46,108 @@ class RunFeedbackRequest(BaseModel):
     category: Literal["incorrect", "unsupported", "missing_evidence", "unsafe", "helpful", "other"]
     rating: Optional[int] = Field(None, ge=1, le=5)
     comment: Optional[str] = Field(None, max_length=1000)
+
+
+class ResponseContract(BaseModel):
+    model_config = ConfigDict(extra="allow", strict=True)
+
+
+class ClaimResponse(ResponseContract):
+    text: str
+    citations: list[str]
+
+
+class AnswerResponse(ResponseContract):
+    summary: str | None
+    claims: list[ClaimResponse]
+    rejected_claims: list[ClaimResponse]
+    uncertainty: list[str]
+    abstain_reason: str | None
+
+
+class EvidenceResponse(ResponseContract):
+    evidence_id: str
+    patient_id: str
+    source_ref: str
+    source_version: str
+    text: str
+    kind: str
+    title: str
+    date: str
+    flags: list[str]
+    scores: dict[str, float | int | None] | None
+    cited: bool
+
+
+class InferenceResponse(ResponseContract):
+    mode: Literal["deterministic", "llm"]
+    planner: str | None
+    composer: str | None
+    fallback_used: bool
+    llm_attempt: dict[str, Any] | None
+    provider: dict[str, Any] | None
+    label: str
+
+
+class ReviewGateResponse(ResponseContract):
+    required: bool
+    reasons: list[str]
+
+
+class ToolCallResponse(ResponseContract):
+    tool: str
+    ok: bool
+    evidence_count: int = Field(ge=0)
+    error_type: str | None
+    error: str | None
+    latency_ms: float = Field(ge=0)
+    args: dict[str, Any]
+
+
+class AgentRunResponse(ResponseContract):
+    run_id: str
+    session_id: str
+    patient_id: str
+    question: str
+    outcome: Literal["answered", "abstained", "refused", "cancelled", "error"]
+    answer: AnswerResponse
+    refusal: dict[str, str] | None
+    evidence: list[EvidenceResponse]
+    risk: dict[str, Any] | None
+    plan: dict[str, Any] | None
+    tool_calls: list[ToolCallResponse]
+    verification: dict[str, Any] | None
+    review: ReviewGateResponse
+    inference: InferenceResponse
+    trace: list[dict[str, Any]]
+    error: str | None
+    latency_ms: float = Field(ge=0)
+    created_at: str
+    disclaimer: str
+
+
+class RunStatusResponse(ResponseContract):
+    run_id: str
+    session_id: str
+    status: Literal["running", "interrupted", "completed", "failed", "cancelled"]
+    outcome: str | None
+    cancel_requested: bool
+    resume_count: int = Field(ge=0, le=3)
+
+
+class RetrievalHitResponse(ResponseContract):
+    chunk_id: str
+    patient_id: str
+    source_ref: str
+    source_version: str
+    content_hash: str
+    text: str
+    scores: dict[str, float | int | None]
+
+
+class RetrievalResponse(ResponseContract):
+    patient_id: str
+    query: str
+    mode: Literal["bm25", "dense", "hybrid"]
+    results: list[RetrievalHitResponse]
+    diagnostics: dict[str, Any]

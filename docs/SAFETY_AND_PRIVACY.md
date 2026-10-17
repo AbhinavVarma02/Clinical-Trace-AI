@@ -61,3 +61,9 @@ Outputs that include a model risk estimate, inconsistencies, injected text, part
 ## Retention
 
 The SQLite database (`var/clinical_trace.db`) holds only synthetic data and demo activity. Deleting the file resets all runs, reviews, and audit history; the fixture is re-ingested on start. On the hosted demo the database lives in ephemeral container storage and resets on restart.
+
+## Request and session hardening
+
+The HTTP layer caps actual protected request bytes before parsing (including absent or understated Content-Length), enforces a body-arrival time budget, limits bucket memory, and logs rejected requests with server-generated request IDs and safe route categories. Rate-limit identity uses the ASGI peer. Configure trusted proxy addresses explicitly in Uvicorn; never accept arbitrary forwarded headers from public clients. Buckets remain process-local.
+
+V2 schema errors use the error contract without echoing invalid input. Browser persona changes remount page state and scoped fetches hide stale data immediately; late agent responses from a previous persona cannot appear in the current context. Evidence drawers contain keyboard focus and restore the invoking focus on close. Durable checkpoints contain synthetic source state; diagnostic traces do not. See RELIABILITY.md for retention holds and restart constraints.

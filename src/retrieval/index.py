@@ -84,6 +84,16 @@ class RetrievalIndex:
             self._cache.clear()
             self.version = digest.hexdigest()[:12]
             self.built_at = time.time()
+            # Store reconstructable provenance metadata, never source text/vectors.
+            from src.persistence.db import utc_now
+
+            with self.records.store.db.transaction() as conn:
+                conn.execute("INSERT OR IGNORE INTO retrieval_manifest VALUES (?,?,?,?)",
+                             (self.version, embedder.name, sum(len(c) for c in patient_chunks.values()), utc_now()))
+                for chunks in patient_chunks.values():
+                    conn.executemany("INSERT OR IGNORE INTO retrieval_metadata VALUES (?,?,?,?,?,?)",
+                                     [(self.version, c.chunk_id, c.patient_id, c.source_ref,
+                                       c.source_version, c.content_hash) for c in chunks])
 
     def refresh(self, _changed_patients: set[str] | None = None) -> None:
         """Rebuild after ingestion. The corpus is small, so a full refit keeps embeddings consistent."""
