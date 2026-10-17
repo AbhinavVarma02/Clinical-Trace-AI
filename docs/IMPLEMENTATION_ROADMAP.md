@@ -24,7 +24,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P4 | CT-P04-T04 | Hash-bound human review workflow | VERIFIED | `src/governance/review.py`, `tests/test_api_v2.py`, browser check |
 | P4 | CT-P04-T05 | Rate/size limits, structured errors, container hardening | TESTED (container: IMPLEMENTED) | `api/middleware.py`, `Dockerfile` |
 | P5 | CT-P05-T01 | Calibration analysis, threshold report | VERIFIED | `docs/READMISSION_ANALYSIS.md`, aggregate artifact |
-| P5 | CT-P05-T02 | Data/prediction drift monitoring (`monitoring/drift_report.py` is a placeholder) | NOT_STARTED | — |
+| P5 | CT-P05-T02 | Data/prediction drift monitoring | VERIFIED on historical splits | `docs/DRIFT_MONITORING.md`, tests and aggregate artifact; no live/temporal claim |
 | P5 | CT-P05-T03 | Subgroup evaluation and error analysis | VERIFIED | `evaluation/readmission.py`, `tests/test_readmission_analysis.py` |
 | P6 | CT-P06-T01 | Versioned dev/held-out datasets, thresholds, runner | VERIFIED | `evaluation/` |
 | P6 | CT-P06-T02 | CI regression gate | TESTED | `tests/test_evaluation_gate.py` |
