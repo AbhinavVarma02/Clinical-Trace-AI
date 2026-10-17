@@ -95,7 +95,7 @@ def runtime():
     set_runtime(rt)
     yield rt
     set_runtime(None)
-    rt.db.close()
+    rt.close()
 
 
 @pytest.fixture()

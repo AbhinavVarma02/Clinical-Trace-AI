@@ -103,3 +103,7 @@ Supported types: Patient, Encounter, Condition, Observation, MedicationRequest, 
 ## v1 (unchanged)
 
 `GET /`, `GET /health`, `GET /model-info`, `POST /predict`, `POST /explain`, `POST /feedback` — see the README.
+
+## Durable execution controls
+
+`POST /api/v2/agent/runs` accepts an optional `Idempotency-Key` header (1–128 characters). `GET /api/v2/agent/runs/{id}/status`, `POST /api/v2/agent/runs/{id}/resume` and cancellation are owner-only. Resume returns 409 for incompatible/completed/uncheckpointed runs. Admission exhaustion returns 503 with Retry-After. See [RELIABILITY.md](RELIABILITY.md) for recovery constraints.

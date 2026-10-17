@@ -11,8 +11,8 @@ Graph (explicit state, conditional routing, bounded loops)::
     review_gate -> finalize
 
 Budgets: at most ``MAX_TOOL_CALLS`` tool calls and a LangGraph recursion limit.
-Cancellation is checked at every node. State is checkpointed per run with an
-in-memory saver; completed runs are persisted by ``AgentService``.
+Cancellation is checked at every node. The service supplies a durable SQLite
+saver; direct graph callers may use the default in-memory saver.
 """
 
 from __future__ import annotations
@@ -83,13 +83,14 @@ class _Cancellation:
 CANCELLATION = _Cancellation()
 
 
-def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None) -> Any:
+def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None,
+                checkpointer: Any = None, check_cancel: Callable[[], bool] | None = None) -> Any:
     """Compile a graph bound to one access context (session isolation by construction)."""
 
     def traced(name: str, fn: Callable[[AgentState], dict[str, Any]]) -> Callable[[AgentState], dict[str, Any]]:
         def node(state: AgentState) -> dict[str, Any]:
             event = CANCELLATION.register(state["run_id"])
-            if event.is_set():
+            if event.is_set() or (check_cancel is not None and check_cancel()):
                 raise CancelledRun(state["run_id"])
             started = time.perf_counter()
             update = fn(state)
@@ -219,4 +220,4 @@ def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None) -> 
     graph.add_conditional_edges("verify", after_verify, {"compose": "compose", "review_gate": "review_gate"})
     graph.add_edge("review_gate", "finalize")
     graph.add_edge("finalize", END)
-    return graph.compile(checkpointer=InMemorySaver())
+    return graph.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver())

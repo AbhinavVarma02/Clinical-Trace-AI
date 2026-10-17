@@ -65,3 +65,7 @@ Status: **blocked on owner approval** (see `docs/PROJECT_STATUS.md`). The planne
 4. Verify from an unauthenticated browser: status, guided demos, agent runs, citations, review flow, mobile layout.
 
 Free CPU Spaces run the deterministic mode reliably. Live LLM inference in the public demo needs either an in-container small model (measured locally at ~1 s p50 for 1.5B with poor quality, ~2.7 s for 7B on the development desktop via Ollama — latency on the free CPU Space is unmeasured) or a hosted free-tier endpoint with a secret token; both need an owner decision.
+
+## SQLite runtime lifecycle
+
+Use exactly one Uvicorn worker per database. Persistent storage must include the SQLite database and its WAL/SHM files during operation; use SQLite backup facilities rather than copying a live database file. No public deployment was changed. See [RELIABILITY.md](RELIABILITY.md) for explicit restart recovery, capacity and retention.

@@ -15,6 +15,7 @@ Design rules enforced here (not in prompts):
 from __future__ import annotations
 
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from src.safety.policy import AccessContext, Action, AuthorizationError, PolicyE
 from src.safety.verifier import EvidenceItem
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="agent-tool")
+_TOOL_SLOTS = threading.BoundedSemaphore(8)
 
 
 @dataclass
@@ -308,7 +310,15 @@ def run_tool(ctx: ToolContext, name: str, raw_args: dict[str, Any] | None = None
         ctx.policy.require(ctx.access, spec.action, ctx.patient_id)
     except AuthorizationError as exc:
         return done(ok=False, error=str(exc), error_type="unauthorized")
-    future = _EXECUTOR.submit(spec.handler, ctx, args)
+    if not _TOOL_SLOTS.acquire(blocking=False):
+        return done(ok=False, error="tool capacity unavailable", error_type="capacity")
+    try:
+        future = _EXECUTOR.submit(spec.handler, ctx, args)
+    except Exception:
+        _TOOL_SLOTS.release()
+        raise
+    # A timed-out thread may still be executing; retain its slot until it really exits.
+    future.add_done_callback(lambda _: _TOOL_SLOTS.release())
     try:
         data, evidence = future.result(timeout=spec.timeout_s)
     except FutureTimeout:

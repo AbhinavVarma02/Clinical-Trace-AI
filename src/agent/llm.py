@@ -39,6 +39,7 @@ class CircuitBreaker:
     cooldown_s: float = 60.0
     failures: int = 0
     opened_at: float | None = None
+    _probe_in_flight: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def allow(self) -> bool:
@@ -46,11 +47,14 @@ class CircuitBreaker:
             if self.opened_at is None:
                 return True
             if time.monotonic() - self.opened_at >= self.cooldown_s:
-                return True  # half-open: allow one trial request
+                if not self._probe_in_flight:
+                    self._probe_in_flight = True
+                    return True
             return False
 
     def record(self, success: bool) -> None:
         with self._lock:
+            self._probe_in_flight = False
             if success:
                 self.failures, self.opened_at = 0, None
             else:
@@ -95,15 +99,20 @@ class OpenAICompatibleProvider:
         self.failures = 0
         self.prompt_tokens = 0
         self.completion_tokens = 0
+        self.retries = 0
 
     def describe(self) -> dict[str, Any]:
         return {"provider": self.name, "model": self.model, "circuit": self.breaker.state,
                 "calls": self.calls, "failures": self.failures,
-                "prompt_tokens": self.prompt_tokens, "completion_tokens": self.completion_tokens}
+                "prompt_tokens": self.prompt_tokens, "completion_tokens": self.completion_tokens,
+                "retries": self.retries,
+                "estimated_cost_usd": 0.0 if self.name in {"ollama", "mock"} else None,
+                "cost_note": "local calls have no API charge; hosted pricing is unknown unless configured"}
+
+    def close(self) -> None:
+        self._client.close()
 
     def complete(self, system: str, user: str, max_tokens: int = 700, json_mode: bool = True) -> Completion:
-        if not self.breaker.allow():
-            raise ProviderUnavailable("circuit open after repeated provider failures")
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -114,6 +123,10 @@ class OpenAICompatibleProvider:
             payload["response_format"] = {"type": "json_object"}
         last: Exception | None = None
         for attempt in range(self.max_retries + 1):
+            if not self.breaker.allow():
+                raise ProviderUnavailable("circuit open or recovery probe already in flight")
+            if attempt:
+                self.retries += 1
             started = time.perf_counter()
             self.calls += 1
             try:

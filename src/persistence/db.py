@@ -150,6 +150,15 @@ CREATE TABLE request_log (
 );
 CREATE INDEX ix_request_log_ts ON request_log(ts);
 """),
+    (5, "durable_agent_controls", """
+ALTER TABLE agent_run ADD COLUMN idempotency_key TEXT;
+ALTER TABLE agent_run ADD COLUMN engine_revision TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_run ADD COLUMN data_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_run ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_run ADD COLUMN resume_count INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX ix_agent_idempotency ON agent_run(persona, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+"""),
 ]
 
 
