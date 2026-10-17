@@ -13,7 +13,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P2 | CT-P02-T01 | Typed patient-bound tools (11) | TESTED | `src/agent/tools.py`, `tests/test_agent_v2.py` |
 | P2 | CT-P02-T02 | LangGraph orchestration, budgets, cancellation, sessions | TESTED | `src/agent/graph.py`, `service.py` |
 | P2 | CT-P02-T03 | Real LLM inference via OpenAI-compatible provider (Ollama measured) | VERIFIED | `evaluation/results/llm_*.json` |
-| P2 | CT-P02-T04 | LangGraph checkpoint persistence beyond memory | NOT_STARTED | — |
+| P2 | CT-P02-T04 | LangGraph checkpoint persistence beyond memory | TESTED | `src/agent/checkpoints.py`, restart/replay tests |
 | P2 | CT-P02-T05 | Streaming responses | NOT_STARTED | — |
 | P3 | CT-P03-T01 | Chunking, BM25, LSA dense, RRF, filters, cache, versioning | TESTED | `src/retrieval/`, `tests/test_retrieval_v2.py` |
 | P3 | CT-P03-T02 | Retrieval benchmark and isolation probes | VERIFIED | `docs/EVALUATION.md` |
@@ -52,15 +52,15 @@ See [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). The following 
 
 | Phase | ID | Task | Status | Evidence / dependency |
 | --- | --- | --- | --- | --- |
-| P4 | CT-P04-T06 | Configurable retention of sessions, checkpoints, traces, audit and feedback | NOT_STARTED | P8 persistence |
+| P4 | CT-P04-T06 | Configurable retention of sessions, checkpoints, traces, audit and feedback | TESTED | `tests/test_retention.py`, explicit CLI with holds |
 | P4 | CT-P04-T07 | Streaming request-size enforcement and trusted-proxy rate-limit identity | NOT_STARTED | `api/middleware.py` currently trusts client forwarded headers |
 | P6 | CT-P06-T04 | Recovery/failure evaluations and human-review agreement protocol | NOT_STARTED | Actual reviewer annotations required for agreement claims |
 | P7 | CT-P07-T03 | Tablet, loading/empty/error and keyboard QA, representative screenshots | NOT_STARTED | P7-T02 |
 | P8 | CT-P08-T03 | Persist retrieval/index and evaluation metadata with reproducible migrations | NOT_STARTED | Existing resources/runs/feedback/reviews already durable |
 | P8 | CT-P08-T04 | Typed response contracts, API contract validation, Python type checks | NOT_STARTED | Existing request validation retained |
-| P9 | CT-P09-T03 | Controlled concurrency, restart recovery, cancellation ownership, graceful shutdown | NOT_STARTED | P2-T04 |
+| P9 | CT-P09-T03 | Controlled concurrency, restart recovery, cancellation ownership, graceful shutdown | TESTED | `tests/test_agent_recovery.py`, `docs/RELIABILITY.md` |
 | P9 | CT-P09-T04 | Token/retry/cache/cost diagnostic completeness | NOT_STARTED | No paid provider activation; unknown costs remain unknown |
-| P10 | CT-P10-T03 | Reproducible throughput, memory, startup and bundle measurements | NOT_STARTED | P9-T03 |
+| P10 | CT-P10-T03 | Reproducible throughput, memory, startup and bundle measurements | VERIFIED locally (partial memory scope) | `evaluation/results/performance_local.json`; excludes native RSS/container startup |
 | P11 | CT-P11-T03 | Review dependency audit findings and explicit security gate policy | NOT_STARTED | Existing pip-audit is advisory |
 | P11 | CT-P11-T04 | Reproducible Python lock, formatter/type/contract CI coverage | NOT_STARTED | Preserve compatible runtime set |
 | P12 | CT-P12-T02 | Core evidence reconciliation and final reviewer-ready recovery handoff | IN_PROGRESS | Do not declare completion with open core gates |

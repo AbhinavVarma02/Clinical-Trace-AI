@@ -231,9 +231,23 @@ def patient_retrieve(patient_id: str, body: RetrievalRequest, ctx: AccessContext
 
 # -------------------------------------------------------------------- agent
 @router.post("/agent/runs")
-def agent_run(body: AgentRunRequest, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
+def agent_run(body: AgentRunRequest, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime),
+              idempotency_key: str | None = Header(None, min_length=1, max_length=128)
               ) -> dict[str, Any]:
-    return rt.agent.run(ctx, body.patient_id, body.question, session_id=body.session_id)
+    return rt.agent.run(ctx, body.patient_id, body.question, session_id=body.session_id,
+                        idempotency_key=idempotency_key)
+
+
+@router.get("/agent/runs/{run_id}/status")
+def agent_run_status(run_id: str, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
+                     ) -> dict[str, Any]:
+    return rt.agent.run_status(ctx, run_id)
+
+
+@router.post("/agent/runs/{run_id}/resume")
+def agent_run_resume(run_id: str, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
+                     ) -> dict[str, Any]:
+    return rt.agent.resume(ctx, run_id)
 
 
 @router.get("/agent/runs/{run_id}")
@@ -383,6 +397,7 @@ def ops_metrics(ctx: AccessContext = Depends(access), rt: Runtime = Depends(runt
                   for node, v in sorted(node_latency.items())],
         "retrieval": rt.index.stats(),
         "provider": rt.provider.describe() if rt.provider else {"provider": "none", "mode": "deterministic"},
+        "execution": rt.agent.describe(),
         "rate_limit": RATE_LIMITER.describe(),
         "note": "Metrics are computed from requests served by this process since its database was created; "
                 "no values are simulated.",

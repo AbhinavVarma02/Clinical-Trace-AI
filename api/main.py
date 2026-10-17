@@ -26,13 +26,13 @@ from api.middleware import RequestContextMiddleware
 from api.routes import router
 from api.v2 import MissingPersona
 from api.v2 import router as v2_router
-from src.agent.service import SessionMismatch
+from src.agent.service import AgentBusy, RunConflict, SessionMismatch
 from src.config import POSITIONING_STATEMENT, PROJECT_ROOT
 from src.errors import NotFoundError
 from src.governance.review import ReviewConflict, ReviewError
 from src.persistence.db import utc_now
 from src.retrieval.index import IsolationError
-from src.runtime import get_runtime
+from src.runtime import close_runtime, get_runtime
 from src.safety.policy import AuthorizationError
 from src.tracing import configure_langsmith
 
@@ -42,7 +42,10 @@ WORKSPACE_DIST = PROJECT_ROOT / "frontend" / "dist-workspace"
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_langsmith()
-    yield
+    try:
+        yield
+    finally:
+        close_runtime()
 
 
 def _log_request(request_id: str, method: str, route: str, status_code: int, latency_ms: float) -> None:
@@ -84,6 +87,18 @@ async def _forbidden(request: Request, exc: AuthorizationError) -> JSONResponse:
 @app.exception_handler(SessionMismatch)
 async def _session_mismatch(request: Request, exc: SessionMismatch) -> JSONResponse:
     return _error(request, 403, "session_mismatch", str(exc))
+
+
+@app.exception_handler(RunConflict)
+async def _run_conflict(request: Request, exc: RunConflict) -> JSONResponse:
+    return _error(request, 409, "run_conflict", str(exc))
+
+
+@app.exception_handler(AgentBusy)
+async def _agent_busy(request: Request, exc: AgentBusy) -> JSONResponse:
+    response = _error(request, 503, "agent_busy", str(exc))
+    response.headers["Retry-After"] = "1"
+    return response
 
 
 @app.exception_handler(NotFoundError)

@@ -41,6 +41,14 @@ class Runtime:
     started_at: float
     startup_ingestion: dict[str, Any]
 
+    def close(self, grace_s: float = 10.0) -> bool:
+        if not self.agent.close(grace_s):
+            return False
+        if self.provider:
+            self.provider.close()
+        self.db.close()
+        return True
+
 
 def _predictor() -> tuple[Callable[[dict[str, Any]], dict[str, Any]] | None, bool]:
     try:
@@ -59,6 +67,8 @@ def build_runtime(
     enable_model: bool = True,
 ) -> Runtime:
     db = Database(db_path)
+    # One application worker per SQLite database. Never auto-replay clinical work.
+    db.execute("UPDATE agent_run SET status='interrupted' WHERE status='running'")
     store = FHIRStore(db)
     records = ClinicalRecords(store)
     index = RetrievalIndex(records, flagger=flag_content)
@@ -95,3 +105,14 @@ def set_runtime(runtime: Runtime | None) -> None:
     global _runtime
     with _lock:
         _runtime = runtime
+
+
+def close_runtime() -> bool:
+    global _runtime
+    with _lock:
+        if _runtime is None:
+            return True
+        if not _runtime.close():
+            return False
+        _runtime = None
+        return True
