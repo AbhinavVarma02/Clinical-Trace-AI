@@ -14,8 +14,9 @@ def test_reliability_bins_include_extremes_and_weight_by_support():
     assert sum(b["count"] for b in report["bins"]) == 4
 
 
-@pytest.mark.parametrize("labels,scores", [([], []), ([1], [float("nan")]), ([2], [0.5]),
-                                            ([1], [1.1]), ([0, 1], [0.5])])
+@pytest.mark.parametrize(
+    "labels,scores", [([], []), ([1], [float("nan")]), ([2], [0.5]), ([1], [1.1]), ([0, 1], [0.5])]
+)
 def test_calibration_rejects_invalid_inputs(labels, scores):
     with pytest.raises(ValueError):
         calibration(labels, scores)
@@ -36,10 +37,14 @@ def test_saved_split_alignment_fails_closed_on_row_changes(tmp_path, raw_diabete
     raw = load_raw_data(raw_diabetes_csv)
     models, processed = tmp_path / "models", tmp_path / "processed"
     splits = preprocess_dataset(raw, artifact_dir=models, processed_dir=processed)
-    metadata = {"dataset_hash": file_hash(raw_diabetes_csv), "split_patient_counts": {
-        "train": splits.train_groups.nunique(), "validation": splits.val_groups.nunique(),
-        "test": splits.test_groups.nunique(),
-    }}
+    metadata = {
+        "dataset_hash": file_hash(raw_diabetes_csv),
+        "split_patient_counts": {
+            "train": splits.train_groups.nunique(),
+            "validation": splits.val_groups.nunique(),
+            "test": splits.test_groups.nunique(),
+        },
+    }
     aligned = aligned_splits(raw_diabetes_csv, models, processed, metadata)
     assert aligned["test"]["raw"].shape[0] == len(splits.y_test)
     labels = pd.read_csv(processed / "y_test.csv")

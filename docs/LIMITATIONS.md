@@ -14,7 +14,7 @@
 ## Readmission model
 
 - Trained on UCI Diabetes 130-US (1999–2008). Applying it to synthetic FHIR patients requires approximations (ICD-10 → broad ICD-9 categories, synthetic lab counts far below UCI norms, no procedures, unknown race). Outputs are out of distribution and uncalibrated for this population.
-- Phase 5 enhancements (calibration analysis, drift monitoring, subgroup evaluation, sequence models) are not yet implemented; the v1 training pipeline is unchanged.
+- Calibration/subgroup/error and historical distribution audits are implemented; scores substantially overestimate observed UCI event frequency (ECE 0.1901). No recalibration or retraining was applied. Sequence modeling remains an advanced extension.
 
 ## Agent
 
@@ -23,7 +23,7 @@
 - Guards are pattern-based and can be evaded by unanticipated phrasing.
 - Verification checks citations, numbers, computations, and lexical overlap. It does not prove semantic entailment: a claim that reuses the evidence's words with a different meaning could pass.
 - Contradiction detection covers smoking status and lab values quoted in notes only.
-- Answers are not streamed; LangGraph checkpoints are in memory (runs are persisted after completion).
+- Actual progress is streamed; clinical answer text is returned only after verification. Durable SQLite checkpoints support explicit compatible restart recovery. Cancellation is cooperative between nodes, not a forced interruption of running Python code.
 
 ## Retrieval
 
@@ -36,8 +36,8 @@
 - SQLite only; PostgreSQL and pgvector are not implemented.
 - Demo personas are not authentication.
 - Rate limits and caches are in-process and reset on restart; they do not coordinate across replicas.
-- Observability is in-process (request log, traces in SQLite); no OpenTelemetry exporter is wired up.
-- Container build verified in CI configuration only; it was not built locally in the session that produced this release (Docker daemon unavailable).
+- OpenTelemetry export is opt-in and local-file only; no network collector is configured. Operators must rotate trace files separately from SQLite retention.
+- The handoff container passed real build/smoke tests in Actions 39074327485. Updated dependencies/runtime need fresh CI verification; local Docker remains unavailable through WSL integration.
 
 ## Evaluation
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ApiError, api } from "../api";
+import { ApiError, api, type AgentProgress } from "../api";
 import { AnswerCard } from "../components/AnswerCard";
 import { Icons } from "../components/icons";
 import { Card, EmptyState, ErrorState } from "../components/ui";
@@ -7,9 +7,10 @@ import { SAFETY_PROBES, SUGGESTED_PROMPTS } from "../demos";
 import { useApi, useApp } from "../state";
 import type { AgentRun } from "../types";
 
-const STAGES = ["Checking the request against safety rules", "Planning tool calls", "Running patient-scoped tools", "Composing and verifying claims"];
+const STAGES: Record<string, string> = { guard: "Safety rules checked", plan: "Tool plan prepared", act: "Patient-scoped tool completed",
+  compose: "Draft prepared", verify: "Claims checked against evidence", review_gate: "Review requirements checked", finalize: "Result finalized" };
 
-function Progress({ startedAt }: { startedAt: number }) {
+function Progress({ startedAt, events }: { startedAt: number; events: AgentProgress[] }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 250);
@@ -23,10 +24,10 @@ function Progress({ startedAt }: { startedAt: number }) {
         <strong style={{ fontSize: 14 }}>Agent is working · {elapsed.toFixed(1)} s</strong>
       </div>
       <div className="faint" style={{ fontSize: 12 }}>
-        The server runs these graph stages in order and returns once verification completes (responses are not streamed):
+        Live execution progress. The answer appears after evidence verification completes.
       </div>
       <ol className="muted" style={{ fontSize: 13, margin: 0, paddingLeft: 18 }}>
-        {STAGES.map((stage) => <li key={stage}>{stage}</li>)}
+        {events.map((event, i) => <li key={i}>{STAGES[event.node] ?? event.node}{event.tool ? ` · ${event.tool.replace(/_/g, " ")}` : ""}</li>)}
       </ol>
     </div>
   );
@@ -38,7 +39,7 @@ export function AgentPage() {
   const [question, setQuestion] = useState("");
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [sessions, setSessions] = useState<Record<string, string>>({});
-  const [pending, setPending] = useState<{ question: string; startedAt: number } | null>(null);
+  const [pending, setPending] = useState<{ question: string; startedAt: number; events: AgentProgress[]; runId: string | null } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const autoRan = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -57,9 +58,10 @@ export function AgentPage() {
     const trimmed = text.trim();
     if (!trimmed || pending) return;
     setError(null);
-    setPending({ question: trimmed, startedAt: Date.now() });
+    setPending({ question: trimmed, startedAt: Date.now(), events: [], runId: null });
     try {
-      const run = await api.runAgent({ patient_id: patientId, question: trimmed, session_id: sessions[`${persona}:${patientId}`] ?? null });
+      const run = await api.runAgentStream({ patient_id: patientId, question: trimmed, session_id: sessions[`${persona}:${patientId}`] ?? null },
+        event => setPending(current => current ? { ...current, runId: event.run_id, events: [...current.events, event] } : null));
       setSessions((s) => ({ ...s, [`${persona}:${patientId}`]: run.session_id }));
       setRuns((r) => [...r, run]);
       setQuestion("");
@@ -131,7 +133,10 @@ export function AgentPage() {
         {pending && (
           <div className="stack">
             <div className="question-bubble">{pending.question}</div>
-            <Progress startedAt={pending.startedAt} />
+            <Progress startedAt={pending.startedAt} events={pending.events} />
+            {pending.runId && <button type="button" className="btn" onClick={() => {
+              void api.cancelRun(pending.runId!).catch(err => setError(err instanceof ApiError ? err : new ApiError(0, "cancel_failed", "Cancellation could not be requested.")));
+            }}>Cancel execution</button>}
           </div>
         )}
         {error && <Card><ErrorState error={error} onRetry={() => setError(null)} /></Card>}

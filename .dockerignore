@@ -33,3 +33,7 @@ var/
 PROJECT_*.md
 PROJECT_*.pdf
 *.db
+
+.mypy_cache/
+frontend/test-results/
+frontend/playwright-report/

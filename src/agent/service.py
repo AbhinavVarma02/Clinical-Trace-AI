@@ -169,6 +169,7 @@ class AgentService:
         session_id: str | None = None,
         run_id: str | None = None,
         idempotency_key: str | None = None,
+        observer: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         self.policy.require(access, Action.AGENT_RUN, patient_id)
         if self.records.profile(patient_id) is None:
@@ -195,7 +196,7 @@ class AgentService:
                     (run_id, session_id, access.persona.persona_id, patient_id, question, mode, utc_now(),
                      idempotency_key, self.revision, self._data_version()),
                 )
-            return self._execute(access, run_id, session_id, patient_id, question, mode, resume=False)
+            return self._execute(access, run_id, session_id, patient_id, question, mode, resume=False, observer=observer)
 
     def resume(self, access: AccessContext, run_id: str) -> dict[str, Any]:
         row = self._owned_run(access, run_id)
@@ -214,7 +215,8 @@ class AgentService:
                                  row["inference_mode"], resume=True)
 
     def _execute(self, access: AccessContext, run_id: str, session_id: str, patient_id: str,
-                 question: str, mode: str, resume: bool) -> dict[str, Any]:
+                 question: str, mode: str, resume: bool,
+                 observer: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
         ctx = ToolContext(access=access, policy=self.policy, records=self.records, index=self.index,
                           patient_id=patient_id, predictor=self.predictor)
         deadline = time.monotonic() + 180
@@ -228,7 +230,8 @@ class AgentService:
                 raise TimeoutError("agent run time budget exhausted")
             return cancelled()
 
-        graph = build_graph(ctx, self.provider, checkpointer=self.checkpoints, check_cancel=check_control)
+        graph = build_graph(ctx, self.provider, checkpointer=self.checkpoints, check_cancel=check_control,
+                            observer=observer)
         graph_config = {"configurable": {"thread_id": run_id}, "recursion_limit": RECURSION_LIMIT}
         started = time.perf_counter()
         CANCELLATION.register(run_id)

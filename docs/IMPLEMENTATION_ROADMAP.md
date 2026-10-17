@@ -14,7 +14,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P2 | CT-P02-T02 | LangGraph orchestration, budgets, cancellation, sessions | TESTED | `src/agent/graph.py`, `service.py` |
 | P2 | CT-P02-T03 | Real LLM inference via OpenAI-compatible provider (Ollama measured) | VERIFIED | `evaluation/results/llm_*.json` |
 | P2 | CT-P02-T04 | LangGraph checkpoint persistence beyond memory | TESTED | `src/agent/checkpoints.py`, restart/replay tests |
-| P2 | CT-P02-T05 | Streaming responses | NOT_STARTED | — |
+| P2 | CT-P02-T05 | Streaming responses | TESTED | SSE progress, verified final response, cancellation; `tests/test_agent_stream.py` and browser suite |
 | P3 | CT-P03-T01 | Chunking, BM25, LSA dense, RRF, filters, cache, versioning | TESTED | `src/retrieval/`, `tests/test_retrieval_v2.py` |
 | P3 | CT-P03-T02 | Retrieval benchmark and isolation probes | VERIFIED | `docs/EVALUATION.md` |
 | P3 | CT-P03-T03 | Reranking | NOT_STARTED | — |
@@ -34,7 +34,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P8 | CT-P08-T01 | v2 API, error contract, migrations, persistence | TESTED | `api/v2.py`, `src/persistence/db.py` |
 | P8 | CT-P08-T02 | PostgreSQL + pgvector backend | NOT_STARTED | ADR 0003 |
 | P9 | CT-P09-T01 | Request ids, request log, identifier-only traces, ops metrics | TESTED | `api/middleware.py`, `/api/v2/ops/metrics` |
-| P9 | CT-P09-T02 | OpenTelemetry exporter | NOT_STARTED | — |
+| P9 | CT-P09-T02 | OpenTelemetry exporter | TESTED | Local-only SDK exporter; trace correlation/content exclusion tests |
 | P10 | CT-P10-T01 | Latency measured per mode | VERIFIED | `docs/EVALUATION.md` |
 | P10 | CT-P10-T02 | Image size / cold start measurement | BLOCKED | Docker daemon not running locally |
 | P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | VERIFIED at f4f785c | Actions 39074327485: all four jobs passed; subsequent E2E additions pending CI |
@@ -53,16 +53,16 @@ See [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). The following 
 | Phase | ID | Task | Status | Evidence / dependency |
 | --- | --- | --- | --- | --- |
 | P4 | CT-P04-T06 | Configurable retention of sessions, checkpoints, traces, audit and feedback | TESTED | `tests/test_retention.py`, explicit CLI with holds |
-| P4 | CT-P04-T07 | Streaming request-size enforcement and trusted-proxy rate-limit identity | NOT_STARTED | `api/middleware.py` currently trusts client forwarded headers |
+| P4 | CT-P04-T07 | Streaming request-size enforcement and trusted-proxy rate-limit identity | TESTED | Actual bytes, body timeout, peer-based bucket, memory bound; HTTP tests |
 | P6 | CT-P06-T04 | Recovery/failure evaluations and human-review agreement protocol | NOT_STARTED | Actual reviewer annotations required for agreement claims |
 | P7 | CT-P07-T03 | Tablet, loading/empty/error and keyboard QA, representative screenshots | NOT_STARTED | P7-T02 |
-| P8 | CT-P08-T03 | Persist retrieval/index and evaluation metadata with reproducible migrations | NOT_STARTED | Existing resources/runs/feedback/reviews already durable |
-| P8 | CT-P08-T04 | Typed response contracts, API contract validation, Python type checks | NOT_STARTED | Existing request validation retained |
+| P8 | CT-P08-T03 | Persist retrieval/index and evaluation metadata with reproducible migrations | TESTED | Migration6, metadata-contract tests; resources/runs/reviews unchanged |
+| P8 | CT-P08-T04 | Typed response contracts, API contract validation, Python type checks | TESTED (scoped) | Agent/retrieval/status response schemas, contract tests; mypy covers four new modules |
 | P9 | CT-P09-T03 | Controlled concurrency, restart recovery, cancellation ownership, graceful shutdown | TESTED | `tests/test_agent_recovery.py`, `docs/RELIABILITY.md` |
-| P9 | CT-P09-T04 | Token/retry/cache/cost diagnostic completeness | NOT_STARTED | No paid provider activation; unknown costs remain unknown |
+| P9 | CT-P09-T04 | Token/retry/cache/cost diagnostic completeness | TESTED | Provider retry/token/circuit/local-cost counters; cache stats retained; hosted costs unknown |
 | P10 | CT-P10-T03 | Reproducible throughput, memory, startup and bundle measurements | VERIFIED locally (partial memory scope) | `evaluation/results/performance_local.json`; excludes native RSS/container startup |
-| P11 | CT-P11-T03 | Review dependency audit findings and explicit security gate policy | NOT_STARTED | Existing pip-audit is advisory |
-| P11 | CT-P11-T04 | Reproducible Python lock, formatter/type/contract CI coverage | NOT_STARTED | Preserve compatible runtime set |
+| P11 | CT-P11-T03 | Review dependency audit findings and explicit security gate policy | VERIFIED locally | Patched constrained runtime: 144 packages / no known findings; mandatory CI audit |
+| P11 | CT-P11-T04 | Reproducible Python constraints, formatter/type/contract CI coverage | TESTED locally; Linux CI pending | Exact roots/transitive snapshot; scoped formatter/mypy gates |
 | P12 | CT-P12-T02 | Core evidence reconciliation and final reviewer-ready recovery handoff | IN_PROGRESS | Do not declare completion with open core gates |
 | P13 | CT-P13-T06 | Structured referral/discharge ingestion, provenance, extraction uncertainty | NOT_STARTED | P4 safe parsing; stable core |
 

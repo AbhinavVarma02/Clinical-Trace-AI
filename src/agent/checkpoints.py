@@ -8,6 +8,7 @@ SQLite connection so LangGraph worker writes cannot commit app transactions.
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,8 @@ def open_checkpoints(path: str) -> SqliteSaver:
 def execution_revision(provider: Any, model_available: bool) -> str:
     """Prevent resuming checkpoints after code or inference configuration changes."""
     digest = hashlib.sha256()
+    for package in ("langgraph", "langgraph-checkpoint", "langgraph-checkpoint-sqlite", "langchain-core", "pydantic"):
+        digest.update(f"{package}:{importlib.metadata.version(package)}".encode())
     for folder in ("src/agent", "src/safety", "src/clinical", "src/retrieval"):
         for path in sorted((PROJECT_ROOT / folder).glob("*.py")):
             digest.update(path.relative_to(PROJECT_ROOT).as_posix().encode())

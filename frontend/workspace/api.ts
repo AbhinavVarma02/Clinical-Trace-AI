@@ -63,6 +63,57 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const post = <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
 
+export interface AgentProgress {
+  run_id: string;
+  node: string;
+  duration_ms: number;
+  tool?: string;
+  ok?: boolean;
+}
+
+async function runAgentStream(
+  body: { patient_id: string; question: string; session_id?: string | null },
+  onProgress: (event: AgentProgress) => void,
+): Promise<AgentRun> {
+  const response = await fetch("/api/v2/agent/runs/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Demo-Persona": currentPersona },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.json() as ApiErrorBody;
+    throw new ApiError(response.status, error.error?.code ?? "stream_error",
+      error.error?.message ?? "Execution could not start.", error.error?.request_id);
+  }
+  if (!response.body) throw new ApiError(0, "stream_unavailable", "Streaming is unavailable in this browser.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary: number;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const lines = buffer.slice(0, boundary).split("\n");
+        buffer = buffer.slice(boundary + 2);
+        const kind = lines.find(line => line.startsWith("event: "))?.slice(7);
+        const data = lines.filter(line => line.startsWith("data: ")).map(line => line.slice(6)).join("\n");
+        if (!kind || !data) continue;
+        if (kind === "result") return JSON.parse(data) as AgentRun;
+        if (kind === "progress") onProgress(JSON.parse(data) as AgentProgress);
+        if (kind === "error") {
+          const error = JSON.parse(data) as { status: number; code: string; message: string; request_id?: string };
+          throw new ApiError(error.status, error.code, error.message, error.request_id);
+        }
+      }
+      if (done) throw new ApiError(0, "stream_interrupted", "Connection ended before a verified result arrived. Open the run status before retrying.");
+    }
+  } finally {
+    await reader.cancel();
+  }
+}
+
 export const api = {
   status: () => request<SystemStatus>("/system/status"),
   personas: () => request<Persona[]>("/personas"),
@@ -77,6 +128,8 @@ export const api = {
     post<RetrievalResponse>(`/patients/${encodeURIComponent(id)}/retrieve`, body),
   runAgent: (body: { patient_id: string; question: string; session_id?: string | null }) =>
     post<AgentRun>("/agent/runs", body),
+  runAgentStream,
+  cancelRun: (runId: string) => post<{ cancel_requested: boolean }>(`/agent/runs/${encodeURIComponent(runId)}/cancel`, {}),
   run: (runId: string) => request<AgentRun>(`/agent/runs/${encodeURIComponent(runId)}`),
   recentRuns: () => request<RecentRun[]>("/agent/recent?limit=8"),
   feedback: (runId: string, body: { category: string; rating?: number; comment?: string }) =>

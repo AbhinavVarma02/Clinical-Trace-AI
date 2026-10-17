@@ -18,10 +18,15 @@ def test_index_provenance_persists_without_source_text(runtime):
 
 
 def test_evaluation_metadata_is_idempotent_and_excludes_case_excerpts(runtime):
-    report = {"run_at": "2026-10-17T00:00:00Z", "dataset_version": "v1", "mode": "deterministic",
-              "gate": {"passed": True}, "summary": {"all": {"cases": 1}},
-              "cases": [{"answer_excerpt": "private_source_text"}],
-              "retrieval": {"per_query": [{"query": "private_source_text"}], "modes": {}, "isolation": {}}}
+    report = {
+        "run_at": "2026-10-17T00:00:00Z",
+        "dataset_version": "v1",
+        "mode": "deterministic",
+        "gate": {"passed": True},
+        "summary": {"all": {"cases": 1}},
+        "cases": [{"answer_excerpt": "private_source_text"}],
+        "retrieval": {"per_query": [{"query": "private_source_text"}], "modes": {}, "isolation": {}},
+    }
     first = record_evaluation(runtime.db, report)
     assert record_evaluation(runtime.db, report) == first
     rows = runtime.db.all("SELECT * FROM evaluation_run")
@@ -33,8 +38,11 @@ def test_openapi_and_runtime_enforce_agent_response_contract(api_client):
     schema = api_client.get("/openapi.json").json()
     response = schema["paths"]["/api/v2/agent/runs"]["post"]["responses"]["200"]
     assert response["content"]["application/json"]["schema"]["$ref"].endswith("/AgentRunResponse")
-    result = api_client.post("/api/v2/agent/runs", headers={"X-Demo-Persona": "clinician.demo"},
-                             json={"patient_id": "synthetic_p001", "question": "Why was metformin stopped?"}).json()
+    result = api_client.post(
+        "/api/v2/agent/runs",
+        headers={"X-Demo-Persona": "clinician.demo"},
+        json={"patient_id": "synthetic_p001", "question": "Why was metformin stopped?"},
+    ).json()
     assert AgentRunResponse.model_validate(result).answer.claims
     result["outcome"] = "invented"
     with pytest.raises(ValidationError):
@@ -46,7 +54,10 @@ def test_openapi_and_runtime_enforce_agent_response_contract(api_client):
 
 
 def test_v2_invalid_input_uses_error_contract_without_echo(api_client):
-    response = api_client.post("/api/v2/agent/runs", headers={"X-Demo-Persona": "clinician.demo"},
-                              json={"patient_id": "private_input", "question": "x"})
+    response = api_client.post(
+        "/api/v2/agent/runs",
+        headers={"X-Demo-Persona": "clinician.demo"},
+        json={"patient_id": "private_input", "question": "x"},
+    )
     assert response.status_code == 422 and response.json()["error"]["code"] == "invalid_request"
     assert "private_input" not in response.text
