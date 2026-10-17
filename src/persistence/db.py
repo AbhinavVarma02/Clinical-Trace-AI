@@ -159,6 +159,32 @@ ALTER TABLE agent_run ADD COLUMN resume_count INTEGER NOT NULL DEFAULT 0;
 CREATE UNIQUE INDEX ix_agent_idempotency ON agent_run(persona, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 """),
+    (6, "index_evaluation_metadata", """
+CREATE TABLE retrieval_manifest (
+    index_version TEXT PRIMARY KEY,
+    embedder TEXT NOT NULL,
+    chunk_count INTEGER NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+CREATE TABLE retrieval_metadata (
+    index_version TEXT NOT NULL REFERENCES retrieval_manifest(index_version),
+    chunk_id TEXT NOT NULL,
+    patient_id TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    source_version TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    PRIMARY KEY (index_version, chunk_id)
+);
+CREATE TABLE evaluation_run (
+    evaluation_id TEXT PRIMARY KEY,
+    run_at TEXT NOT NULL,
+    source_commit TEXT,
+    dataset_version TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    gate_passed INTEGER NOT NULL,
+    metadata TEXT NOT NULL
+);
+"""),
 ]
 
 

@@ -19,10 +19,13 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 
 from api.v2_schemas import (
     AgentRunRequest,
+    AgentRunResponse,
     ReviewDecisionRequest,
     ReviewRevisionRequest,
     ReviewSubmitRequest,
     RetrievalRequest,
+    RetrievalResponse,
+    RunStatusResponse,
     RunFeedbackRequest,
 )
 from src import config
@@ -221,7 +224,7 @@ def patient_risk(patient_id: str, ctx: AccessContext = Depends(access), rt: Runt
             "model": _model_summary(), "disclaimer": config.SAFETY_DISCLAIMER}
 
 
-@router.post("/patients/{patient_id}/retrieve")
+@router.post("/patients/{patient_id}/retrieve", response_model=RetrievalResponse)
 def patient_retrieve(patient_id: str, body: RetrievalRequest, ctx: AccessContext = Depends(access),
                      rt: Runtime = Depends(runtime)) -> dict[str, Any]:
     _patient_guard(rt, ctx, patient_id, Action.RETRIEVAL_SEARCH)
@@ -230,7 +233,7 @@ def patient_retrieve(patient_id: str, body: RetrievalRequest, ctx: AccessContext
 
 
 # -------------------------------------------------------------------- agent
-@router.post("/agent/runs")
+@router.post("/agent/runs", response_model=AgentRunResponse)
 def agent_run(body: AgentRunRequest, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime),
               idempotency_key: str | None = Header(None, min_length=1, max_length=128)
               ) -> dict[str, Any]:
@@ -238,19 +241,19 @@ def agent_run(body: AgentRunRequest, ctx: AccessContext = Depends(access), rt: R
                         idempotency_key=idempotency_key)
 
 
-@router.get("/agent/runs/{run_id}/status")
+@router.get("/agent/runs/{run_id}/status", response_model=RunStatusResponse)
 def agent_run_status(run_id: str, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
                      ) -> dict[str, Any]:
     return rt.agent.run_status(ctx, run_id)
 
 
-@router.post("/agent/runs/{run_id}/resume")
+@router.post("/agent/runs/{run_id}/resume", response_model=AgentRunResponse)
 def agent_run_resume(run_id: str, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
                      ) -> dict[str, Any]:
     return rt.agent.resume(ctx, run_id)
 
 
-@router.get("/agent/runs/{run_id}")
+@router.get("/agent/runs/{run_id}", response_model=AgentRunResponse)
 def agent_run_detail(run_id: str, ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)
                      ) -> dict[str, Any]:
     result = rt.agent.get_run(ctx, run_id)

@@ -18,6 +18,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -77,6 +79,14 @@ def _error(request: Request, status: int, code: str, message: str) -> JSONRespon
 @app.exception_handler(MissingPersona)
 async def _missing_persona(request: Request, exc: MissingPersona) -> JSONResponse:
     return _error(request, 401, "persona_required", str(exc))
+
+
+@app.exception_handler(RequestValidationError)
+async def _invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    if request.url.path.startswith(("/api/v2", "/fhir")):
+        # Do not echo invalid source text or submitted identifiers into diagnostics.
+        return _error(request, 422, "invalid_request", "request does not match the documented schema")
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(AuthorizationError)
