@@ -37,7 +37,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P9 | CT-P09-T02 | OpenTelemetry exporter | NOT_STARTED | — |
 | P10 | CT-P10-T01 | Latency measured per mode | VERIFIED | `docs/EVALUATION.md` |
 | P10 | CT-P10-T02 | Image size / cold start measurement | BLOCKED | Docker daemon not running locally |
-| P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | IMPLEMENTED | `Dockerfile`, `.github/workflows/ci.yml` (not yet run) |
+| P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | IMPLEMENTED | `Dockerfile`, `.github/workflows/ci.yml` (CI triggered on push; container not built locally) |
 | P11 | CT-P11-T02 | Hugging Face Space update to 2.0 | BLOCKED | Owner approval required |
 | P12 | CT-P12-T01 | Architecture, API, safety, evaluation, deployment, limitations docs | IMPLEMENTED | `docs/` |
 | P13 | CT-P13-T01 | Sequence model vs tabular baseline | NOT_STARTED | — |
@@ -48,7 +48,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 
 ## Next executable tasks (in order)
 
-1. Run CI on GitHub after the branch is pushed (owner action) and fix any environment differences.
+1. Review the first GitHub Actions run on `feature/clinical-trace-2.0` and fix any environment differences.
 2. Start Docker locally, build the image, and record size and cold-start time (CT-P10-T02).
 3. Playwright smoke tests for the guided demos (CT-P07-T02).
 4. Readmission model calibration and subgroup report (P5).
