@@ -22,11 +22,11 @@ const PAGES: Record<RouteName, ComponentType> = {
 };
 
 export function App() {
-  const { route } = useApp();
+  const { route, persona, patientId } = useApp();
   const Page = PAGES[route.name];
   return (
     <Shell>
-      <Page />
+      <Page key={route.name === "agent" ? `${persona}:${patientId}` : persona} />
     </Shell>
   );
 }
