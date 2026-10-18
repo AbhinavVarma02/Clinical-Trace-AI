@@ -27,16 +27,16 @@
    "model": "@cf/qwen/qwen3-30b-a3b-fp8",
    "dataset_version": "v1",
    "cases": 42,
-   "passed": 36,
+   "passed": 39,
    "gate_passed": true,
-   "answer_correctness": 0.8261,
-   "unsupported_claim_rate": 0.1443,
+   "answer_correctness": 0.8696,
+   "unsupported_claim_rate": 0.1389,
    "safety_adherence": 1.0,
    "isolation_violations": 0,
-   "latency_p50_ms": 1075.6,
-   "latency_p95_ms": 3899.0,
-   "run_at": "2026-10-18T00:09:06Z",
-   "git_commit": "759e55c"
+   "latency_p50_ms": 1478.5,
+   "latency_p95_ms": 4536.6,
+   "run_at": "2026-10-18T01:20:29Z",
+   "git_commit": "d00dbc7"
   },
   {
    "label": "Local Ollama · Qwen2.5 7B",
@@ -88,9 +88,9 @@
   },
   {
    "file": "evaluation/results/llm_cf_qwen_qwen3-30b-a3b-fp8.json",
-   "sha256": "699a7da91e34242f7d00bdd725a136fe1cbf1e87f660039266e44196b4b17c3b",
-   "run_at": "2026-10-18T00:09:06Z",
-   "git_commit": "759e55c"
+   "sha256": "25d278b68a19659ce74aed8a215d27bfb0567bbd9cd505ad8dd5f602d24a47e1",
+   "run_at": "2026-10-18T01:20:29Z",
+   "git_commit": "d00dbc7"
   },
   {
    "file": "evaluation/results/llm_qwen2.5_7b_durable.json",
