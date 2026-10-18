@@ -7,7 +7,8 @@ under publication/rollback are for an explicitly approved future release.
 
 | Artifact | Pin / evidence |
 | --- | --- |
-| Existing edge | source `475f0b6`; Worker version `76ecd882-4084-4f71-8648-fa031337c9dc` (100% deployment, read 2026-10-18) |
+| Public edge (dedicated account `00f876c0ebbf368d25feabe3e49cbc0b`) | source `988dabc`; Worker version `1a506827-2e55-450a-a474-c1ed693f84ac`; rollback version `c9725bc0-98ab-4c80-ba59-ce71cfc68505` |
+| Previous edge (original account, unchanged) | source `475f0b6`; Worker version `76ecd882-4084-4f71-8648-fa031337c9dc`; config at `fb5c016` |
 | Existing co-hosted Space | `9afa0f8dfe602f42a8a7de3b7ac328da08966de9`, RUNNING on `cpu-basic` |
 | Locally verified backend candidate | source `be52df7357d1746d3704b6a140893e4ec2094656`, Space parent pinned above; ignored `.project-state/cohost-release-be52df7/` |
 | Local co-host verification | Docker image `sha256:54511eb5e8d0e9ff1e7310f607cd7e5b1f91490fc7339e5d9999dec7c966c92c`, 9/9; nginx/API ready in 16.5 s; v1 UI/API, public access rules, streamed deterministic run, model and review approval passed |
@@ -60,7 +61,7 @@ npm --prefix frontend run check
 npm --prefix frontend run test:e2e
 npm --prefix deploy/cloudflare run check
 npm --prefix deploy/cloudflare run deploy:dry-run
-node deploy/cloudflare/scripts/smoke.mjs https://clinical-trace-ai.room-for-both.workers.dev --release 475f0b6
+node deploy/cloudflare/scripts/smoke.mjs https://clinical-trace-ai.vathadiabhinav.workers.dev --release 988dabc
 ```
 
 The browser suite starts an owned disposable real backend and runs in
@@ -114,12 +115,12 @@ gate after recovery.
 Approved full-cohost restoration to the prior production revision:
 
 ```bash
-npx wrangler rollback 76ecd882-4084-4f71-8648-fa031337c9dc --message "restore known-good edge" -y
+npx wrangler rollback c9725bc0-98ab-4c80-ba59-ce71cfc68505 --message "restore known-good edge" -y
 # From repository root; replace NEW_SPACE_SHA with the failed publication's exact SHA:
 venv/Scripts/python.exe deploy/huggingface/space_cohost.py restore-cohost --revision 9afa0f8dfe602f42a8a7de3b7ac328da08966de9 --expected-current-revision NEW_SPACE_SHA --i-have-owner-approval
 ```
 
-Run the Worker command from `deploy/cloudflare` and the Python command from the
+Run Wrangler commands only from `deploy/cloudflare`: the `clinical-trace` auth profile is bound to that folder and `wrangler.jsonc` pins the dedicated account, so a login for any other account fails instead of acting. Run the Worker command from `deploy/cloudflare` and the Python command from the
 repository root. `restore-cohost` makes one atomic HF commit pinned to the failed
 publication, restores every selected repository file, deletes added files, and
 leaves existing relay settings/secrets/hardware unchanged. It refuses a moved

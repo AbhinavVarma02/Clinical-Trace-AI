@@ -1,13 +1,14 @@
 # Public deployment (2.0)
 
-**Updated:** 2026-10-18 · **Status: public demo operational.** The final release gate passed through the unauthenticated public URL (full guided workflow with live LLM inference, citations, isolation, review approval) on desktop and mobile, including a backend cold start. Decision record: [ADR 0007](ADR/0007-public-edge-and-inference.md).
+**Updated:** 2026-10-18 · **Status: public demo operational on a dedicated Cloudflare account** ([migration record](CLOUDFLARE_ACCOUNT_MIGRATION.md)). The final release gate passed through the unauthenticated public URL (full guided workflow with live LLM inference, citations, isolation, review approval) on desktop and mobile, including a backend cold start. Decision record: [ADR 0007](ADR/0007-public-edge-and-inference.md).
 
 | Component | Where | State |
 | --- | --- | --- |
-| React workspace, gateway, status/metrics | https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free) | Live, release `475f0b6` (UI polish on the `7012e8e` backend wiring) |
+| React workspace, gateway, status/metrics | https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Workers Free account `00f876c0…`) | Live, release `988dabc` |
+| Previous edge (original account, not changed) | https://clinical-trace-ai.room-for-both.workers.dev | Still running release `475f0b6` against the same backend |
 | Live LLM inference | Workers AI `@cf/qwen/qwen3-30b-a3b-fp8`, relayed by the edge during streamed runs | Live; 8,000-neuron daily cap below the 10,000 free allocation |
 | Python FastAPI / LangGraph / SHAP backend | Co-hosted in the existing Space (owner-approved): nginx routes `/api/v2` to FastAPI, everything else to the unchanged v1 Streamlit dashboard | Live, Space commit `9afa0f8`; rollback target `380103e` (identical tree to `91e7685`) |
-| Usage accounting | D1 `clinical-trace-edge` | Live |
+| Usage accounting | D1 `clinical-trace-edge` (`fd9f4f5c-e9f4-47d2-b95f-a8c87f9d07a2` on the dedicated account) | Live |
 | v1 Streamlit demo | https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai | Same URL and behaviour as before |
 
 ## Architecture
@@ -40,7 +41,7 @@ The browser never holds a provider key. Each browser creates a random 128-bit wo
 | Body size | 32 KB at edge and backend | `413` |
 | Backend access | Requires the edge secret in public mode | `403 edge_required` |
 
-The account is on the Workers Free plan (owner-confirmed 2026-10-18), so every platform limit fails with an error instead of a charge. Do not enable Workers Paid without revisiting ADR 0007.
+The dedicated account is on the Workers Free plan (read in its dashboard on 2026-10-18), so every platform limit fails with an error instead of a charge. Do not enable Workers Paid without revisiting ADR 0007.
 
 ## Public validation (2026-10-18, unauthenticated)
 
@@ -94,7 +95,7 @@ cd deploy/cloudflare && npm run release -- --full
 ```bash
 cd deploy/cloudflare
 npm run check          # wrangler types, tsc, 19 unit tests
-npm run release        # refuses dirty sources; builds workspace; applies D1 migrations; deploys; smoke; auto-rollback
+npm run release        # verifies the pinned account; refuses dirty sources; builds workspace; applies D1 migrations; deploys; smoke; auto-rollback
 npm run smoke          # baseline public checks; add -- --full once a backend is configured
 npx wrangler deployments list && npx wrangler rollback <version-id> --message "reason"
 ```
