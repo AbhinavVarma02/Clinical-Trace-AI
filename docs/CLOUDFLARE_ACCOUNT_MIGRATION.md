@@ -11,8 +11,8 @@ or deleted and still serves the same backend.
 | Public URL | https://clinical-trace-ai.vathadiabhinav.workers.dev |
 | Account | "Vathadiabhinav@gmail.com's Account", id `00f876c0ebbf368d25feabe3e49cbc0b` (separate login; Workers plan **Free**, read in the dashboard) |
 | `workers.dev` subdomain | `vathadiabhinav` (assigned by Cloudflare) |
-| Worker | `clinical-trace-ai`; release `988dabc`, version `1a506827-2e55-450a-a474-c1ed693f84ac` |
-| Rollback target | version `c9725bc0-98ab-4c80-ba59-ce71cfc68505` (first deployment, release `9585a3a`) |
+| Worker | `clinical-trace-ai`; release `716ea3b` (premium UI), version `aa8e284c-f0b3-4649-9c7f-adb61d6de175` |
+| Rollback target | version `1a506827-2e55-450a-a474-c1ed693f84ac` (release `988dabc`); earlier `c9725bc0-98ab-4c80-ba59-ce71cfc68505` (first deployment, `9585a3a`) |
 | D1 | `clinical-trace-edge`, id `fd9f4f5c-e9f4-47d2-b95f-a8c87f9d07a2` (ENAM), migration `0001_edge_usage.sql` applied |
 | Bindings | Workers AI (`@cf/qwen/qwen3-30b-a3b-fp8`), `API_LIMITER` 120/min, `AGENT_LIMITER` 6/min, static assets, daily cron |
 | Limits (unchanged) | 8,000 neurons/day (platform allocation 10,000), 25 agent runs per visitor and 300 per deployment per day |
@@ -83,7 +83,46 @@ run establishes basic live function, not statistical reliability.
 After publication: original edge `475f0b6` ready, v1 health and page 200, Space
 `9afa0f8` RUNNING on cpu-basic.
 
+## Premium UI release `716ea3b` (2026-10-18, owner-approved)
+
+Frontend-only visual refinement ([PREMIUM_POLISH.md](PREMIUM_POLISH.md)); CI on
+`716ea3b` passed all five jobs (runs 39159242702 push, 39159245928 pull request).
+Released with `npm run release` (normal release with automatic rollback): Worker
+version `aa8e284c-f0b3-4649-9c7f-adb61d6de175`, baseline smoke 7/7, served bundle
+`index-BkpCZpj2.js` identical to the reviewed build. Owner chose a normal release
+followed by one browser-driven guided case instead of `--full`, so the UI button,
+console, counter and the same run could be checked without a second run.
+
+**Single live guided-case run** (desktop 1280 px, fresh private workspace, 2026-10-18 19:47 UTC):
+
+| Check | Result |
+| --- | --- |
+| Public frontend | Loads; new design and bundle served; usage row showed "25 of 25 … Deployment-wide: 298 remaining" |
+| Primary action | "Try a guided case" started the run; the one-shot `run=1` trigger was consumed |
+| Streaming | 10 progress events (guard, plan, 8 patient-scoped tools); answered in 12.8 s |
+| Live Qwen | **Planning: Qwen** (`planner: llm`). **Composition: not Qwen.** The model's draft failed to parse (`JSONDecodeError`), so the deterministic composer wrote the answer, labelled "Deterministic fallback · LLM draft unusable" |
+| Citations | 15 claims, 15 verified; every citation resolves; 37 evidence items, all `synthetic_p001`, all versioned; drawer showed `Encounter/p001-e3 · version 1` |
+| Excluded claims | 0 this run (the LLM draft produced no claims to verify), so the exclusion path was not exercised live; it was shown live earlier (8 excluded) and is covered by unit tests |
+| Review | Submitted as `6033f76a` (v1); approved by the reviewer persona; "Approval is valid for the exact artifact version shown"; audit trail bound to hash `e1489d62` |
+| Isolation | Own workspace: run 200, 1 review. Random workspace: run 404, 0 reviews. No workspace header: 400 |
+| Counter | Runs today 2 → 3 (exactly one); deployment 298 → 297; this connection 25 → 24, shown in the UI. The persona switch fired no second run |
+| Cost | 2 Workers AI calls, **49.1 neurons** (34.9 → 84.0; target 30–60, ceiling 150); 0 provider errors or quota rejections; 2,000-neuron reserve untouched |
+| Console | No console messages during the run |
+
+Read-only UI checks reused this run (no further runs, no non-GET requests from the
+screenshot browser): all eight sections at 375 px in light and dark showed no
+horizontal overflow, a fitting top bar, one `<h1>`, no error states, and the usage
+and synthetic-data notices. Screenshots: `docs/images/premium-polish/live-*.png`.
+
+After the release: original edge `475f0b6` ready (its counters unchanged), v1
+health 200, Space `9afa0f8` RUNNING on cpu-basic, last modified before this work.
+
 ## Remaining limitations
+
+- The live composer fell back on this guided question. Earlier sampling showed the
+  same question falls back on some runs (see [UI_POLISH.md](UI_POLISH.md)); the
+  fallback is labelled and still verified, but a recruiter may see a deterministic
+  answer. Not retried, by design.
 
 - The newer backend (`be52df7`, verified locally, staged in a git-ignored folder)
   is not published. The live agent therefore lacks the guided-completeness and

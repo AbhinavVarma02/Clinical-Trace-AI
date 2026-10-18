@@ -7,7 +7,7 @@ under publication/rollback are for an explicitly approved future release.
 
 | Artifact | Pin / evidence |
 | --- | --- |
-| Public edge (dedicated account `00f876c0ebbf368d25feabe3e49cbc0b`) | source `988dabc`; Worker version `1a506827-2e55-450a-a474-c1ed693f84ac`; rollback version `c9725bc0-98ab-4c80-ba59-ce71cfc68505` |
+| Public edge (dedicated account `00f876c0ebbf368d25feabe3e49cbc0b`) | source `716ea3b`; Worker version `aa8e284c-f0b3-4649-9c7f-adb61d6de175`; rollback version `1a506827-2e55-450a-a474-c1ed693f84ac` (`988dabc`) |
 | Previous edge (original account, unchanged) | source `475f0b6`; Worker version `76ecd882-4084-4f71-8648-fa031337c9dc`; config at `fb5c016` |
 | Existing co-hosted Space | `9afa0f8dfe602f42a8a7de3b7ac328da08966de9`, RUNNING on `cpu-basic` |
 | Locally verified backend candidate | source `be52df7357d1746d3704b6a140893e4ec2094656`, Space parent pinned above; ignored `.project-state/cohost-release-be52df7/` |
@@ -61,7 +61,7 @@ npm --prefix frontend run check
 npm --prefix frontend run test:e2e
 npm --prefix deploy/cloudflare run check
 npm --prefix deploy/cloudflare run deploy:dry-run
-node deploy/cloudflare/scripts/smoke.mjs https://clinical-trace-ai.vathadiabhinav.workers.dev --release 988dabc
+node deploy/cloudflare/scripts/smoke.mjs https://clinical-trace-ai.vathadiabhinav.workers.dev --release 716ea3b
 ```
 
 The browser suite starts an owned disposable real backend and runs in

@@ -1,6 +1,6 @@
 # Premium visual polish
 
-Frontend-only visual refinement of the React workspace (`frontend/workspace/`). **Not released.** Changes are local on `feature/clinical-trace-2.0` for owner review. No backend, API, data contract, quota, Worker, Hugging Face or evaluation change.
+Frontend-only visual refinement of the React workspace (`frontend/workspace/`). **Released 2026-10-18 (owner-approved)** as edge release `716ea3b`, Worker version `aa8e284c-f0b3-4649-9c7f-adb61d6de175`; one live guided case verified it (see [CLOUDFLARE_ACCOUNT_MIGRATION.md](CLOUDFLARE_ACCOUNT_MIGRATION.md#premium-ui-release-716ea3b-2026-10-18-owner-approved)). No backend, API, data contract, quota, Hugging Face or evaluation change.
 
 ## Direction: "clinical ink"
 
@@ -53,4 +53,4 @@ All eight sections, routing, guided-case flow, persona switching, streaming prog
 
 ## Screenshots
 
-[images/premium-polish/](images/premium-polish/): `before-*` and `after-*` pairs for desktop (1440) and mobile (390), light and dark: overview, agent answer, empty agent, evidence drawer, patients, risk, evidence explorer, evaluation, operations, governance.
+[images/premium-polish/](images/premium-polish/): `live-*` from the public site after release (read-only, reusing the single guided run), and `before-*` / `after-*` pairs for desktop (1440) and mobile (390), light and dark: overview, agent answer, empty agent, evidence drawer, patients, risk, evidence explorer, evaluation, operations, governance.
