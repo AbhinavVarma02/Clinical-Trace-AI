@@ -19,7 +19,7 @@ criteria and reproducible artifacts. Inspect PR #1 head-specific CI separately.
 
 ## State
 
-- Public 2.0 demo: https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Workers Free account, release `988dabc`; see [CLOUDFLARE_ACCOUNT_MIGRATION.md](CLOUDFLARE_ACCOUNT_MIGRATION.md)). The earlier edge on the original account (release `475f0b6`) still runs.
+- Public 2.0 demo: https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Workers Free account, release `716ea3b`; see [CLOUDFLARE_ACCOUNT_MIGRATION.md](CLOUDFLARE_ACCOUNT_MIGRATION.md)). The earlier edge on the original account (release `475f0b6`) still runs.
 - Backend: co-hosted in the existing Space (commit `9afa0f8`), owner-approved; the v1 Streamlit dashboard is unchanged at https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai.
 - Inference: Workers AI Qwen3-30B-A3B, relayed by the edge during streamed runs because Spaces cannot reach Cloudflare.
 - Final release gate met: complete guided workflow through the public URL on desktop and mobile, plus a cold start. Evidence: [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md#public-validation-2026-10-18-unauthenticated).

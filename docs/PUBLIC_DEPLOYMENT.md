@@ -4,7 +4,7 @@
 
 | Component | Where | State |
 | --- | --- | --- |
-| React workspace, gateway, status/metrics | https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Workers Free account `00f876c0…`) | Live, release `988dabc` |
+| React workspace, gateway, status/metrics | https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Workers Free account `00f876c0…`) | Live, release `716ea3b` (premium UI) |
 | Previous edge (original account, not changed) | https://clinical-trace-ai.room-for-both.workers.dev | Still running release `475f0b6` against the same backend |
 | Live LLM inference | Workers AI `@cf/qwen/qwen3-30b-a3b-fp8`, relayed by the edge during streamed runs | Live; 8,000-neuron daily cap below the 10,000 free allocation |
 | Python FastAPI / LangGraph / SHAP backend | Co-hosted in the existing Space (owner-approved): nginx routes `/api/v2` to FastAPI, everything else to the unchanged v1 Streamlit dashboard | Live, Space commit `9afa0f8`; rollback target `380103e` (identical tree to `91e7685`) |
