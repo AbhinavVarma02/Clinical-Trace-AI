@@ -245,3 +245,17 @@ describe("inference proxy", () => {
     expect(adaptMessages("@cf/meta/llama-3.3-70b-instruct-fp8-fast", messages as never)).toEqual(messages);
   });
 });
+
+describe("status resilience", () => {
+  it("reports availability even when usage accounting fails", async () => {
+    const { handleStatus } = await import("../src/status");
+    const env = makeEnv({ BACKEND_ORIGIN: "" });
+    (env.DB as unknown as { prepare: () => never }).prepare = () => { throw new Error("D1_ERROR: no such table"); };
+    const response = await handleStatus(env, ctx());
+    const body = await response.json() as { backend: { state: string }; accounting: string; inference: { quota_state: string } };
+    expect(response.status).toBe(200);
+    expect(body.backend.state).toBe("not_configured");
+    expect(body.accounting).toBe("unavailable");
+    expect(body.inference.quota_state).toBe("unknown");
+  });
+});

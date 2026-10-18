@@ -24,7 +24,8 @@ export default {
       if (url.pathname.startsWith("/edge/")) return errorResponse(404, "not_found", "Unknown edge route.", rid);
       return env.ASSETS.fetch(request);
     } catch (err) {
-      console.error(JSON.stringify({ rid, path: url.pathname, error: err instanceof Error ? err.name : "unknown" }));
+      // Route and error only: never request bodies, headers or clinical text.
+      console.error(JSON.stringify({ rid, path: url.pathname, error: err instanceof Error ? `${err.name}: ${err.message.slice(0, 200)}` : "unknown" }));
       return errorResponse(500, "edge_error", "The edge could not process this request.", rid);
     }
   },

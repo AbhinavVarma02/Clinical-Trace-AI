@@ -14,6 +14,8 @@ interface Probe {
   inference_mode?: string;
   inference_model?: string | null;
   readmission_model_loaded?: boolean;
+  /** Failure class only (for example "TimeoutError" or "http_503"); never a message or body. */
+  failure?: string;
   checked_at: string;
 }
 
@@ -40,12 +42,13 @@ export async function probeBackend(env: Env, ctx: ExecutionContext): Promise<Pro
       };
     } else {
       await res.body?.cancel();
-      probe = { state: res.status === 404 ? "unavailable" : "waking", latency_ms: latency, checked_at };
+      probe = { state: res.status === 404 ? "unavailable" : "waking", latency_ms: latency, checked_at,
+        failure: `http_${res.status}${type.includes("json") ? "" : "_non_json"}` };
     }
-  } catch {
-    probe = { state: "waking", latency_ms: Date.now() - started, checked_at };
+  } catch (err) {
+    probe = { state: "waking", latency_ms: Date.now() - started, checked_at, failure: err instanceof Error ? err.name : "unknown" };
   }
-  ctx.waitUntil(trackRecovery(env, probe.state));
+  ctx.waitUntil(trackRecovery(env, probe.state).catch(() => undefined));
   cached = { at: Date.now(), probe };
   return probe;
 }
@@ -67,21 +70,24 @@ async function trackRecovery(env: Env, state: BackendState): Promise<void> {
 export async function handleStatus(env: Env, ctx: ExecutionContext): Promise<Response> {
   const day = utcDay();
   const cap = limits(env);
+  // Availability must stay reportable even if usage accounting is briefly unavailable.
   const [backend, inference, runsToday] = await Promise.all([
     probeBackend(env, ctx),
-    inferenceSummary(env),
-    getCounter(env.DB, day, "agent_runs"),
+    inferenceSummary(env).catch(() => null),
+    getCounter(env.DB, day, "agent_runs").catch(() => null),
   ]);
   return json({
     edge: { status: "ok", release: env.RELEASE, served_at: new Date().toISOString() },
     backend,
-    inference,
+    inference: inference ?? { provider: "cloudflare-workers-ai", model: env.LLM_MODEL, configured: Boolean(env.LLM_PROXY_TOKEN),
+      daily_neuron_budget: cap.neuronBudget, neurons_used_today: null, remaining_fraction: null, quota_state: "unknown", resets_in_s: null },
     limits: {
       agent_runs_today: runsToday,
       agent_runs_global_per_day: cap.agentRunsGlobal,
       agent_runs_per_visitor_per_day: cap.agentRunsPerClient,
-      remaining_agent_runs_today: Math.max(0, cap.agentRunsGlobal - runsToday),
+      remaining_agent_runs_today: runsToday === null ? null : Math.max(0, cap.agentRunsGlobal - runsToday),
     },
+    accounting: inference && runsToday !== null ? "ok" : "unavailable",
     disclosure: "Synthetic data only. Educational prototype; not clinically validated.",
   });
 }
