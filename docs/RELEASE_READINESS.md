@@ -31,7 +31,10 @@ Deployment, merging, paid services and production credential changes remain
   known vulnerabilities; pip check clean. Both CI format scopes (35 modules)
   pass; final tracked/candidate secret scan **297 files, 0 findings**. The six new
   host-restoration cases pass; Worker suite includes 30 Vitest + 6 isolated Node
-  rollback tests. Head-specific CI confirmation follows the final push.
+  rollback tests. Release-tool CI `39096141734` passed all five jobs, including
+  the actual container build/smoke. Linux Python: 412 passed / 3 existing skips
+  (unbuilt v1 component asset and two absent-model cases); local: 415 passed.
+  Final UI/documentation head confirmation is recorded in the private handoff.
 
 ## Preserved evidence and files
 
@@ -70,6 +73,10 @@ separate from agent allowance blocking; two added timer tests cover both cases.
 Production read-only baseline: **7/7 passed** at `2026-10-18T03:58:13.569Z`;
 Space metadata pins running `9afa0f8dfe602f42a8a7de3b7ac328da08966de9`,
 hardware `cpu-basic`, and v1 `/_stcore/health` returned `ok`.
+Final read-only status at `2026-10-18T04:14:16.163Z` confirms the same edge,
+ready backend, and unchanged 5,909.2-neuron usage. This continuation made **zero
+inference calls**. All 26 protected-file hashes still match; only the original
+unrelated working-tree files remain.
 
 ## Release recovery improvements
 
@@ -88,19 +95,25 @@ the later restoration-tool change is host administration only.
 
 ## Commits and CI
 
-`be52df7` (Phase A) and `3c61bc2` (release tools/reports) are pushed to the
-existing feature branch and PR #1.
-Its Actions run `39095723473` completed SUCCESS. Final release-tool/report
-UI recovery follow-up and final-head CI confirmation follow; do not substitute starting
-CI `39094562508` for new-head checks.
+`be52df7` (Phase A), `3c61bc2` (release tools/reports) and `b1ce0b9`
+(section-retry recovery) are pushed to the existing feature branch and PR #1.
+[Phase A CI](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/39095723473)
+and [release-tool CI](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/39096141734)
+completed SUCCESS. The UI recovery run is
+[39096349237](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/39096349237).
+The final documentation commit's exact HEAD/run/completion and PR-description
+result are saved in `.project-state/HANDOFF.md` after remote confirmation;
+inspect [current branch CI](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions?query=branch%3Afeature%2Fclinical-trace-2.0)
+for newer heads. Starting `ff0a614` CI is historical evidence only.
 
 ## Next action
 
-Commit/push the release-tool/report milestone and confirm all five CI jobs on
-the final pushed head. Live evaluation
-and fresh public full LLM smoke remain quota-blocked. No deployment or merge is
-authorized. Resume by reading this report, `.project-state/HANDOFF.md` and the
-checklist, then inspect branch/HEAD/status and PR #1. Keep existing attempts.
+**Release readiness: HOLD** for the fresh locked live gate and candidate public
+full LLM smoke; neither can be certified by offline tests or historical results.
+No deployment or merge is authorized. Resume by reading this report,
+`.project-state/HANDOFF.md` and the checklist, then inspect branch/HEAD/status,
+PR #1 and its head-specific CI. Check a new free allocation once before any
+future inference. Keep existing attempts; do not repeat completed evaluations.
 The private `.project-state/run_release_live_gate.py --output <new-report.json>`
 runner checks a full 750-neuron allocation above reserve before calling the
 unchanged locked evaluator, caps requests at 84, and retains failed attempts.
