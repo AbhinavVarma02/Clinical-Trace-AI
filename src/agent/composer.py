@@ -290,6 +290,8 @@ COMPOSER_SYSTEM = (
     "Never exceed 6 claims. Each claim must be one short factual sentence, at most 35 words, "
     "supported by 1-2 directly relevant evidence ids copied exactly. Prefer the source's own wording. "
     "Copy numbers, dates (YYYY-MM-DD), medication status and units exactly; retain missing units. "
+    "For computed encounter intervals, copy the tool's core sentence with its admission date, day gap "
+    "and discharge date unchanged. "
     "Report recorded facts rather than making a new diagnosis. Do not infer a cause, treatment rationale, "
     "sequence or outcome unless the cited text explicitly states it. Do not calculate new numbers. "
     "Do not interpret a lab result as high, low, therapeutic or within a target range unless the cited "
@@ -319,8 +321,8 @@ def _evidence_prompt(evidence: dict[str, EvidenceItem], limit: int = EVIDENCE_MA
     """
     intents = set(detect_intents(question))
     wanted = {
-        "summary": ("condition", "encounter", "encounter_interval", "medication", "lab",
-                    "completeness_check", "profile"),
+        "summary": ("encounter_interval", "encounter", "medication", "lab", "completeness_check",
+                    "condition", "profile"),
         "review_preparation": ("consistency_check", "completeness_check", "condition", "encounter",
                                "encounter_interval", "medication", "model_output"),
         "medications": ("medication", "retrieved"),
@@ -347,6 +349,11 @@ def _evidence_prompt(evidence: dict[str, EvidenceItem], limit: int = EVIDENCE_MA
             oldest = min(items, key=lambda e: (e.date or "9999", e.evidence_id))
             items.remove(oldest)
             items.insert(1, oldest)
+        if kind == "condition" and "summary" in intents and "conditions" not in intents:
+            # A journey's model input needs room for events and changes rather
+            # than separate restatements of every baseline condition. The full
+            # evidence map is retained unchanged for verification and the UI.
+            items = items[:1]
         groups[kind] = items
     lines: list[str] = []
     chars = 0

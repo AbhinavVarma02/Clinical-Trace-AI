@@ -58,6 +58,20 @@ HISTORICAL = re.compile(
     r"^(?:(?:the\s+)?patient|he|she|they)\s+(?:was|were)\s+"
     r"(?P<verb>diagnosed\s+with|prescribed)\s+(?P<payload>.+?)\.?$", re.I,
 )
+INTERVAL_SOURCE = re.compile(
+    r"^The inpatient admission on (?P<admission>\d{4}-\d{2}-\d{2}) began (?P<gap>\d+) days "
+    r"after discharge on (?P<discharge>\d{4}-\d{2}-\d{2}); this interval (?P<window>[^.]+)\. "
+    r"Sources: (?P<previous>Encounter/[^\s@]+)@v(?P<previous_version>\d+) \(discharge\) and "
+    r"(?P<current>Encounter/[^\s@]+)@v(?P<current_version>\d+) \(admission\)\.$"
+)
+INTERVAL_CLAIMS = [re.compile(pattern, re.I) for pattern in (
+    r"^(?:the\s+)?(?:inpatient\s+)?(?:admission|readmission)\s+on\s+@DATE0@\s+"
+    r"(?:began|occurred|was)\s+(?P<gap>[+]?\d+(?:\.0+)?)\s+days?\s+after\s+"
+    r"(?:the\s+)?discharge\s+on\s+@DATE1@(?P<tail>.*)$",
+    r"^on\s+@DATE0@,?\s+(?:the\s+)?(?:inpatient\s+)?(?:admission|readmission)\s+"
+    r"(?:began|occurred|was)\s+(?P<gap>[+]?\d+(?:\.0+)?)\s+days?\s+after\s+"
+    r"(?:the\s+)?discharge\s+on\s+@DATE1@(?P<tail>.*)$",
+)]
 # Minimum share of a claim's content words that must occur in its cited evidence.
 # A lexical heuristic that catches off-topic or unsupported generations; it is not
 # semantic entailment and is documented as such in docs/EVALUATION.md.
@@ -168,6 +182,65 @@ def _measurements(text: str) -> set[tuple[str, str]]:
             for m in MEASUREMENT.finditer(_units(_without_dates(text)))}
 
 
+def _check_interval_claim(text: str, cited: list[EvidenceItem]) -> list[str]:
+    """Bind computed interval claims to ordered dates, their gap, and window.
+
+    Numeric/date atom membership cannot distinguish a gap from the thirty-day
+    threshold or reverse admission and discharge roles. Only bounded explicit
+    relations are accepted for this trusted derived evidence kind.
+    """
+    intervals = [item for item in cited if item.kind == "encounter_interval"]
+    if not intervals:
+        return []
+    prefix = "computed encounter interval failed: "
+    if len(intervals) != 1:
+        return [prefix + "claim must cite exactly one computed interval"]
+    item = intervals[0]
+    source = INTERVAL_SOURCE.fullmatch(item.text)
+    if source is None:
+        return [prefix + "unrecognised tool interval structure"]
+    try:
+        admission = date.fromisoformat(source["admission"])
+        discharge = date.fromisoformat(source["discharge"])
+        expected = (admission - discharge).days
+        gap = int(source["gap"])
+    except ValueError:
+        return [prefix + "invalid tool interval dates or gap"]
+    if expected < 0 or gap != expected:
+        return [prefix + "tool gap does not match ordered event dates"]
+    if (item.source_ref != source["current"] or str(item.source_version) != source["current_version"]):
+        return [prefix + "tool admission source/version differs from its lineage"]
+    window = ("meets the thirty-day readmission definition (0 to 30 days)" if gap <= 30
+              else "is outside the thirty-day readmission window (0 to 30 days)")
+    if source["window"] != window:
+        return [prefix + "tool window classification does not match its gap"]
+    mentions = _dates(text)
+    if len(mentions) != 2 or any(value is None or value[2] is None for _, value in mentions):
+        return [prefix + "claim needs two explicit full event dates"]
+    canonical = text
+    for index, (mention, _) in reversed(list(enumerate(mentions))):
+        canonical = canonical[:mention.start()] + f"@DATE{index}@" + canonical[mention.end():]
+    parsed = next((match for pattern in INTERVAL_CLAIMS if (match := pattern.fullmatch(canonical))), None)
+    if parsed is None:
+        return [prefix + "unsupported event relation wording"]
+    claim_admission, claim_discharge = (value for _, value in mentions)
+    if (claim_admission != (admission.year, admission.month, admission.day)
+            or claim_discharge != (discharge.year, discharge.month, discharge.day)):
+        return [prefix + "claim admission/discharge roles differ from the tool interval"]
+    if _number(parsed["gap"]) != str(gap):
+        return [prefix + "claim gap differs from the recomputed interval"]
+    tail = " ".join(parsed["tail"].lower().split()).strip(" .;,")
+    short_window = window.split(" (")[0]
+    allowed = {""}
+    for description in (window, short_window):
+        allowed.update((description, f"this interval {description}", f"which {description}"))
+    # An exact full tool quotation may include the source lineage as well.
+    allowed.add(" ".join(item.text[source.end("discharge"):].lower().split()).strip(" .;,"))
+    if tail not in allowed:
+        return [prefix + "unsupported window classification or additional content"]
+    return []
+
+
 def _historical_record_text(text: str, cited: list[EvidenceItem]) -> str:
     """Remove a historical trigger only after exact, same-item record support.
 
@@ -276,6 +349,8 @@ def verify_claims(
         if cited:
             available = set().union(*(_numbers(item.text) for item in cited))
             cited_text = " ".join(item.text for item in cited)
+            interval_reasons = _check_interval_claim(text, cited)
+            reasons.extend(interval_reasons)
             if not _dates_supported(text, cited_text):
                 reasons.append("dates not found in cited evidence")
             if not _measurements(text) <= _measurements(cited_text):
@@ -289,7 +364,15 @@ def verify_claims(
             missing = sorted(n for n in _numbers(text) if n not in available)
             if missing:
                 reasons.append(f"numbers not found in cited evidence: {', '.join(missing)}")
-            support, unsupported = lexical_support(_historical_record_text(text, cited), cited_text)
+            lexical_text = _historical_record_text(text, cited)
+            if not interval_reasons:
+                interval = next((item for item in cited if item.kind == "encounter_interval"), None)
+                if interval is not None:
+                    # The entire relation and optional qualifier were proved
+                    # above. Canonicalize only this bounded grammar, so an
+                    # equivalent 'occurred' is not an unsupported clinical word.
+                    lexical_text = interval.text
+            support, unsupported = lexical_support(lexical_text, cited_text)
             claim["lexical_support"] = round(support, 3)
             if support < MIN_LEXICAL_SUPPORT:
                 reasons.append(f"low lexical support ({support:.2f}); unsupported terms: "

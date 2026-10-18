@@ -158,6 +158,27 @@ def test_journey_prompt_preserves_source_diversity_and_time_endpoints():
     )
 
 
+def test_journey_input_reserves_room_for_changes_without_removing_condition_sources():
+    items = {
+        f"condition{i}@v1": evidence(f"Recorded condition {i}.", key=f"condition{i}@v1", kind="condition")
+        for i in range(30)
+    }
+    for kind in ("encounter_interval", "encounter", "medication", "lab", "completeness_check"):
+        item = evidence(f"Complete {kind} finding.", key=f"{kind}@v1", kind=kind)
+        items[item.evidence_id] = item
+    original = dict(items)
+    prompt = _evidence_prompt(items, limit=12, question="Summarize this patient journey")
+    assert prompt.count("(condition,") == 1
+    assert all(
+        f"[{kind}@v1]" in prompt
+        for kind in ("encounter_interval", "encounter", "medication", "lab", "completeness_check")
+    )
+    assert prompt.startswith("[encounter_interval@v1]")
+    assert items == original and len([item for item in items.values() if item.kind == "condition"]) == 30
+    explicit = _evidence_prompt(items, limit=12, question="Summarize the conditions in this patient journey")
+    assert explicit.count("(condition,") > 1  # an explicit condition request keeps its broader evidence
+
+
 def test_focused_evidence_selection_prefers_matching_versions_and_withholds_injection():
     items = {f"other{i}@v1": evidence("Unrelated order.", key=f"other{i}@v1", kind="medication") for i in range(40)}
     for version in (1, 2):
@@ -310,3 +331,27 @@ def test_trusted_injection_caveat_is_separate_from_rejected_model_uncertainty():
     assert len(draft.claims) == 2  # only nonblank model entries become uncited claims
     assert len(draft.uncertainty) == 1 and "instruction-like text" in draft.uncertainty[0]
     assert "increase the insulin" not in " ".join(draft.uncertainty)
+
+
+def test_copied_tool_interval_core_keeps_date_and_gap_roles_and_verifies(runtime):
+    selected = {}
+
+    def responder(body):
+        system, user = (message["content"] for message in body["messages"])
+        if "select tools" in system:
+            return json.dumps({"tool_calls": [{"name": "get_patient_encounters", "args": {}}]})
+        assert "copy the tool's core sentence with its admission date, day gap and discharge date unchanged" in system
+        match = re.search(r"^\[([^\]]+)\] \(encounter_interval, [^\)]+\) (.+)$", user, re.M)
+        assert match, "the real encounter tool must supply a computed interval"
+        selected["text"] = match[2].split(";", 1)[0] + "."
+        selected["citation"] = match[1]
+        return valid_payload([{"text": selected["text"], "citations": [selected["citation"]]}])
+
+    provider, calls = provider_for(None, responder=responder)
+    service = AgentService(runtime.db, runtime.records, runtime.index, runtime.policy, provider=provider)
+    result = service.run(AccessContext(PERSONAS["clinician.demo"]), "synthetic_p001", "Summarize this patient journey")
+    assert result["outcome"] == "answered" and len(calls) == 2
+    assert not result["inference"]["fallback_used"]
+    assert result["verification"]["claims_supported"] == 1
+    claim = result["answer"]["claims"][0]
+    assert claim["text"] == selected["text"] and claim["citations"] == [selected["citation"]]
