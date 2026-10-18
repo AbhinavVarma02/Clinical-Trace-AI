@@ -25,9 +25,7 @@ function Progress({ startedAt, events }: { startedAt: number; events: AgentProgr
         <span className="spinner" aria-hidden="true" />
         <strong style={{ fontSize: 14 }}>Agent is working · {elapsed.toFixed(1)} s</strong>
       </div>
-      <div className="faint" style={{ fontSize: 12 }}>
-        Live execution progress. The answer appears after evidence verification completes.
-      </div>
+      <div className="faint" style={{ fontSize: 12 }}>The answer appears once its claims are verified.</div>
       <ol className="muted" style={{ fontSize: 13, margin: 0, paddingLeft: 18 }}>
         {events.map((event, i) => <li key={i}>{STAGES[event.node] ?? event.node}{event.tool ? ` · ${event.tool.replace(/_/g, " ")}` : ""}</li>)}
       </ol>
@@ -130,16 +128,18 @@ export function AgentPage() {
         <div className="page-header">
           <div>
             <h1 className="page-title">Case Review Agent</h1>
-            <p className="page-subtitle">
-              Ask about the selected synthetic record. The agent selects patient-scoped tools, gathers evidence, and only returns claims that pass
-              citation, number, and support checks.
-            </p>
+            <p className="page-subtitle">Ask about a synthetic patient. A claim appears only if its cited sources support it.</p>
           </div>
         </div>
         {runs.length === 0 && !pending && !queued && !error && (
           <Card>
             <EmptyState title={`Ask about ${selected?.display_name.replace(" (synthetic record)", "") ?? patientId}`}>
-              Try a suggested question, or one of the safety probes to see refusals and abstentions.
+              Pick a question to start.
+              <div className="prompt-chips" style={{ justifyContent: "center", marginTop: "var(--space-3)" }}>
+                {prompts.map((prompt) => (
+                  <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)}>{prompt}</button>
+                ))}
+              </div>
             </EmptyState>
           </Card>
         )}
@@ -159,7 +159,7 @@ export function AgentPage() {
                   Waiting for the analysis backend to start{availability.waitingSince ? ` · ${formatDuration((Date.now() - availability.waitingSince) / 1000)}` : ""}
                 </strong>
               </div>
-              <div className="faint" style={{ fontSize: 12 }}>Your question is queued in this browser and is sent automatically when the backend is ready.</div>
+              <div className="faint" style={{ fontSize: 12 }}>Your question is queued and sends automatically.</div>
               <button type="button" className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => setQueued(null)}>Cancel</button>
             </div>
           </div>
@@ -183,14 +183,14 @@ export function AgentPage() {
               className="textarea"
               rows={2}
               maxLength={1000}
-              placeholder="Ask about encounters, medications, labs, notes, gaps, or readmission risk…"
+              placeholder="Ask about visits, medications, labs, notes, or readmission risk…"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={onKeyDown}
               disabled={Boolean(pending)}
             />
             <div className="row-between">
-              <span className="faint" style={{ fontSize: 12 }}>Enter to send · Shift+Enter for a new line · {question.length}/1000</span>
+              <span className="faint" style={{ fontSize: 12 }}>Enter to send · Shift+Enter for a new line{question.length >= 800 ? ` · ${question.length}/1000` : ""}</span>
               <button type="submit" className="btn primary" disabled={!question.trim() || Boolean(pending)}>
                 <Icons.send size={16} /> Ask
               </button>
@@ -213,20 +213,20 @@ export function AgentPage() {
           </label>
           {patients.error && <ErrorState error={patients.error} onRetry={patients.reload} />}
           {selected && <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>{selected.conditions.join(" · ")}</p>}
-          <p className="faint" style={{ fontSize: 12, marginTop: 10 }}>
-            The session is bound to this persona and patient; tools cannot be redirected to another record.
-          </p>
+          <p className="faint" style={{ fontSize: 12, marginTop: 10 }}>Tools stay locked to this patient.</p>
         </Card>
-        <Card title="Suggested questions">
-          <div className="prompt-chips">
-            {prompts.map((prompt) => (
-              <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending)}>
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </Card>
-        <Card title="Safety probes" subtitle="These should be refused or abstained on">
+        {(runs.length > 0 || pending || queued || error) && (
+          <Card title="Suggested questions">
+            <div className="prompt-chips">
+              {prompts.map((prompt) => (
+                <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending)}>
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+        <Card title="Safety probes" subtitle="Expected to be refused or left unanswered">
           <div className="prompt-chips">
             {SAFETY_PROBES.map((prompt) => (
               <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending)}>

@@ -11,7 +11,7 @@ export function OperationsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Operations</h1>
-          <p className="page-subtitle">Request, agent, and tool telemetry measured by this server process. Traces store identifiers and timings, never record text.</p>
+          <p className="page-subtitle">Live request, agent and tool timings from this server. Identifiers and timings only, never record text.</p>
         </div>
         <button type="button" className="btn sm" onClick={ops.reload}>Refresh</button>
       </div>

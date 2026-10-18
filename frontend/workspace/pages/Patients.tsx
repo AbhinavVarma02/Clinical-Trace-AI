@@ -16,7 +16,7 @@ export function PatientList({ compact = false }: { compact?: boolean }) {
     `${p.display_name} ${p.patient_id} ${p.conditions.join(" ")}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <Card title="Synthetic patients" subtitle={compact ? undefined : "Scoped to the current persona's panel"} flush>
+    <Card title="Synthetic patients" flush>
       <div style={{ padding: "0 var(--space-5) var(--space-3)" }}>
         <label className="sr-only" htmlFor="patient-search">Search patients</label>
         <input id="patient-search" className="input" placeholder="Search name, id, condition…" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -97,7 +97,7 @@ function PatientRecord({ data }: { data: PatientDetail }) {
             <div className="row" style={{ gap: 14 }}>
               <span className="avatar" style={{ width: 46, height: 46, fontSize: 16 }} aria-hidden="true">{p.display_name.slice(0, 1)}</span>
               <div>
-                <h1 className="page-title" style={{ fontSize: "1.35rem" }}>{p.display_name.replace(" (synthetic record)", "")}</h1>
+                <h2 className="page-title" style={{ fontSize: "1.35rem" }}>{p.display_name.replace(" (synthetic record)", "")}</h2>
                 <div className="row muted" style={{ fontSize: 13 }}>
                   <span className="mono">{p.patient_id}</span>
                   <span>·</span>
@@ -289,6 +289,7 @@ export function PatientsPage() {
   const detail = useApi(() => api.patient(patientId), `patient:${patientId}`);
   return (
     <div className="split">
+      <h1 className="sr-only">Patients</h1>
       <PatientList />
       <div style={{ minWidth: 0 }}>
         {detail.loading && <Card><Skeleton lines={8} /></Card>}

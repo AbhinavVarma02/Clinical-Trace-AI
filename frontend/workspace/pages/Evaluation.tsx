@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
-import { Badge, Card, ErrorState, Segmented, Skeleton, Stat, formatDate, humanize, ms, pct } from "../components/ui";
+import { Badge, Card, Disclosure, ErrorState, Segmented, Skeleton, Stat, formatDate, humanize, ms, pct } from "../components/ui";
 import { useApi } from "../state";
 import type { EvalSummary } from "../types";
 
@@ -42,8 +42,7 @@ export function EvaluationPage() {
         <div>
           <h1 className="page-title">Evaluation</h1>
           <p className="page-subtitle">
-            Offline, reproducible scoring against versioned synthetic cases. Scoring is deterministic and rule-based (no LLM judge, no human ratings).
-            Thresholds were fixed before the first run. A passing finite suite does not demonstrate clinical safety.
+            Rule-based scoring on versioned synthetic cases, with thresholds fixed in advance. No LLM judge. Passing does not prove clinical safety.
           </p>
         </div>
         <Segmented<Split> label="Case split" value={split} onChange={setSplit} options={[{ value: "all", label: "All" }, { value: "dev", label: "Development" }, { value: "heldout", label: "Held-out" }]} />
@@ -61,7 +60,7 @@ export function EvaluationPage() {
           {r.gate.failures.length > 0 && (
             <div className="banner danger"><div><strong>Gate failures:</strong> {r.gate.failures.join("; ")}</div></div>
           )}
-          <Card title="Agent quality by inference mode" subtitle={`Latest deterministic run ${formatDate(r.run_at, true)} at commit ${r.git_commit ?? "unknown"}. LLM columns are local Ollama runs.`} flush>
+          <Card title="Agent quality by inference mode" subtitle={`Latest deterministic run ${formatDate(r.run_at, true)} · commit ${r.git_commit ?? "unknown"}. LLM columns are separate recorded runs.`} flush>
             <div className="table-wrap">
               <table className="table">
                 <thead>
@@ -105,7 +104,7 @@ export function EvaluationPage() {
                 </table>
               </div>
             </Card>
-            <Card title="Failed cases" subtitle="Reported as measured; held-out cases are not tuned against" flush>
+            <Card title="Failed cases" subtitle="Reported as measured. Held-out cases are never tuned against." flush>
               <div className="list">
                 {columns.flatMap((c, ci) => {
                   const cases = ci === 0 ? r.cases.filter((x) => !x.passed) : r.comparisons[ci - 1]?.failed_cases ?? [];
@@ -126,7 +125,8 @@ export function EvaluationPage() {
               </div>
             </Card>
           </div>
-          <Card title="Run history" flush>
+          <Disclosure label="Run history" hint={`${r.history.length} recorded runs`}>
+          <Card flush>
             <div className="table-wrap">
               <table className="table">
                 <thead><tr><th>Run</th><th>Commit</th><th>Mode</th><th>Gate</th><th className="num">Outcome acc.</th><th className="num">Correctness</th><th className="num">Safety</th><th className="num">p50</th></tr></thead>
@@ -147,6 +147,7 @@ export function EvaluationPage() {
               </table>
             </div>
           </Card>
+          </Disclosure>
         </>
       )}
     </>

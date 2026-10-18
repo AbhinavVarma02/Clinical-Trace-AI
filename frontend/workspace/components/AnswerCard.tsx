@@ -31,20 +31,26 @@ function ModeBadge({ run }: { run: AgentRun }) {
   );
 }
 
+/** Claims shown before "Show all": keeps long answers scannable without hiding any verified claim. */
+const CLAIMS_PREVIEW = 5;
+
 export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview?: boolean }) {
   const [open, setOpen] = useState<Evidence | null>(null);
   const [showTrace, setShowTrace] = useState(false);
+  const [showAllClaims, setShowAllClaims] = useState(false);
   const [reviewState, setReviewState] = useState<{ status: string; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const byId = new Map(run.evidence.map((e) => [e.evidence_id, e]));
   const verification = run.verification;
+  const hiddenClaims = showAllClaims ? 0 : Math.max(0, run.answer.claims.length - CLAIMS_PREVIEW);
+  const visibleClaims = hiddenClaims ? run.answer.claims.slice(0, CLAIMS_PREVIEW) : run.answer.claims;
 
   async function submitForReview() {
     setSubmitting(true);
     try {
       const review = await api.submitReview(run.run_id);
       markGuideStep("submit");
-      setReviewState({ status: review.status, message: `Submitted as review ${review.review_id.slice(0, 8)} (artifact v${review.artifact_version}).` });
+      setReviewState({ status: review.status, message: `Submitted as review ${review.review_id.slice(0, 8)} (v${review.artifact_version}). A reviewer can now approve it.` });
     } catch (error) {
       setReviewState({ status: "error", message: error instanceof ApiError ? error.message : "Submission failed." });
     } finally {
@@ -93,12 +99,13 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
 
         {run.answer.claims.length > 0 && (
           <ol className="claims" aria-label="Verified claims">
-            {run.answer.claims.map((claim, index) => (
+            {visibleClaims.map((claim, index) => (
               <li className="claim" key={`${index}-${claim.text.slice(0, 20)}`}>
                 <span className="claim-index" aria-hidden="true">{index + 1}</span>
                 <div className="claim-body">
                   {claim.text}
                   <div className="citations">
+                    {claim.citations.length > 0 && <span className="citations-label">Sources</span>}
                     {claim.citations.map((citation) => {
                       const evidence = byId.get(citation);
                       return (
@@ -125,20 +132,24 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
             ))}
           </ol>
         )}
+        {run.answer.claims.length > CLAIMS_PREVIEW && (
+          <button type="button" className="btn ghost sm" style={{ alignSelf: "flex-start" }} onClick={() => setShowAllClaims((v) => !v)} aria-expanded={showAllClaims}>
+            {showAllClaims ? "Show fewer claims" : `Show all ${run.answer.claims.length} verified claims`}
+          </button>
+        )}
 
         {run.risk && (
           <div className={`banner ${run.risk.available ? "info" : "warning"}`}>
             <div>
               {run.risk.available ? (
                 <>
-                  <strong>Readmission model:</strong> probability {((run.risk.risk_probability ?? 0) * 100).toFixed(1)}% (
-                  {run.risk.risk_label} at threshold {((run.risk.risk_threshold ?? 0) * 100).toFixed(0)}%) for encounter{" "}
-                  <span className="mono">{run.risk.encounter_id}</span>, model <span className="mono">{run.risk.model_version}</span>.
-                  Out-of-distribution estimate; see caveats.
+                  <strong>Readmission risk:</strong> {((run.risk.risk_probability ?? 0) * 100).toFixed(1)}% ({run.risk.risk_label} at a{" "}
+                  {((run.risk.risk_threshold ?? 0) * 100).toFixed(0)}% threshold). A model trained on other data, so treat it as illustrative.{" "}
+                  <span className="faint">Encounter <span className="mono">{run.risk.encounter_id}</span> · model <span className="mono">{run.risk.model_version}</span></span>
                 </>
               ) : (
                 <>
-                  <strong>Readmission model unavailable for this record.</strong> {run.risk.reasons?.join(" ")}
+                  <strong>Readmission risk unavailable for this record.</strong> {run.risk.reasons?.join(" ")}
                 </>
               )}
             </div>
@@ -179,7 +190,7 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
 
         <div className="row-between" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
           <button type="button" className="btn ghost sm" onClick={() => setShowTrace((v) => !v)} aria-expanded={showTrace}>
-            {showTrace ? "Hide" : "Show"} agent activity · {run.tool_calls.length} tool call{run.tool_calls.length === 1 ? "" : "s"}
+            {showTrace ? "Hide" : "Show"} agent activity · {run.tool_calls.length} tool{run.tool_calls.length === 1 ? "" : "s"} used
           </button>
           {canReview && run.outcome === "answered" && (
             <button type="button" className="btn sm" onClick={submitForReview} disabled={submitting || reviewState?.status === "pending_review"}>

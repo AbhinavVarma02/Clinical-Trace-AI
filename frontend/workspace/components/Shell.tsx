@@ -71,8 +71,7 @@ export function Shell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="sidebar-footer">
-          <strong style={{ color: "var(--text)" }}>Synthetic data only.</strong> Educational research prototype. It does not diagnose, prescribe,
-          or replace clinical judgement, and it is not clinically validated.
+          <strong style={{ color: "var(--text)" }}>Synthetic data only.</strong> Not clinically validated. Not for medical use.
         </div>
       </aside>
       {menuOpen && <div className="drawer-backdrop" style={{ zIndex: 45 }} onClick={() => setMenuOpen(false)} />}
@@ -97,7 +96,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <label className="sr-only" htmlFor="persona-select">Demo persona</label>
           <select
             id="persona-select"
-            className="select"
+            className="select persona-select"
             style={{ width: "auto", maxWidth: 200 }}
             value={persona}
             onChange={(event) => setPersona(event.target.value)}

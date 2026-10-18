@@ -38,6 +38,19 @@ export function Card({ title, subtitle, actions, children, flush = false, classN
   );
 }
 
+/** Native disclosure: detail stays one click away (keyboard and screen-reader friendly) without crowding the page. */
+export function Disclosure({ label, hint, children, className = "" }: { label: ReactNode; hint?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <details className={`disclosure ${className}`}>
+      <summary>
+        <span>{label}</span>
+        {hint && <span className="disclosure-hint">{hint}</span>}
+      </summary>
+      <div className="disclosure-body">{children}</div>
+    </details>
+  );
+}
+
 export function Stat({ label, value, note, tone }: { label: string; value: ReactNode; note?: ReactNode; tone?: Tone }) {
   return (
     <div className="card stat">
