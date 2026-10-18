@@ -27,7 +27,7 @@
   ],
   "triggers": { "crons": ["17 3 * * *"] },
   "vars": {
-    "BACKEND_ORIGIN": "",
+    "BACKEND_ORIGIN": "https://abhinavvathadi-clinical-trace-ai.hf.space",
     "LLM_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
     "DAILY_NEURON_BUDGET": "8000",
     "DAILY_AGENT_RUNS_GLOBAL": "300",
