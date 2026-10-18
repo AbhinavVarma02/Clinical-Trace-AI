@@ -86,7 +86,7 @@ class InferenceResponse(ResponseContract):
     fallback_used: bool
     llm_attempt: dict[str, Any] | None
     provider: dict[str, Any] | None
-    degraded_reason: Literal["quota_exhausted", "provider_unavailable"] | None = None
+    degraded_reason: Literal["quota_exhausted", "relay_unavailable", "provider_unavailable"] | None = None
     label: str
 
 

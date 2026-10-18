@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.v2_schemas import AgentRunRequest, AgentRunResponse
 from src.agent.graph import CancelledRun
+from src.agent.relay import RELAY_CHANNEL
 from src.agent.service import AgentBusy, RunConflict
 from src.errors import NotFoundError
 from src.runtime import Runtime
@@ -38,7 +39,14 @@ async def stream_run(
             run_ids.append(event["run_id"])
         events.put_nowait(("progress", event))
 
+    def relay(request_frame: dict[str, Any]) -> None:
+        # Inference requests for the edge to fulfil; the edge strips these frames before the browser.
+        if stopped.is_set():
+            raise CancelledRun(run_ids[0] if run_ids else "pending")
+        events.put(("relay", request_frame), timeout=5)
+
     def worker() -> None:
+        RELAY_CHANNEL.set(relay)
         try:
             result = rt.agent.run(
                 ctx, body.patient_id, body.question, body.session_id, idempotency_key=idempotency_key, observer=progress

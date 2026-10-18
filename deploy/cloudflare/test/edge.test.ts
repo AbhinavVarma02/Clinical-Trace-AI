@@ -259,3 +259,52 @@ describe("status resilience", () => {
     expect(body.inference.quota_state).toBe("unknown");
   });
 });
+
+describe("stream inference relay", () => {
+  it("answers relay frames on Workers AI, posts the completion back and hides them from the browser", async () => {
+    const env = makeEnv({}, () => ({ choices: [{ message: { content: "{\"tool_calls\": []}" } }], usage: { prompt_tokens: 30, completion_tokens: 5, neurons: 0.4 } }));
+    const relayId = "Rk3xR9pQ2mVb7Lc4Ws8Zt1Yh";
+    const wire = [
+      'event: progress\ndata: {"run_id":"r1","node":"guard"}\n\n',
+      `event: relay\ndata: {"relay_id":"${relayId}","request":{"model":"@cf/qwen/qwen3-30b-a3b-fp8","messages":[{"role":"system","content":"s"},{"role":"user","content":"u"}],"max_tokens":50}}\n\n`,
+      'event: result\ndata: {"run_id":"r1","outcome":"answered"}\n\n',
+    ].join("");
+    const posts: { url: string; body: { status: number; body: { choices: { message: { content: string } }[] } }; headers: Headers }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: URL, init?: RequestInit) => {
+      if (String(url).includes("/api/v2/agent/relay/")) {
+        posts.push({ url: String(url), body: JSON.parse(String(init!.body)), headers: new Headers(init!.headers) });
+        return new Response('{"accepted":true}', { headers: { "content-type": "application/json" } });
+      }
+      const bytes = new TextEncoder().encode(wire);
+      const stream = new ReadableStream<Uint8Array>({ start(c) { for (let i = 0; i < bytes.length; i += 23) c.enqueue(bytes.slice(i, i + 23)); c.close(); } });
+      return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+    }));
+    const c = ctx();
+    const response = await handleApi(new Request("https://edge.example/api/v2/agent/runs/stream", {
+      method: "POST", body: JSON.stringify({ patient_id: "synthetic_p001", question: "q" }),
+      headers: { "content-type": "application/json", "cf-connecting-ip": "198.51.100.7" },
+    }), env, c, "rid-relay");
+    const text = await response.text();
+    await Promise.all(c.pending);
+    expect(text).toContain("event: progress");
+    expect(text).toContain("event: result");
+    expect(text).not.toContain("relay");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.url.endsWith(`/api/v2/agent/relay/${relayId}`)).toBe(true);
+    expect(posts[0]!.headers.get("x-edge-secret")).toBe("edge-secret-value");
+    expect(posts[0]!.body.status).toBe(200);
+    expect(posts[0]!.body.body.choices[0]!.message.content).toBe("{\"tool_calls\": []}");
+    expect(env.AI.run).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("returns quota exhaustion to the backend instead of calling the model", async () => {
+    const env = makeEnv();
+    env.DB.counters.set(`${new Date().toISOString().slice(0, 10)}|neurons|`, 8000);
+    const { runCompletion } = await import("../src/inference");
+    const result = await runCompletion(env, ctx(), { messages: [{ role: "user", content: "hi" }] }, "rid", "relay");
+    expect(result.status).toBe(429);
+    expect((result.body as { error: { code: string } }).error.code).toBe("quota_exhausted");
+    expect(env.AI.run).not.toHaveBeenCalled();
+  });
+});

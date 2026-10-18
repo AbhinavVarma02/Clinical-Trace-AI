@@ -8,7 +8,8 @@ configured; without one the agent runs in *deterministic* mode and says so.
 Configuration (environment):
 
 * ``CLINICAL_TRACE_LLM_PROVIDER`` - ``none`` (default), ``ollama``, ``openai-compatible``, or
-  ``cloudflare-workers-ai`` (the public edge's OpenAI-compatible Workers AI proxy)
+  ``cloudflare-workers-ai`` (the public edge's OpenAI-compatible Workers AI proxy), or
+  ``cloudflare-workers-ai-relay`` (completions relayed over streamed edge requests; see ``relay.py``)
 * ``CLINICAL_TRACE_LLM_BASE_URL`` - e.g. ``http://127.0.0.1:11434/v1`` for Ollama
 * ``CLINICAL_TRACE_LLM_MODEL`` - e.g. ``qwen2.5:1.5b``
 * ``CLINICAL_TRACE_LLM_API_KEY`` - optional bearer token (never logged)
@@ -225,6 +226,10 @@ def provider_from_env() -> OpenAICompatibleProvider | None:
     if kind in ("", "none", "off"):
         return None
     model = os.getenv("CLINICAL_TRACE_LLM_MODEL", "qwen2.5:1.5b")
+    if kind == "cloudflare-workers-ai-relay":
+        from src.agent.relay import relay_provider  # local import: relay builds on this module
+
+        return relay_provider(model, timeout_s=float(os.getenv("CLINICAL_TRACE_LLM_TIMEOUT_S", "60")))
     default_url = "http://127.0.0.1:11434/v1" if kind == "ollama" else ""
     base_url = os.getenv("CLINICAL_TRACE_LLM_BASE_URL", default_url)
     if not base_url:

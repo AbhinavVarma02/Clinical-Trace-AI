@@ -6,6 +6,7 @@
 
 import { limits, utcDay, type Env } from "./config";
 import { clientKey, errorResponse } from "./http";
+import { runCompletion, type ChatRequest } from "./inference";
 import { addCounter, recordEvent } from "./store";
 
 const SEG = "[A-Za-z0-9_.:-]{1,128}";
@@ -75,6 +76,43 @@ export const FAILURE_MESSAGES: Record<BackendFailure, string> = {
   backend_timeout: "The analysis backend did not answer in time. Try again in a few seconds.",
   backend_not_configured: "No analysis backend is configured for this deployment.",
 };
+
+const RELAY_ID_RE = /^[A-Za-z0-9_-]{16,40}$/;
+
+/**
+ * Pass an agent SSE stream through, but answer `event: relay` frames instead of forwarding them:
+ * the backend (which may be unable to reach Cloudflare) asks the edge to run a completion, and the
+ * edge posts the result back. Relay frames never reach the browser.
+ */
+export function relayStream(upstream: ReadableStream<Uint8Array>, onRelay: (frame: Record<string, unknown>) => Promise<void>): ReadableStream<Uint8Array> {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+  return upstream.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    async transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let boundary: number;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        if (frame.startsWith("event: relay\n")) {
+          const data = frame.split("\n").filter((line) => line.startsWith("data: ")).map((line) => line.slice(6)).join("\n");
+          try {
+            await onRelay(JSON.parse(data) as Record<string, unknown>);
+          } catch {
+            // The backend times out and answers in labelled deterministic mode.
+          }
+        } else {
+          controller.enqueue(encoder.encode(`${frame}\n\n`));
+        }
+      }
+    },
+    flush(controller) {
+      buffer += decoder.decode();
+      if (buffer) controller.enqueue(encoder.encode(buffer));
+    },
+  }));
+}
 
 export async function markWaking(env: Env): Promise<void> {
   await env.DB.prepare("INSERT OR IGNORE INTO edge_state(key, value, updated_at) VALUES ('wake_started', ?1, ?1)")
@@ -148,7 +186,8 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
       headers,
       body,
       redirect: "manual",
-      signal: AbortSignal.timeout(streaming ? 45_000 : 30_000),
+      // Streams include relayed model calls; the backend bounds each call, so allow a longer window.
+      signal: AbortSignal.timeout(streaming ? 150_000 : 30_000),
     });
   } catch (err) {
     const timeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
@@ -194,11 +233,27 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   if (streaming) out.set("x-accel-buffering", "no");
   const { readable, writable } = new TransformStream();
   const status = upstream.status;
-  ctx.waitUntil(upstream.body.pipeTo(writable).then(
+  let relayed = 0;
+  const source = !streaming ? upstream.body : relayStream(upstream.body, async (frame) => {
+    const id = String(frame.relay_id ?? "");
+    if (!RELAY_ID_RE.test(id)) return;
+    const result = await runCompletion(env, ctx, (frame.request ?? {}) as ChatRequest, rid, "relay");
+    relayed += 1;
+    const ack = await fetch(new URL(`/api/v2/agent/relay/${id}`, env.BACKEND_ORIGIN), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-request-id": rid, "x-edge-client": client,
+        ...(env.EDGE_BACKEND_SECRET ? { "x-edge-secret": env.EDGE_BACKEND_SECRET } : {}) },
+      body: JSON.stringify({ status: result.status, body: result.body }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    await ack.body?.cancel();
+  });
+  ctx.waitUntil(source.pipeTo(writable).then(
     () => "completed",
     () => "client_disconnected",
   ).then((outcome) => Promise.all([counted, recordEvent(env.DB, day, {
     kind: "agent", route: route.template, status, outcome: status >= 400 ? `http_${status}` : outcome, latencyMs: Date.now() - started,
+    detail: relayed ? `relayed:${relayed}` : undefined,
   })])).then(() => undefined));
   return new Response(readable, { status, headers: out });
 }

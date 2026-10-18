@@ -19,6 +19,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from pydantic import Field as PydField
 
 from api.v2_schemas import (
     AgentRunRequest,
@@ -33,6 +35,7 @@ from api.v2_schemas import (
 )
 from src import config
 from src import observability
+from src.agent.relay import HUB as RELAY_HUB
 from src.agent.tools import tool_catalog
 from src.clinical.risk_bridge import assess
 from src.clinical.model_audit import calibration_summary
@@ -55,6 +58,7 @@ class WorkspaceRequired(PermissionError):
 
 
 WORKSPACE_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,64}")
+RELAY_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,40}")
 
 
 def public_mode() -> bool:
@@ -273,6 +277,21 @@ async def agent_run_stream(request: Request, body: AgentRunRequest, ctx: AccessC
     from api.agent_stream import stream_run
 
     return await stream_run(request, body, ctx, rt, idempotency_key)
+
+
+class RelayCompletion(BaseModel):
+    status: int = PydField(ge=100, le=599)
+    body: dict[str, Any]
+
+
+@router.post("/agent/relay/{relay_id}", include_in_schema=False)
+def agent_relay(relay_id: str, completion: RelayCompletion) -> dict[str, Any]:
+    """Completion posted by the public edge for a relayed inference request (edge secret required)."""
+    if not os.getenv("CLINICAL_TRACE_EDGE_SECRET") or not RELAY_ID_PATTERN.fullmatch(relay_id):
+        raise NotFoundError("relay not found")  # the middleware has already verified the edge secret
+    if not RELAY_HUB.fulfil(relay_id, completion.status, completion.body):
+        raise NotFoundError("relay not found")
+    return {"accepted": True}
 
 
 @router.get("/agent/runs/{run_id}/status", response_model=RunStatusResponse)
