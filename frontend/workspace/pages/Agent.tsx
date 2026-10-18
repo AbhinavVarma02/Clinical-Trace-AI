@@ -6,7 +6,7 @@ import { Card, EmptyState, ErrorState } from "../components/ui";
 import { SAFETY_PROBES, SUGGESTED_PROMPTS } from "../demos";
 import { formatDuration, useAvailability, useExecutionAllowance } from "../edge";
 import { GUIDE_CASE, markGuideStep } from "../guide";
-import { useApi, useApp } from "../state";
+import { replaceRoute, useApi, useApp } from "../state";
 import type { AgentRun } from "../types";
 
 const STAGES: Record<string, string> = { guard: "Safety rules checked", plan: "Tool plan prepared", act: "Patient-scoped tool completed",
@@ -88,6 +88,8 @@ export function AgentPage() {
     const key = `${route.params.toString()}`;
     if (q && route.params.get("run") === "1" && autoRan.current !== key && (!routePatient || routePatient === patientId)) {
       autoRan.current = key;
+      // One-shot trigger: drop it so a remount (switching persona) or a reload never repeats the run.
+      replaceRoute("agent", Object.fromEntries([...route.params].filter(([name]) => name !== "run")));
       void ask(q);
     }
     const open = route.params.get("open");

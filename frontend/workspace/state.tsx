@@ -34,6 +34,12 @@ export function navigate(name: RouteName, params: Record<string, string> = {}): 
   window.location.hash = `/${name}${query ? `?${query}` : ""}`;
 }
 
+/** Like navigate, but replaces the current history entry (for consuming one-shot parameters). */
+export function replaceRoute(name: RouteName, params: Record<string, string> = {}): void {
+  const query = new URLSearchParams(params).toString();
+  window.location.replace(`#/${name}${query ? `?${query}` : ""}`);
+}
+
 function readStorage(key: string, fallback: string): string {
   try {
     return window.localStorage.getItem(key) ?? fallback;
