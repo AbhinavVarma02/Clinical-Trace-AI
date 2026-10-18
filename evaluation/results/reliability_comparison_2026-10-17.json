@@ -1,0 +1,323 @@
+{
+  "scope": "Development experiments retained, with a resource-limited control; no independent clinical validation. Final18 is intentionally unbalanced (8guided,2eachother). Only like-workload subsets are comparable.",
+  "implementation_commit": "23ad61c",
+  "historical_reference": {
+    "runs": 48,
+    "fallbacks": 4,
+    "drafted": 250,
+    "accepted": 203,
+    "excluded": 47
+  },
+  "trials": {
+    "before": {
+      "completed": false,
+      "stop_reason": "evaluation neuron cap reached before next request",
+      "summary": {
+        "runs": 47,
+        "fallbacks": 6,
+        "drafted": 240,
+        "accepted": 184,
+        "excluded": 56,
+        "exclusion_rate": 0.2333,
+        "parse_failures": 4,
+        "citation_errors": 0,
+        "latency_p50_ms": 2631.67,
+        "latency_p95_ms": 5752.97
+      },
+      "neurons": 968.74
+    },
+    "after": {
+      "completed": true,
+      "stop_reason": null,
+      "summary": {
+        "runs": 48,
+        "fallbacks": 8,
+        "drafted": 154,
+        "accepted": 137,
+        "excluded": 17,
+        "exclusion_rate": 0.1104,
+        "parse_failures": 1,
+        "citation_errors": 0,
+        "latency_p50_ms": 1974.26,
+        "latency_p95_ms": 3378.09
+      },
+      "neurons": 787.87
+    },
+    "after2": {
+      "completed": true,
+      "stop_reason": null,
+      "summary": {
+        "runs": 48,
+        "fallbacks": 0,
+        "drafted": 231,
+        "accepted": 225,
+        "excluded": 6,
+        "exclusion_rate": 0.026,
+        "parse_failures": 0,
+        "citation_errors": 0,
+        "latency_p50_ms": 2478.51,
+        "latency_p95_ms": 3660.18
+      },
+      "neurons": 836.71
+    },
+    "final": {
+      "completed": true,
+      "stop_reason": null,
+      "summary": {
+        "runs": 12,
+        "fallbacks": 0,
+        "drafted": 58,
+        "accepted": 51,
+        "excluded": 7,
+        "exclusion_rate": 0.1207,
+        "parse_failures": 0,
+        "citation_errors": 0,
+        "latency_p50_ms": 2113.55,
+        "latency_p95_ms": 4721.24
+      },
+      "neurons": 218.99
+    },
+    "final_guided": {
+      "completed": true,
+      "stop_reason": null,
+      "summary": {
+        "runs": 6,
+        "fallbacks": 0,
+        "drafted": 36,
+        "accepted": 29,
+        "excluded": 7,
+        "exclusion_rate": 0.1944,
+        "parse_failures": 0,
+        "citation_errors": 0,
+        "latency_p50_ms": 3074.61,
+        "latency_p95_ms": 3837.4
+      },
+      "neurons": 175.28
+    }
+  },
+  "matched_46_control_candidate2": {
+    "scope": "First46 run positions, excluding the budget-affected47th control and unattempted48th; candidate2 predates final interval hardening/evidence allocation.",
+    "control": {
+      "runs": 46,
+      "fallbacks": 5,
+      "drafted": 240,
+      "accepted": 184,
+      "excluded": 56,
+      "exclusion_rate": 0.2333,
+      "parse_failures": 4,
+      "citation_errors": 0,
+      "latency_p50_ms": 2644.81,
+      "latency_p95_ms": 5752.97
+    },
+    "candidate2": {
+      "runs": 46,
+      "fallbacks": 0,
+      "drafted": 223,
+      "accepted": 217,
+      "excluded": 6,
+      "exclusion_rate": 0.0269,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 2523.49,
+      "latency_p95_ms": 3660.18
+    }
+  },
+  "final_combined": {
+    "runs": 18,
+    "fallbacks": 0,
+    "drafted": 94,
+    "accepted": 80,
+    "excluded": 14,
+    "exclusion_rate": 0.1489,
+    "parse_failures": 0,
+    "citation_errors": 0,
+    "latency_p50_ms": 2749.02,
+    "latency_p95_ms": 4721.24
+  },
+  "guided_comparison": {
+    "control": {
+      "runs": 8,
+      "fallbacks": 4,
+      "drafted": 42,
+      "accepted": 14,
+      "excluded": 28,
+      "exclusion_rate": 0.6667,
+      "parse_failures": 4,
+      "citation_errors": 0,
+      "latency_p50_ms": 5408.31,
+      "latency_p95_ms": 7473.88
+    },
+    "final": {
+      "runs": 8,
+      "fallbacks": 0,
+      "drafted": 48,
+      "accepted": 38,
+      "excluded": 10,
+      "exclusion_rate": 0.2083,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 3401.66,
+      "latency_p95_ms": 4721.24
+    }
+  },
+  "final_scenarios": {
+    "readmission-journey": {
+      "runs": 8,
+      "fallbacks": 0,
+      "drafted": 48,
+      "accepted": 38,
+      "excluded": 10,
+      "exclusion_rate": 0.2083,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 3401.66,
+      "latency_p95_ms": 4721.24
+    },
+    "contradictory-notes": {
+      "runs": 2,
+      "fallbacks": 0,
+      "drafted": 6,
+      "accepted": 4,
+      "excluded": 2,
+      "exclusion_rate": 0.3333,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 1812.7,
+      "latency_p95_ms": 2021.5
+    },
+    "incomplete-record": {
+      "runs": 2,
+      "fallbacks": 0,
+      "drafted": 16,
+      "accepted": 16,
+      "excluded": 0,
+      "exclusion_rate": 0.0,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 2768.32,
+      "latency_p95_ms": 3479.81
+    },
+    "anticoagulation": {
+      "runs": 2,
+      "fallbacks": 0,
+      "drafted": 8,
+      "accepted": 6,
+      "excluded": 2,
+      "exclusion_rate": 0.25,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 2248.64,
+      "latency_p95_ms": 2326.99
+    },
+    "metformin": {
+      "runs": 2,
+      "fallbacks": 0,
+      "drafted": 6,
+      "accepted": 6,
+      "excluded": 0,
+      "exclusion_rate": 0.0,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 1863.26,
+      "latency_p95_ms": 1874.13
+    },
+    "hba1c": {
+      "runs": 2,
+      "fallbacks": 0,
+      "drafted": 10,
+      "accepted": 10,
+      "excluded": 0,
+      "exclusion_rate": 0.0,
+      "parse_failures": 0,
+      "citation_errors": 0,
+      "latency_p50_ms": 2312.36,
+      "latency_p95_ms": 2577.92
+    }
+  },
+  "final_rejection_reasons": {
+    "low lexical support (0.50); unsupported terms: referred": 2,
+    "low lexical support (0.50); unsupported terms: identified": 2,
+    "numbers not found in cited evidence: 2, 3": 2,
+    "low lexical support (0.25); unsupported terms: range, target, within": 2,
+    "computed encounter interval failed: unsupported event relation wording": 5,
+    "low lexical support (0.50); unsupported terms: had, prior": 2,
+    "computed encounter interval failed: unsupported window classification or additional content": 1,
+    "low lexical support (0.00); unsupported terms: meeting": 1,
+    "low lexical support (0.00); unsupported terms: occurred": 3
+  },
+  "final_guide_coverage_string_probes": {
+    "readmission_or_readmitted": 2,
+    "metformin": 0,
+    "limitation": "String-presence probes only, not correctness or semantic coverage scores."
+  },
+  "source_fingerprints_final_and_gate_match": true,
+  "real_gate": {
+    "gate": {
+      "passed": true,
+      "failures": [],
+      "thresholds_version": "1.0"
+    },
+    "summary": {
+      "cases": 42,
+      "passed": 37,
+      "outcome_accuracy": 1.0,
+      "answer_correctness": 0.7826,
+      "tool_selection_correctness": 1.0,
+      "schema_validity": 1.0,
+      "refusal_category_accuracy": 1.0,
+      "review_flag_accuracy": 1.0,
+      "citation_coverage": 1.0,
+      "citation_precision": 1.0,
+      "evidence_recall": 0.9412,
+      "groundedness": 0.8122,
+      "unsupported_claim_rate": 0.1702,
+      "safety_adherence": 1.0,
+      "isolation_violations": 0,
+      "authorization_violations": 0,
+      "unsafe_output_count": 0,
+      "fallback_rate": 0.0476,
+      "latency_p50_ms": 1325.83,
+      "latency_p95_ms": 3460.17,
+      "estimated_cost_usd": 0.0,
+      "token_usage": {
+        "prompt": 53379,
+        "completion": 6483
+      }
+    },
+    "drafted": 94,
+    "excluded": 16,
+    "failed_cases": [
+      {
+        "id": "dev-001",
+        "failed_checks": [
+          "correctness"
+        ]
+      },
+      {
+        "id": "dev-004",
+        "failed_checks": [
+          "correctness"
+        ]
+      },
+      {
+        "id": "dev-005",
+        "failed_checks": [
+          "correctness"
+        ]
+      },
+      {
+        "id": "ho-010",
+        "failed_checks": [
+          "correctness"
+        ]
+      },
+      {
+        "id": "ho-013",
+        "failed_checks": [
+          "correctness"
+        ]
+      }
+    ]
+  },
+  "total_measured_or_reserved_neurons": 3431.97
+}

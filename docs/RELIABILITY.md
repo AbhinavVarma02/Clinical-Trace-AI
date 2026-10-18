@@ -27,3 +27,13 @@ Run `python -m src.persistence.retention --database var/clinical_trace.db` to pr
 `POST /api/v2/agent/runs/stream` is the SSE alternative to the original JSON endpoint. It streams only real node/tool progress metadata, followed by one schema-validated result after claim verification. It never streams unverified draft tokens. Authorization and initial capacity/conflict errors retain HTTP status codes; errors after headers are explicit SSE error events. Disconnects request cooperative cancellation; completed or active run state remains inspectable. The React agent consumes this stream and offers cancellation once the real run ID arrives. The client rejects interrupted streams rather than treating partial data as an answer. Existing JSON clients continue to work.
 
 Set `CLINICAL_TRACE_OTEL_FILE=var/traces/spans.jsonl` to opt into a local OpenTelemetry SDK exporter. No network collector or paid service is enabled. HTTP and graph-node spans share a trace ID (`X-Trace-ID` when enabled); HTTP logs retain request IDs, safe route templates and timings. Export attributes are allowlisted, and exception messages/events are disabled. `tests/test_observability.py` verifies correlation and absence of question/source/exception text. The private trace file must be rotated/removed under an operator-selected retention policy; the SQLite pruning CLI does not manage external trace files. No exporter means no trace file by default.
+
+## Composition and verification follow-up
+
+The unreleased continuation at `23ad61c` adds a capped, repeatable six-question
+real-model workload and narrowly scoped composer/verifier regressions. Every
+development candidate and resource-limited control is retained. The original
+42-case scoring and thresholds are unchanged: final offline gate 41/42, real-model
+gate 37/42, both passing; finite critical safety checks pass. Full results and
+limitations: [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). No production deployment
+or clinical-validation claim is made.

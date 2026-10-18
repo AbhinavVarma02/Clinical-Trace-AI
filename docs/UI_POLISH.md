@@ -51,6 +51,11 @@ Released with `cd deploy/cloudflare && npm run release -- --full` (see [DEPLOYME
 
 ## Verification badge follow-up (2026-10-19)
 
+The sample below is historical. The subsequent unreleased backend reliability
+continuation, including every retained development experiment and its limitations,
+is documented in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). The badge continues
+to display actual accepted/excluded counts and deterministic fallback status.
+
 The public guided case once showed "7/12 claims verified". Investigation:
 
 **Semantics.** `claims_total` is every claim the composer drafted; `claims_supported` is those that passed the verifier (valid same-patient citation, numbers present in or recomputed from the cited evidence, lexical support at least `MIN_LEXICAL_SUPPORT`, and the output-safety patterns). Failing claims are removed from the answer and kept in `answer.rejected_claims` with reasons. `7/12` therefore meant "7 shown, 5 removed", which read like a failed check.

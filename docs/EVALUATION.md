@@ -132,3 +132,13 @@ Only the recorded run is a committed artifact ([llm_cf_qwen_qwen3-30b-a3b-fp8.js
 \* From `d00dbc7` the rule-based plan is the floor of every LLM plan (the model may add tools, never drop intent-required ones) and the composer may use 1,000 tokens. This followed a public-path run where the LLM planner chose only the timeline tool for a journey summary, the composer's long JSON failed to parse and the deterministic fallback abstained. Tool-selection correctness is 1.000 partly by construction under this rule. The fix was evaluated on the same locked cases; the earlier run remains in `history.jsonl`.
 
 In the public deployment the completions are relayed by the edge (`src/agent/relay.py`): the backend emits the same chat-completion request on the streamed run and the edge answers it on Workers AI, so model, prompts and budgets are identical to the measured configuration.
+
+## Agent reliability continuation
+
+The unreleased continuation at `23ad61c` adds a capped, repeatable six-question
+real-model workload and narrowly scoped composer/verifier regressions. Every
+development candidate and resource-limited control is retained. The original
+42-case scoring and thresholds are unchanged: final offline gate 41/42, real-model
+gate 37/42, both passing; finite critical safety checks pass. Full results and
+limitations: [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). No production deployment
+or clinical-validation claim is made.

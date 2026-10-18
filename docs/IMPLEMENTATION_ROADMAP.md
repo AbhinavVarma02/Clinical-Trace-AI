@@ -76,6 +76,8 @@ See [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). The following 
 
 ## Next phase and remaining dependencies
 
+The agent reliability continuation is tracked in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md): concise genuine LLM composition, bounded evidence selection, narrowly scoped verifier precision, adversarial interval/uncertainty checks and capped repeatable inference experiments. It is an unreleased change on the existing feature branch; production deployment and merge still require owner approval.
+
 1. Done 2026-10-18: public backend co-hosted, release gate passed through the public URL. Next: measure the 48-hour sleep wake time; owner decision on merging to `main`.
 2. Done 2026-10-18: local Docker measurements (CT-P10-T02).
 3. Done 2026-10-18: free hosted inference selected and benchmarked (CT-P11-T06).

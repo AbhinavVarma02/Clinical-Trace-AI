@@ -22,6 +22,7 @@
 - LLM mode quality depends heavily on model size: `qwen2.5:1.5b` failed the quality gate; `qwen2.5:7b` passed but is ~180× slower than deterministic mode locally.
 - Guards are pattern-based and can be evaded by unanticipated phrasing.
 - Verification checks citations, numbers, computations, and lexical overlap. It does not prove semantic entailment: a claim that reuses the evidence's words with a different meaning could pass.
+- The unreleased reliability update normalizes explicit dates, exact decimal formatting and a bounded set of unit spellings. Historical diagnosis/prescription exceptions require matching structured evidence and the correct event date. Other clinical paraphrases may still be rejected; thresholds have not been lowered. Development experiments and every retained candidate are documented in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md).
 - Contradiction detection covers smoking status and lab values quoted in notes only.
 - Actual progress is streamed; clinical answer text is returned only after verification. Durable SQLite checkpoints support explicit compatible restart recovery. Cancellation is cooperative between nodes, not a forced interruption of running Python code.
 
@@ -48,3 +49,4 @@
 - Single-author synthetic cases; substring-based correctness; no human or model-based judging.
 - Held-out cases are separate from development cases but not independent of the author.
 - Live-LLM answers lose claims in verification: in a 48-run sample 19% of drafted claims were excluded, concentrated in the multi-encounter summary and warfarin questions, and the model's draft for the guided summary was unusable in about half the runs (deterministic fallback). Many exclusions are conservative false rejections (date and unit wording, past-tense "diagnosed/prescribed" record statements). Excluded claims and reasons are shown in the UI; see [UI_POLISH.md](UI_POLISH.md#verification-badge-follow-up-2026-10-19).
+- That 48-run figure is historical. A fresh frozen-source control and subsequent development candidates are retained separately in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). The control stopped at its predeclared resource cap; candidate samples are development evidence rather than independent clinical validation. The public application has not received these reliability changes.
