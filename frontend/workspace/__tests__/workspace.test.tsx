@@ -95,7 +95,8 @@ describe("AnswerCard", () => {
     render(<AppProvider><AnswerCard run={makeRun()} /></AppProvider>);
     expect(screen.getByText("Answered")).toBeInTheDocument();
     expect(screen.getByText(/Deterministic · no LLM/)).toBeInTheDocument();
-    expect(screen.getByText("1/1 claims verified")).toBeInTheDocument();
+    expect(screen.getByText("1 evidence-backed claim")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /excluded/ })).not.toBeInTheDocument();
     const claims = screen.getByRole("list", { name: "Verified claims" });
     expect(within(claims).getByText(/recorded as stopped/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Open evidence p001-m1@v2" }));
@@ -133,9 +134,14 @@ describe("AnswerCard", () => {
       review: { required: true, reasons: ["the LLM answer failed verification and a deterministic answer was used"] },
     });
     render(<AppProvider><AnswerCard run={run} /></AppProvider>);
-    expect(screen.getByText(/Live LLM · qwen2.5:7b/)).toBeInTheDocument();
     expect(screen.getByText("Review recommended")).toBeInTheDocument();
-    await userEvent.click(screen.getByText(/Claims removed by verification/));
+    // Real counts stay visible: 1 evidence-backed claim, 1 excluded, with the raw reason and a plain-English label.
+    expect(screen.getByText("1 evidence-backed claim")).toBeInTheDocument();
+    expect(screen.getByText(/Deterministic fallback · LLM draft failed verification/)).toBeInTheDocument();
+    expect(screen.queryByText(/Live LLM · qwen2.5:7b/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "1 excluded" }));
+    expect(screen.getByText(/Excluded draft claims \(1\)/).closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("Number not found in the cited record.")).toBeInTheDocument();
     expect(screen.getByText("HbA1c was 12.5 %.")).toBeInTheDocument();
     expect(screen.getByText(/numbers not found/)).toBeInTheDocument();
   });
@@ -150,6 +156,30 @@ describe("AnswerCard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show all 8 verified claims" }));
     expect(within(screen.getByRole("list", { name: "Verified claims" })).getAllByRole("listitem")).toHaveLength(8);
     expect(screen.getByRole("button", { name: "Show fewer claims" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("explains a partially verified live answer without hiding the counts", async () => {
+    mockFetch(() => ({}));
+    const rejected = Array.from({ length: 5 }, (_, i) => ({ text: `Draft claim ${i + 1}.`, citations: ["p001-m1@v2"], kind: "generated",
+      reasons: i === 0 ? ["low lexical support (0.33); unsupported terms: before"] : ["unsafe pattern: \\bdiagnos(?:e|ed|ing)\\s+"] }));
+    const claims = Array.from({ length: 7 }, (_, i) => ({ text: `Supported claim ${i + 1}.`, citations: ["p001-m1@v2"], kind: "medication_status" }));
+    const run = makeRun({
+      answer: { summary: null, claims, rejected_claims: rejected, uncertainty: [], abstain_reason: null },
+      verification: { status: "partially_verified", claims_total: 12, claims_supported: 7, supported_ratio: 0.5833, isolation_violations: 0, summary_verified: false },
+      review: { required: true, reasons: ["some generated claims failed verification and were removed"] },
+      inference: { mode: "llm", planner: "llm", composer: "llm:cloudflare-workers-ai/@cf/qwen/qwen3-30b-a3b-fp8", fallback_used: false,
+        provider: { provider: "cloudflare-workers-ai", model: "@cf/qwen/qwen3-30b-a3b-fp8" }, label: "Live language-model inference", llm_attempt: null },
+    });
+    render(<AppProvider><AnswerCard run={run} /></AppProvider>);
+    expect(screen.getByText("7 evidence-backed claims")).toHaveAttribute("title", expect.stringContaining("7 of 12"));
+    expect(screen.getByText(/Live LLM · @cf/)).toBeInTheDocument();
+    const details = screen.getByText(/Excluded draft claims \(5\)/).closest("details");
+    expect(details).not.toHaveAttribute("open");
+    await userEvent.click(screen.getByRole("button", { name: "5 excluded" }));
+    expect(details).toHaveAttribute("open");
+    expect(screen.getByText("Wording not supported by the cited record.")).toBeInTheDocument();
+    expect(screen.getAllByText("Blocked by the safety filter (reads like a clinical instruction).")).toHaveLength(4);
+    expect(screen.getByText(/low lexical support \(0\.33\); unsupported terms: before/)).toBeInTheDocument();
   });
 
   it("submits an answered run for review", async () => {

@@ -48,3 +48,27 @@ Synthetic-data and not-clinically-validated notice (hero and sidebar), calibrati
 ## Releasing
 
 Released with `cd deploy/cloudflare && npm run release -- --full` (see [DEPLOYMENT.md](DEPLOYMENT.md)); the full public smoke passed on the first attempt, so no rollback was needed. README line 9 now says **Try a guided case**. Rollback if ever needed: `npx wrangler deployments list`, then `npx wrangler rollback <previous-version-id>` (previous release `7012e8e`).
+
+## Verification badge follow-up (2026-10-19)
+
+The public guided case once showed "7/12 claims verified". Investigation:
+
+**Semantics.** `claims_total` is every claim the composer drafted; `claims_supported` is those that passed the verifier (valid same-patient citation, numbers present in or recomputed from the cited evidence, lexical support at least `MIN_LEXICAL_SUPPORT`, and the output-safety patterns). Failing claims are removed from the answer and kept in `answer.rejected_claims` with reasons. `7/12` therefore meant "7 shown, 5 removed", which read like a failed check.
+
+**Sample (live Qwen3-30B via the deployed Workers AI proxy, repo backend, 48 runs over six questions, plus 11 runs through the public edge).**
+
+| Finding | Result |
+| --- | --- |
+| LLM-composed runs | 44 of 48; 4 fell back to the deterministic composer |
+| Claims drafted / kept / excluded | 250 / 203 / 47 (19% excluded) |
+| Runs with at least one exclusion | 12 of 44 |
+| Clean on every run (8 of 8) | Contradictory notes, missing information, metformin; HbA1c was clean in 6 of 8 |
+| Weak spots | The guided case "Summarize this patient journey" (all 8 runs imperfect: 4 fell back after the model returned unparseable JSON, 4 excluded 36-73% of claims) and the warfarin question (6 of 8 runs excluded 2-4 claims) |
+| Why claims were excluded | 30 low lexical support, 19 output-safety pattern, 1 number not in the cited evidence (reasons overlap) |
+
+**What the reasons mean.** Most exclusions are benign mismatches rather than wrong facts: "January 2025" versus an ISO date, "percent" versus "%", "was diagnosed with" or "was prescribed" tripping the clinical-instruction patterns although the sentence restates the record. A minority are genuinely unsupported inferences ("before the warfarin dose was reduced", "due to declining kidney function") or a number not in the source. The verifier is conservative by design, so the failure mode is dropping true claims, not keeping false ones. Loosening the safety patterns for past-tense record statements would change safety policy and was not done; it is listed as a candidate improvement for the owner to decide.
+
+**UI change (wording only; verifier, counts and rejected claims unchanged).**
+- Badge: "7 evidence-backed claims" plus a clickable "5 excluded" that opens the exclusion list. The tooltip keeps the exact ratio ("7 of 12 drafted claims were supported ... and kept").
+- The list is titled "Excluded draft claims (5) · why they were removed". Each claim shows a plain-English label (for example "Wording not supported by the cited record") followed by the verifier's raw reason.
+- When the model's draft was unusable and the rule-based composer wrote the answer, the badge now says "Deterministic fallback · LLM draft unusable" (or "failed verification") instead of "Live LLM". Previously these answers were labelled "Live LLM" although the text came from the deterministic composer.
