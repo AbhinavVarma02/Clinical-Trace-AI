@@ -38,7 +38,7 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P10 | CT-P10-T01 | Latency measured per mode | VERIFIED | `docs/EVALUATION.md` |
 | P10 | CT-P10-T02 | Image size / cold start measurement | VERIFIED | Local Docker 2026-10-18: 2.01 GB image; ready 16.6 s at 2 vCPU, 248.8 s at 0.1 vCPU/512 MB; peak ~296 MiB; `evaluation/results/container_resources.json` |
 | P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | VERIFIED | VERIFIED at 6541d9b; Actions 39077304115: all four jobs passed including real E2E, audit and container smoke |
-| P11 | CT-P11-T02 | Separate 2.0 public deployment and external validation | IN_PROGRESS | Edge + Workers AI live on Cloudflare Free (`docs/PUBLIC_DEPLOYMENT.md`); public backend BLOCKED on owner host decision (new HF Docker Spaces need a paid plan); full chain verified locally |
+| P11 | CT-P11-T02 | Separate 2.0 public deployment and external validation | VERIFIED | Public release gate passed 2026-10-18 on desktop/mobile incl. cold start (`docs/PUBLIC_DEPLOYMENT.md`) |
 | P12 | CT-P12-T01 | Architecture, API, safety, evaluation, deployment, limitations docs | VERIFIED | `docs/` |
 | P13 | CT-P13-T01 | Sequence model vs tabular baseline | NOT_STARTED | — |
 | P13 | CT-P13-T02 | Neural general vs biomedical embedding comparison | NOT_STARTED | needs model downloads (free) and benchmark time |
@@ -72,11 +72,11 @@ See [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). The following 
 | P11 | CT-P11-T06 | Free hosted inference selection and benchmark | VERIFIED | Workers AI Qwen3-30B-A3B; recorded gate pass 36/42; model comparison in `docs/EVALUATION.md`; quota exhaustion handling tested |
 | P11 | CT-P11-T07 | Public-mode visitor isolation and edge-only backend | TESTED | `tests/test_public_mode.py`; co-host verify; full-chain smoke |
 | P11 | CT-P11-T08 | Cold-start recovery and availability UX; guided 90-second case | VERIFIED | Playwright cold-start and guided-case tests (3 viewports); full-chain browser run |
-| P11 | CT-P11-T09 | Public backend host (independent free host or approved co-hosting) | BLOCKED | Owner decision; tested reversible co-host package `deploy/huggingface` |
+| P11 | CT-P11-T09 | Public backend host (independent free host or approved co-hosting) | VERIFIED | Owner-approved co-hosting in the existing Space; inference relayed through the edge (`src/agent/relay.py`); rollback verified |
 
 ## Next phase and remaining dependencies
 
-1. Owner decision on the public backend host ([PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md#backend-host-options-owner-decision)). After approval: publish, set `BACKEND_ORIGIN`, `npm run release -- --full`, then unauthenticated desktop/mobile validation and public metrics.
+1. Done 2026-10-18: public backend co-hosted, release gate passed through the public URL. Next: measure the 48-hour sleep wake time; owner decision on merging to `main`.
 2. Done 2026-10-18: local Docker measurements (CT-P10-T02).
 3. Done 2026-10-18: free hosted inference selected and benchmarked (CT-P11-T06).
 4. Collect independent human annotations only with real reviewers; use the paired rubric/runner without fabricating agreement.

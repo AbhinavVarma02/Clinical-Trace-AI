@@ -6,7 +6,9 @@ Clinical-Trace AI combines an explainable 30-day readmission model with a tool-u
 
 > Educational research and engineering prototype. All patient records are synthetic. It does not diagnose, prescribe, or replace clinical judgement, and it is not clinically validated. Every output is decision-support only and not medical advice.
 
-**Live demo (v1 dashboard):** https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai — the 2.0 workspace described below runs locally and is not yet deployed there (see [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)).
+**Live 2.0 demo:** https://clinical-trace-ai.room-for-both.workers.dev — no sign-in, no keys. Choose **Start guided case** to run the real agent with live LLM inference (Cloudflare Workers AI, Qwen3-30B-A3B), open a versioned citation, submit the answer for review and approve it as the reviewer. Each browser gets its own private demo workspace. The analysis backend runs on free hosting that sleeps when idle; the workspace shows its state and continues automatically once it is ready. Free daily limits apply: after the free inference allocation is used, live inference pauses until 00:00 UTC and answers use the labelled deterministic mode.
+
+**v1 dashboard:** https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai (unchanged; the same Space also hosts the 2.0 API). Deployment details and measurements: [docs/PUBLIC_DEPLOYMENT.md](docs/PUBLIC_DEPLOYMENT.md).
 
 ## What 2.0 adds
 
@@ -27,14 +29,17 @@ The original readmission pipeline, FastAPI v1 endpoints, Streamlit dashboard, an
 
 From `python -m evaluation.run_eval` on 42 synthetic cases (20 development, 22 held-out). Definitions, method, and every failure are in [docs/EVALUATION.md](docs/EVALUATION.md).
 
-| | Deterministic | qwen2.5 7B (local) | qwen2.5 1.5B (local) |
-| --- | --- | --- | --- |
-| Regression gate | pass | pass | fail |
-| Answer correctness | 0.957 | 0.739 | 0.478 |
-| Safety adherence (critical cases) | 1.000 | 1.000 | 1.000 |
-| Cross-patient / authorisation violations | 0 / 0 | 0 / 0 | 0 / 0 |
-| Drafted claims rejected by verification | 0% | 23% | 20% |
-| Latency p50 | 15 ms | 2.7 s | 1.0 s |
+| | Deterministic | Workers AI Qwen3-30B-A3B (public demo model) | qwen2.5 7B (local) | qwen2.5 1.5B (local) |
+| --- | --- | --- | --- | --- |
+| Regression gate | pass | pass | pass | fail |
+| Cases passed | 41/42 | 39/42 | 35/42 | 29/42 |
+| Answer correctness | 0.957 | 0.870 | 0.739 | 0.478 |
+| Safety adherence (critical cases) | 1.000 | 1.000 | 1.000 | 1.000 |
+| Cross-patient / authorisation violations | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| Drafted claims rejected by verification | 0% | 14% | 23% | 20% |
+| Latency p50 / p95 | 15 / 23 ms | 1.5 / 4.5 s | 2.7 / 8.0 s | 1.0 / 3.5 s |
+
+Hosted inference is not bit-reproducible at temperature 0; the Workers AI column is the recorded run at `d00dbc7` (earlier code scored 36-37/42). Through the public URL, the full guided workflow completed in 7.5-10.9 s on desktop and mobile (live LLM, all claims verified).
 
 Hybrid retrieval on 19 queries: recall@5 0.974, MRR@10 0.947, and 0 violations in 57 cross-patient probes. Scoring is deterministic and rule-based; passing a finite synthetic suite does not demonstrate clinical safety.
 
@@ -65,7 +70,7 @@ cd frontend && npm ci && npm run build:workspace && cd ..
 uvicorn api.main:app --port 8000
 ```
 
-Open http://localhost:8000/app/ and choose **Start demo**, or one of the guided scenarios:
+Open http://localhost:8000/app/ and choose **Start guided case**, or one of the guided scenarios:
 
 1. **Readmission journey** (`synthetic_p001`): a summary with a verified 19-day readmission, the HbA1c trend, and the metformin stop.
 2. **Contradictory notes** (`synthetic_p002`): smoking history recorded inconsistently, every source cited, review flagged.
