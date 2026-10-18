@@ -25,6 +25,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from src.agent.composer import Draft, compose_deterministic, compose_llm
+from src.agent.evidence import merge_evidence
 from src.agent.llm import OpenAICompatibleProvider
 from src.agent.planner import MAX_TOOL_CALLS, Plan, deterministic_plan, detect_intents, llm_plan
 from src.agent.tools import ToolContext, ToolResult, run_tool
@@ -126,11 +127,7 @@ def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None,
         result = run_tool(ctx, call["name"], call["args"])
         evidence = dict(state.get("evidence", {}))
         for item in result.evidence:
-            existing = evidence.get(item.evidence_id)
-            if existing is None:
-                evidence[item.evidence_id] = item
-            elif item.text not in existing.text:
-                existing.text = f"{existing.text} | {item.text}"
+            evidence[item.evidence_id] = merge_evidence(evidence.get(item.evidence_id), item)
         results = {**state.get("results", {}), call["name"]: result}
         return {"results": results, "evidence": evidence, "step": state["step"] + 1, "_span": result.summary()}
 

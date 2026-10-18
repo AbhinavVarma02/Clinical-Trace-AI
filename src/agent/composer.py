@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.agent.llm import OpenAICompatibleProvider, ProviderUnavailable, extract_json
+from src.agent.evidence import interval_statement, summary_focus
 from src.agent.planner import detect_intents
 from src.agent.tools import ToolResult
 from src.retrieval.lexical import tokenize
@@ -320,6 +321,9 @@ def _evidence_prompt(evidence: dict[str, EvidenceItem], limit: int = EVIDENCE_MA
     Full text is kept or omitted, never cut mid-statement or stripped of caveats.
     """
     intents = set(detect_intents(question))
+    journey = "summary" in intents and intents <= {"summary", "review_preparation"}
+    if journey:
+        limit = min(limit, 16)
     wanted = {
         "summary": ("encounter_interval", "encounter", "medication", "lab", "completeness_check",
                     "condition", "profile"),
@@ -357,16 +361,29 @@ def _evidence_prompt(evidence: dict[str, EvidenceItem], limit: int = EVIDENCE_MA
         groups[kind] = items
     lines: list[str] = []
     chars = 0
+    selected: set[str] = set()
+
+    def append(item: EvidenceItem) -> None:
+        nonlocal chars
+        if item.evidence_id in selected or len(lines) >= limit:
+            return
+        body = interval_statement(item) or item.text
+        line = f"[{item.evidence_id}] ({item.kind}, {d(item.date) or 'n/a'}) {body}"
+        size = len(line) + bool(lines)
+        if chars + size <= EVIDENCE_MAX_CHARS:
+            lines.append(line)
+            selected.add(item.evidence_id)
+            chars += size
+
+    if journey:
+        for item in summary_focus(evidence):
+            append(item)
     while any(groups.values()) and len(lines) < limit:
         for kind in kind_order:
             if not groups[kind] or len(lines) >= limit:
                 continue
             item = groups[kind].pop(0)
-            line = f"[{item.evidence_id}] ({item.kind}, {d(item.date) or 'n/a'}) {item.text}"
-            size = len(line) + bool(lines)
-            if chars + size <= EVIDENCE_MAX_CHARS:
-                lines.append(line)
-                chars += size
+            append(item)
     return "\n".join(lines)
 
 
@@ -398,6 +415,19 @@ def compose_llm(question: str, evidence: dict[str, EvidenceItem], provider: Open
         draft.abstain_reason = "No usable evidence fit the model input budget."
         return draft
     user = f"Question: {question}\n\nEvidence:\n{selected}"
+    intents = set(detect_intents(question))
+    if "summary" in intents and intents <= {"summary", "review_preparation"}:
+        focus = [e for e in summary_focus(evidence) if f"[{e.evidence_id}]" in selected]
+        if focus:
+            priorities = ", ".join(f"[{e.evidence_id}]" for e in focus)
+            user = (f"Question: {question}\n\nJourney coverage priorities: {priorities}. "
+                    "Write one concise cited claim about each of these documented events before background facts. "
+                    "For an encounter_interval, copy its complete short sentence exactly, including the "
+                    "readmission classification. For a medication event, state the recorded medication name, "
+                    "status and event date; keep historical status separate from current treatment. "
+                    "Do not infer a reason absent from that source. Use remaining claims for the journey's "
+                    "other relevant events/trends; keep the entire answer within six claims.\n\n"
+                    f"Evidence:\n{selected}")
     failure = "provider_unavailable"
     try:
         completion = provider.complete(COMPOSER_SYSTEM, user, max_tokens=COMPOSER_MAX_TOKENS)
