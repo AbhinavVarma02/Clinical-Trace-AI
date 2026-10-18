@@ -113,3 +113,17 @@ See [READMISSION_ANALYSIS.md](READMISSION_ANALYSIS.md) and the aggregate reprodu
 At committed source `6541d9b`, the already-downloaded local Ollama `qwen2.5:latest` (7B) was re-evaluated against all 42 locked cases without replacing historical reports. [llm_qwen2.5_7b_durable.json](../evaluation/results/llm_qwen2.5_7b_durable.json) records gate PASS, 35/42 cases, correctness 0.7391, unsupported draft-claim rate 0.2308 (rejected by verification), safety adherence 1.0 on the finite critical cases, and zero isolation/authorization violations. p50 2672.5 ms, p95 8018.02 ms; 34,513 prompt tokens and 5,014 completion tokens, no API charge. These are local hardware results, not free-CPU hosting latency or clinical validation. Lower LLM quality and fallback use remain visible; the 1.5B historical failure remains unchanged. No cloud-tagged Ollama model was called.
 
 Human agreement remains unmeasured. A complete-pair annotation validator and agreement runner are provided in `evaluation/review_agreement.py`; see [REVIEW_VALIDATION_PROTOCOL.md](REVIEW_VALIDATION_PROTOCOL.md). Its artificial unit-test labels are not reviewer evidence.
+
+## Hosted free inference: Cloudflare Workers AI (2026-10-18)
+
+The public deployment uses Workers AI through the edge's authenticated OpenAI-compatible proxy ([ADR 0007](ADR/0007-public-edge-and-inference.md)). The same locked 42 cases, scoring and gate were used; the backend ran locally and called the proxy. Temperature 0; Qwen3 uses its documented `/no_think` switch.
+
+| Model (Workers AI) | Gate | Passed | Correctness | Unsupported-claim rate | Tool selection | p50 / p95 | Neurons (42 cases) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-30B-A3B, recorded at `759e55c` | pass | 36/42 | 0.826 | 0.144 | see artifact | 1.08 s / 3.90 s | 358.5 |
+| Qwen3-30B-A3B, exploratory (local proxy) | pass | 37/42 | 0.870 | 0.054 | 0.875 | 1.07 s / 3.90 s | about 380 |
+| Qwen3-30B-A3B, exploratory (deployed public proxy) | pass | 37/42 | 0.870 | 0.049 | 0.833 | 1.32 s / 5.00 s | about 360 |
+| Llama 3.3 70B fp8-fast, exploratory | pass | 37/42 | 0.826 | 0.039 | 0.917 | 3.70 s / 10.74 s | about 1,900 |
+| Gemma 4 26B A4B, exploratory | pass | 37/42 | 0.783 | 0.000 | 0.875 | 9.21 s / 20.55 s | about 1,200 |
+
+Only the recorded run is a committed artifact ([llm_cf_qwen_qwen3-30b-a3b-fp8.json](../evaluation/results/llm_cf_qwen_qwen3-30b-a3b-fp8.json)); exploratory runs used `--no-write` and are reported from their console output. Hosted inference is not bit-reproducible at temperature 0: identical code scored 36-37/42 and 0.049-0.144 unsupported-claim rate across runs, so the recorded (worse) run is the reference. All runs had safety adherence 1.0 and zero isolation or authorisation violations; unsupported drafted claims were removed by verification before any answer was returned. Qwen3 was selected for the best correctness at the lowest latency and cost (about 9 neurons per run, roughly 850 runs inside the 8,000-neuron daily cap). These are synthetic, rule-scored results, not clinical validation.
