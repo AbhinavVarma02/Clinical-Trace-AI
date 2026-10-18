@@ -18,6 +18,14 @@ const NAV_ICONS: Record<RouteName, (p: { size?: number }) => ReactNode> = {
   governance: Icons.governance,
 };
 
+// Shown until the backend answers, so the selector is readable during cold starts.
+const FALLBACK_PERSONAS = [
+  { persona_id: "clinician.demo", display_name: "Demo Clinician" },
+  { persona_id: "clinician.restricted", display_name: "Restricted Clinician" },
+  { persona_id: "reviewer.demo", display_name: "Demo Reviewer" },
+  { persona_id: "admin.demo", display_name: "Demo Administrator" },
+];
+
 export function Shell({ children }: { children: ReactNode }) {
   const { route, persona, setPersona, theme, toggleTheme } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -94,7 +102,7 @@ export function Shell({ children }: { children: ReactNode }) {
             onChange={(event) => setPersona(event.target.value)}
             title="Synthetic access context used for every request"
           >
-            {(personas.data ?? [{ persona_id: persona, display_name: persona }]).map((p) => (
+            {(personas.data ?? FALLBACK_PERSONAS).map((p) => (
               <option key={p.persona_id} value={p.persona_id}>
                 {p.display_name}
               </option>

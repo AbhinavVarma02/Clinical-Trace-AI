@@ -145,6 +145,8 @@ export function OverviewPage() {
                   {pct(s.readmission_model.metadata.test_metrics.recall_positive)} / {pct(s.readmission_model.metadata.test_metrics.precision_positive)}
                 </dd>
               </dl>
+            ) : !s ? (
+              <p className="muted" style={{ fontSize: 13 }}>Model status appears when the backend is reachable. Held-out metrics are listed under Measured evidence.</p>
             ) : (
               <p className="muted" style={{ fontSize: 13 }}>
                 Model artifacts are not loaded on this server, so risk tools report the model as unavailable. Train with <span className="mono">python src/train.py</span>.

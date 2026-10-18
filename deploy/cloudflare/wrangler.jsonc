@@ -17,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "clinical-trace-edge",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "57896756-9a09-4aa7-a63b-7039482aa163",
       "migrations_dir": "migrations"
     }
   ],

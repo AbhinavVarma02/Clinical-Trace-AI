@@ -97,6 +97,14 @@ export function ErrorState({ error, onRetry, action }: { error: ApiError; onRetr
       </div>
     );
   }
+  if (error.code === "backend_not_configured") {
+    return (
+      <div className="error-state transient" role="status">
+        <div className="error-title">Backend not connected</div>
+        <div>{error.message}</div>
+      </div>
+    );
+  }
   const title =
     error.status === 403 ? "Not permitted for this persona" : error.status === 401 ? "Persona required"
       : error.status === 429 ? (error.code === "daily_limit" ? "Daily free limit reached" : "Please slow down")

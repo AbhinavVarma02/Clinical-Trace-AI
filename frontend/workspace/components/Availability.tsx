@@ -87,7 +87,8 @@ export function GuidedCase() {
   const guide = useGuide();
   const { setPatientId, setPersona } = useApp();
   const a = useAvailability();
-  const waiting = a.mode === "edge" && a.backend !== "ready";
+  const waiting = a.mode === "edge" && (a.backend === "waking" || a.backend === "unavailable");
+  const noBackend = a.mode === "edge" && a.backend === "not_configured";
   return (
     <section className="card guide-card" aria-labelledby="guide-title">
       <div className="card-body stack">
@@ -108,7 +109,8 @@ export function GuidedCase() {
                 <Icons.play size={16} /> Approve as reviewer
               </button>
             ) : guide.next?.id === "run" ? (
-              <button type="button" className="btn primary" onClick={() => startGuidedCase(setPatientId)} aria-describedby={waiting ? "guide-wait" : undefined}>
+              <button type="button" className="btn primary" onClick={() => startGuidedCase(setPatientId)} disabled={noBackend}
+                aria-describedby={waiting || noBackend ? "guide-wait" : undefined}>
                 <Icons.play size={16} /> Start guided case
               </button>
             ) : (
@@ -119,9 +121,11 @@ export function GuidedCase() {
             )}
           </div>
         </div>
-        {waiting && guide.next?.id === "run" && (
+        {(waiting || noBackend) && guide.next?.id === "run" && (
           <p id="guide-wait" className="faint" style={{ fontSize: 12, margin: 0 }}>
-            The backend is starting; the question is sent as soon as it is ready.
+            {noBackend
+              ? "This deployment has no analysis backend connected yet, so the guided case cannot run here. The measured evidence below is still available."
+              : "The backend is starting; the question is sent as soon as it is ready."}
           </p>
         )}
         <ol className="guide-steps">
