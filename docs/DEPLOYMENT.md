@@ -1,5 +1,10 @@
 # Deployment
 
+Current candidate release preparation and exact rollback commands are in
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md); measured status is in
+[RELEASE_READINESS.md](RELEASE_READINESS.md). Publication and merging require
+explicit owner approval. The commands below are operating documentation.
+
 ## Local development
 
 ```bash
@@ -53,13 +58,25 @@ The image is multi-stage: a Node stage builds `frontend/dist` and `frontend/dist
 
 ## CI
 
-`.github/workflows/ci.yml` runs: ruff lint, pytest (including the evaluation gate), the evaluation report, frontend typecheck/tests/builds, `npm audit`, a tracked-file secret scan, `pip-audit` (warning only), and a container build with a smoke test (status, workspace HTML, an answered agent run, non-root user).
+`.github/workflows/ci.yml` runs mandatory lint/type/format, pytest/offline evaluation,
+frontend typecheck/tests/builds and real-backend Playwright, Worker checks and
+deploy dry-run, Node audits, a tracked-file secret scan, `pip-audit`, and a
+container build/smoke (status, workspace HTML, answered run, non-root user).
 
 ## Public deployment
 
-The 2.0 public edge (React workspace, guarded gateway, Workers AI inference) runs on Cloudflare Workers Free at https://clinical-trace-ai.room-for-both.workers.dev. The public v1 Space (https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai) is unchanged. The public 2.0 backend host awaits owner approval. Architecture, controls, measured results, release/rollback runbooks and the co-hosting plan are in [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md).
+The 2.0 public edge runs on Cloudflare Workers Free at
+https://clinical-trace-ai.room-for-both.workers.dev. The existing owner-approved
+Space co-hosts v1 at `/` and the 2.0 API under `/api/v2`; v1 remains at the same
+URL and behavior. This continuation has not published new code. Historical
+production evidence is in [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md).
 
-Public-mode backend settings: `CLINICAL_TRACE_PUBLIC_MODE=1` (workspace header required), `CLINICAL_TRACE_EDGE_SECRET` (protected routes accept only the edge), `CLINICAL_TRACE_LLM_PROVIDER=cloudflare-workers-ai` with `CLINICAL_TRACE_LLM_BASE_URL=<edge>/edge/llm/v1` and `CLINICAL_TRACE_LLM_API_KEY` (the edge's backend token).
+Co-hosted backend settings: `CLINICAL_TRACE_PUBLIC_MODE=1`,
+`CLINICAL_TRACE_EDGE_SECRET`, `CLINICAL_TRACE_LLM_PROVIDER=cloudflare-workers-ai-relay`,
+and the existing Qwen3 model. The HF backend cannot call Cloudflare directly;
+the edge services relay requests during streaming. The Space holds no inference
+URL/token. Direct `cloudflare-workers-ai` is for a local backend that can reach
+the edge, not the co-hosted Space.
 
 ## SQLite runtime lifecycle
 

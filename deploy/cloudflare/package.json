@@ -8,7 +8,7 @@
   "scripts": {
     "build:assets": "node scripts/build-assets.mjs",
     "typecheck": "wrangler types --include-runtime && tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run && node --test test/release-orchestration.mjs",
     "check": "npm run typecheck && npm run test",
     "dev": "wrangler dev",
     "deploy:dry-run": "npm run build:assets && wrangler deploy --dry-run --outdir .wrangler/dry-run",
