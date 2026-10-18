@@ -47,3 +47,4 @@
 
 - Single-author synthetic cases; substring-based correctness; no human or model-based judging.
 - Held-out cases are separate from development cases but not independent of the author.
+- Live-LLM answers lose claims in verification: in a 48-run sample 19% of drafted claims were excluded, concentrated in the multi-encounter summary and warfarin questions, and the model's draft for the guided summary was unusable in about half the runs (deterministic fallback). Many exclusions are conservative false rejections (date and unit wording, past-tense "diagnosed/prescribed" record statements). Excluded claims and reasons are shown in the UI; see [UI_POLISH.md](UI_POLISH.md#verification-badge-follow-up-2026-10-19).

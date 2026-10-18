@@ -1,5 +1,5 @@
 // Renders one agent run: verified claims with citations, uncertainty, tool activity, and review actions.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ApiError, api } from "../api";
 import type { AgentRun, Evidence } from "../types";
 import { EvidenceDrawer } from "./EvidencePanel";
@@ -13,6 +13,15 @@ function ModeBadge({ run }: { run: AgentRun }) {
       <Badge tone="warning" dot title={run.inference.label}>
         {run.inference.degraded_reason === "quota_exhausted" ? "Deterministic · free LLM quota used"
           : run.inference.degraded_reason === "relay_unavailable" ? "Deterministic · live LLM needs streaming" : "Deterministic · LLM unavailable"}
+      </Badge>
+    );
+  }
+  if (run.inference.mode === "llm" && run.inference.fallback_used && run.inference.composer?.startsWith("deterministic")) {
+    // The model's draft was unusable, so the rule-based composer wrote this answer. Say so.
+    const attempt = run.inference.llm_attempt;
+    return (
+      <Badge tone="warning" dot title={run.inference.label}>
+        {attempt && attempt.claims_total > 0 ? "Deterministic fallback · LLM draft failed verification" : "Deterministic fallback · LLM draft unusable"}
       </Badge>
     );
   }
@@ -31,6 +40,16 @@ function ModeBadge({ run }: { run: AgentRun }) {
   );
 }
 
+/** Plain-English label for a raw verifier reason. The raw reason is always shown next to it. */
+function explainReason(reason: string): string {
+  if (reason.startsWith("low lexical support")) return "Wording not supported by the cited record";
+  if (reason.startsWith("numbers not found")) return "Number not found in the cited record";
+  if (reason.startsWith("unsafe pattern") || reason.startsWith("banned phrase")) return "Blocked by the safety filter (reads like a clinical instruction)";
+  if (reason.startsWith("computation failed")) return "Derived value could not be recomputed";
+  if (reason === "no citation" || reason.startsWith("citation ")) return "Missing or invalid citation";
+  return "Did not pass verification";
+}
+
 /** Claims shown before "Show all": keeps long answers scannable without hiding any verified claim. */
 const CLAIMS_PREVIEW = 5;
 
@@ -38,10 +57,13 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
   const [open, setOpen] = useState<Evidence | null>(null);
   const [showTrace, setShowTrace] = useState(false);
   const [showAllClaims, setShowAllClaims] = useState(false);
+  const [removedOpen, setRemovedOpen] = useState(false);
+  const removedRef = useRef<HTMLDetailsElement>(null);
   const [reviewState, setReviewState] = useState<{ status: string; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const byId = new Map(run.evidence.map((e) => [e.evidence_id, e]));
   const verification = run.verification;
+  const excluded = [...(run.inference.fallback_used ? run.inference.llm_attempt?.rejected ?? [] : []), ...run.answer.rejected_claims];
   const hiddenClaims = showAllClaims ? 0 : Math.max(0, run.answer.claims.length - CLAIMS_PREVIEW);
   const visibleClaims = hiddenClaims ? run.answer.claims.slice(0, CLAIMS_PREVIEW) : run.answer.claims;
 
@@ -68,9 +90,20 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
             </Badge>
             <ModeBadge run={run} />
             {verification && (
-              <Badge tone={verification.status === "verified" ? "success" : verification.status === "failed" ? "danger" : "warning"}>
-                {verification.claims_supported}/{verification.claims_total} claims verified
+              <Badge tone={verification.claims_supported > 0 ? "success" : "danger"}
+                title={`${verification.claims_supported} of ${verification.claims_total} drafted claims were supported by their cited sources and kept.`}>
+                {verification.claims_supported} evidence-backed claim{verification.claims_supported === 1 ? "" : "s"}
               </Badge>
+            )}
+            {excluded.length > 0 && (
+              <button type="button" className="badge warning badge-button" aria-controls={`removed-${run.run_id}`} aria-expanded={removedOpen}
+                title="Draft claims the sources did not support were filtered out before display. Click to see which and why."
+                onClick={() => {
+                  setRemovedOpen(true);
+                  window.requestAnimationFrame(() => removedRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
+                }}>
+                {excluded.length} excluded
+              </button>
             )}
             {run.review.required && <Badge tone="warning">Review recommended</Badge>}
           </div>
@@ -169,18 +202,26 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
           </details>
         )}
 
-        {(run.answer.rejected_claims.length > 0 || (run.inference.llm_attempt?.rejected.length ?? 0) > 0) && (
-          <details>
+        {excluded.length > 0 && (
+          <details id={`removed-${run.run_id}`} ref={removedRef} open={removedOpen} onToggle={(event) => setRemovedOpen(event.currentTarget.open)}>
             <summary className="muted" style={{ cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-              Claims removed by verification ({run.answer.rejected_claims.length + (run.inference.fallback_used ? run.inference.llm_attempt?.rejected.length ?? 0 : 0)})
+              Excluded draft claims ({excluded.length}) · why they were removed
             </summary>
+            <p className="muted" style={{ fontSize: 13, margin: "8px 0 0" }}>
+              The model drafted these, but the cited records did not support them as written, so they are not part of the answer.
+              Nothing is hidden: each claim is listed with the verifier's reason.
+            </p>
             <ol className="claims" style={{ marginTop: 8 }}>
-              {[...(run.inference.fallback_used ? run.inference.llm_attempt?.rejected ?? [] : []), ...run.answer.rejected_claims].map((claim, index) => (
+              {excluded.map((claim, index) => (
                 <li className="claim rejected" key={`r-${index}`}>
                   <span className="claim-index" aria-hidden="true">✕</span>
                   <div className="claim-body">
                     <span style={{ textDecoration: "line-through", opacity: 0.8 }}>{claim.text}</span>
-                    <div className="faint" style={{ fontSize: 12, marginTop: 4 }}>{(claim.reasons ?? []).join("; ")}</div>
+                    {(claim.reasons ?? []).map((reason) => (
+                      <div key={reason} style={{ fontSize: 12, marginTop: 4 }}>
+                        <strong>{explainReason(reason)}.</strong> <span className="faint mono">{reason}</span>
+                      </div>
+                    ))}
                   </div>
                 </li>
               ))}

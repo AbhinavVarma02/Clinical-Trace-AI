@@ -325,7 +325,7 @@ export interface AgentRun {
     planner: string | null;
     composer: string | null;
     fallback_used: boolean;
-    llm_attempt: { status: string; claims_total: number; claims_supported: number; rejected: Claim[] } | null;
+    llm_attempt: { status: string; claims_total: number; claims_supported: number; rejected: Claim[]; abstain_reason?: string | null; notes?: string[] } | null;
     provider: ProviderInfo | null;
     degraded_reason?: "quota_exhausted" | "relay_unavailable" | "provider_unavailable" | null;
     label: string;
