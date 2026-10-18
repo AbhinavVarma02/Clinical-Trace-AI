@@ -3,6 +3,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "clinical-trace-ai",
+  // Dedicated Clinical-Trace AI account (public URL clinical-trace-ai.vathadiabhinav.workers.dev).
+  // Pinned so a session logged in to another account fails instead of deploying there.
+  "account_id": "00f876c0ebbf368d25feabe3e49cbc0b",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-15",
   "workers_dev": true,
@@ -17,7 +20,7 @@
     {
       "binding": "DB",
       "database_name": "clinical-trace-edge",
-      "database_id": "57896756-9a09-4aa7-a63b-7039482aa163",
+      "database_id": "fd9f4f5c-e9f4-47d2-b95f-a8c87f9d07a2",
       "migrations_dir": "migrations"
     }
   ],

@@ -6,8 +6,14 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("CLINICAL_TRACE_SKIP_DOTENV", "1")
+# Tests never reach a live model, even if the shell exports provider settings;
+# tests that need a provider set one explicitly with a mocked transport.
+os.environ["CLINICAL_TRACE_LLM_PROVIDER"] = "none"
 import pandas as pd
 import pytest
+
+for _name in ("CLINICAL_TRACE_LLM_BASE_URL", "CLINICAL_TRACE_LLM_API_KEY"):
+    os.environ.pop(_name, None)
 
 
 def make_raw_diabetes_frame(rows: int = 36) -> pd.DataFrame:
