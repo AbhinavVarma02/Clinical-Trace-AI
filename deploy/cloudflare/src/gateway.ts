@@ -85,12 +85,11 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   const url = new URL(request.url);
   const route = matchRoute(request.method, url.pathname);
   if (!route) return errorResponse(404, "not_found", "This API route is not available through the public edge.", rid);
-  if (!env.BACKEND_ORIGIN) return errorResponse(503, "backend_not_configured", FAILURE_MESSAGES.backend_not_configured, rid);
-
   const workspace = request.headers.get("x-demo-workspace");
   if (workspace !== null && !WORKSPACE_RE.test(workspace)) {
     return errorResponse(400, "invalid_workspace", "The demo workspace identifier is malformed.", rid);
   }
+  if (!env.BACKEND_ORIGIN) return errorResponse(503, "backend_not_configured", FAILURE_MESSAGES.backend_not_configured, rid);
 
   const day = utcDay();
   const client = await clientKey(request, env.EDGE_BACKEND_SECRET ?? "edge", day);

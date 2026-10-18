@@ -11,7 +11,9 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run test",
     "dev": "wrangler dev",
-    "deploy:dry-run": "npm run build:assets && wrangler deploy --dry-run --outdir .wrangler/dry-run"
+    "deploy:dry-run": "npm run build:assets && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "smoke": "node scripts/smoke.mjs https://clinical-trace-ai.room-for-both.workers.dev",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "typescript": "7.0.2",

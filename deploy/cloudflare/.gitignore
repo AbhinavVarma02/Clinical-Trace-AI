@@ -3,3 +3,4 @@ node_modules/
 .dev.vars
 public/
 worker-configuration.d.ts
+.prod-secrets.json
