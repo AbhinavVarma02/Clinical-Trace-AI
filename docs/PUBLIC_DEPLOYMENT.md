@@ -4,7 +4,7 @@
 
 | Component | Where | State |
 | --- | --- | --- |
-| React workspace, gateway, status/metrics | https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free) | Live, release `7012e8e` |
+| React workspace, gateway, status/metrics | https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free) | Live, release `475f0b6` (UI polish on the `7012e8e` backend wiring) |
 | Live LLM inference | Workers AI `@cf/qwen/qwen3-30b-a3b-fp8`, relayed by the edge during streamed runs | Live; 8,000-neuron daily cap below the 10,000 free allocation |
 | Python FastAPI / LangGraph / SHAP backend | Co-hosted in the existing Space (owner-approved): nginx routes `/api/v2` to FastAPI, everything else to the unchanged v1 Streamlit dashboard | Live, Space commit `9afa0f8`; rollback target `380103e` (identical tree to `91e7685`) |
 | Usage accounting | D1 `clinical-trace-edge` | Live |
@@ -46,6 +46,7 @@ The account is on the Workers Free plan (owner-confirmed 2026-10-18), so every p
 
 | Check | Result |
 | --- | --- |
+| UI polish release `475f0b6` (`npm run release -- --full`, owner-approved 2026-10-19) | Full gate passed: live LLM streamed run (15 verified claims, 9.1 s), citations resolved, review approved. Browser check on the public URL, desktop and mobile: new landing page, guided case answered with live LLM, no console errors, no overflow |
 | Release gate `npm run release -- --full` at `7012e8e` | 14/14: streamed run 9.6 s, 15 progress frames, 7 tool calls, 15 verified claims, live LLM planner and composer, every citation resolved to versioned same-patient evidence, cross-visitor read 404, review submitted and approved |
 | Desktop browser, fresh workspace | First progress 0.26 s; verified answer 10.9 s (15/15 claims, live LLM); citation drawer with record version; review approved ("valid for the exact artifact version") |
 | Mobile 375 px, fresh workspace | Verified answer 7.5 s (15/15); treatment-advice probe refused in 14 ms before any model call; no horizontal or top-bar overflow; review approved; only this visitor's review listed |
