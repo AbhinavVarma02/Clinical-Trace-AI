@@ -100,6 +100,43 @@ def test_offline_runs_are_real_deterministic_and_report_all_attempts(tmp_path):
         run(repetitions=1, output=output)
 
 
+def test_selected_guided_workload_repeats_only_selected_questions_in_ui_order():
+    report = run(repetitions=2, scenario_ids=["readmission-journey"])
+    assert report["completed"] and report["planned_runs"] == 2
+    assert [r["id"] for r in report["runs"]] == ["readmission-journey"] * 2
+    assert [r["repetition"] for r in report["runs"]] == [1, 2]
+    assert [q["id"] for q in report["questions"]] == ["readmission-journey"]
+    assert list(report["by_scenario"]) == ["readmission-journey"]
+    assert all(r["citation_checks"]["valid"] for r in report["runs"])
+    ordered = run(repetitions=1, scenario_ids=["metformin", "readmission-journey"])
+    assert [r["id"] for r in ordered["runs"]] == ["readmission-journey", "metformin"]
+
+
+@pytest.mark.parametrize("scenario_ids", [["unknown"], ["readmission-journey"] * 2, []])
+def test_invalid_scenario_selection_fails_before_network_or_runtime(monkeypatch, scenario_ids):
+    monkeypatch.setenv("RELIABILITY_TEST_KEY", "test-secret")
+    requests = []
+
+    def forbidden_request(request):
+        requests.append(request)
+        raise AssertionError("Invalid workload must not contact the edge")
+
+    def forbidden_runtime(*args, **kwargs):
+        raise AssertionError("Invalid workload must not start the agent")
+
+    monkeypatch.setattr("evaluation.reliability.build_runtime", forbidden_runtime)
+    with pytest.raises(ValueError, match="scenario|duplicate"):
+        run(
+            scenario_ids=scenario_ids,
+            edge_origin=ORIGIN,
+            api_key_env="RELIABILITY_TEST_KEY",
+            max_neurons=1000,
+            max_calls=112,
+            transport=httpx.MockTransport(forbidden_request),
+        )
+    assert not requests
+
+
 def test_live_without_credentials_or_explicit_caps_fails_before_inference(monkeypatch):
     monkeypatch.delenv("RELIABILITY_TEST_KEY", raising=False)
     report = run(repetitions=1, edge_origin=ORIGIN, api_key_env="RELIABILITY_TEST_KEY")

@@ -359,6 +359,7 @@ def _write_report(output: Path | None, report: dict[str, Any]) -> None:
 def run(
     *,
     repetitions: int = 8,
+    scenario_ids: list[str] | None = None,
     output: Path | None = None,
     label: str = "offline",
     source_revision: str | None = None,
@@ -375,6 +376,13 @@ def run(
     if output is not None and output.exists():
         raise ValueError("Refusing to overwrite a prior experiment; use a new output path")
     scenarios = load_scenarios()
+    if scenario_ids is not None:
+        if not scenario_ids or len(set(scenario_ids)) != len(scenario_ids):
+            raise ValueError("Select at least one scenario without duplicate identifiers")
+        unknown = set(scenario_ids) - {scenario.id for scenario in scenarios}
+        if unknown:
+            raise ValueError(f"Unknown reliability scenario identifiers: {', '.join(sorted(unknown))}")
+        scenarios = [scenario for scenario in scenarios if scenario.id in scenario_ids]
     report: dict[str, Any] = {
         "protocol": PROTOCOL,
         "label": label,
@@ -519,6 +527,7 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repetitions", type=int, default=8)
+    parser.add_argument("--scenario", dest="scenario_ids", action="append", choices=[s.id for s in load_scenarios()])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--label", default="offline")
     parser.add_argument("--source-revision")
