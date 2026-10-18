@@ -217,7 +217,9 @@ def _require_approval(args: argparse.Namespace) -> None:
         sys.exit("Refusing: publishing or rolling back the public Space requires explicit owner approval.")
 
 
-def publish(out: Path, edge_url: str, edge_secret: str, llm_token: str) -> None:
+def publish(out: Path, edge_secret: str) -> None:
+    """Publish the staged tree. Inference uses the edge relay: Spaces cannot reach Cloudflare, so the
+    Space holds no inference URL or token; only the edge secret that authenticates edge traffic."""
     from huggingface_hub import HfApi
 
     api = HfApi()
@@ -225,11 +227,9 @@ def publish(out: Path, edge_url: str, edge_secret: str, llm_token: str) -> None:
     current = api.space_info(SPACE).sha
     if current != manifest["parent_revision"]:
         sys.exit(f"Space moved from {manifest['parent_revision']} to {current}; re-stage before publishing.")
-    for key, value in {"CLINICAL_TRACE_EDGE_SECRET": edge_secret, "CLINICAL_TRACE_LLM_API_KEY": llm_token}.items():
-        api.add_space_secret(SPACE, key, value)
+    api.add_space_secret(SPACE, "CLINICAL_TRACE_EDGE_SECRET", edge_secret)
     for key, value in {
-        "CLINICAL_TRACE_LLM_PROVIDER": "cloudflare-workers-ai",
-        "CLINICAL_TRACE_LLM_BASE_URL": f"{edge_url.rstrip('/')}/edge/llm/v1",
+        "CLINICAL_TRACE_LLM_PROVIDER": "cloudflare-workers-ai-relay",
         "CLINICAL_TRACE_LLM_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
     }.items():
         api.add_space_variable(SPACE, key, value)
@@ -272,9 +272,15 @@ def rollback(revision: str) -> None:
             parent_commit=api.space_info(SPACE).sha,
         )
     for key in ("CLINICAL_TRACE_EDGE_SECRET", "CLINICAL_TRACE_LLM_API_KEY"):
-        api.delete_space_secret(SPACE, key)
+        try:
+            api.delete_space_secret(SPACE, key)
+        except Exception:  # noqa: BLE001 - absent secrets are fine during rollback
+            pass
     for key in ("CLINICAL_TRACE_LLM_PROVIDER", "CLINICAL_TRACE_LLM_BASE_URL", "CLINICAL_TRACE_LLM_MODEL"):
-        api.delete_space_variable(SPACE, key)
+        try:
+            api.delete_space_variable(SPACE, key)
+        except Exception:  # noqa: BLE001
+            pass
     print(f"restored tree of {revision}; removed {len(removed)} added files")
 
 
@@ -283,7 +289,6 @@ def main() -> int:
     parser.add_argument("command", choices=["stage", "verify", "publish", "rollback"])
     parser.add_argument("--out", type=Path, default=Path(os.environ.get("TEMP", "/tmp")) / "ct-space-cohost")
     parser.add_argument("--revision", default=V1_REVISION)
-    parser.add_argument("--edge-url", default="https://clinical-trace-ai.room-for-both.workers.dev")
     parser.add_argument("--secrets", type=Path, default=ROOT / "deploy" / "cloudflare" / ".prod-secrets.json")
     parser.add_argument("--i-have-owner-approval", action="store_true")
     args = parser.parse_args()
@@ -294,7 +299,7 @@ def main() -> int:
     elif args.command == "publish":
         _require_approval(args)
         values = json.loads(args.secrets.read_text(encoding="utf-8"))
-        publish(args.out, args.edge_url, values["EDGE_BACKEND_SECRET"], values["LLM_PROXY_TOKEN"])
+        publish(args.out, values["EDGE_BACKEND_SECRET"])
     else:
         _require_approval(args)
         rollback(args.revision)

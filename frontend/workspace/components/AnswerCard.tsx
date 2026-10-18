@@ -11,7 +11,8 @@ function ModeBadge({ run }: { run: AgentRun }) {
   if (run.inference.mode === "llm" && run.inference.degraded_reason) {
     return (
       <Badge tone="warning" dot title={run.inference.label}>
-        {run.inference.degraded_reason === "quota_exhausted" ? "Deterministic · free LLM quota used" : "Deterministic · LLM unavailable"}
+        {run.inference.degraded_reason === "quota_exhausted" ? "Deterministic · free LLM quota used"
+          : run.inference.degraded_reason === "relay_unavailable" ? "Deterministic · live LLM needs streaming" : "Deterministic · LLM unavailable"}
       </Badge>
     );
   }

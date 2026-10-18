@@ -327,7 +327,7 @@ export interface AgentRun {
     fallback_used: boolean;
     llm_attempt: { status: string; claims_total: number; claims_supported: number; rejected: Claim[] } | null;
     provider: ProviderInfo | null;
-    degraded_reason?: "quota_exhausted" | "provider_unavailable" | null;
+    degraded_reason?: "quota_exhausted" | "relay_unavailable" | "provider_unavailable" | null;
     label: string;
   };
   trace: TraceSpan[];

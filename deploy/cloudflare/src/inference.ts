@@ -17,7 +17,7 @@ interface ChatMessage {
   content: string;
 }
 
-interface ChatRequest {
+export interface ChatRequest {
   model?: string;
   messages?: ChatMessage[];
   max_tokens?: number;
@@ -100,8 +100,26 @@ export async function handleChatCompletions(request: Request, env: Env, ctx: Exe
   } catch {
     return errorResponse(400, "invalid_json", "request body must be JSON", rid);
   }
+  const result = await runCompletion(env, ctx, body, rid, "/edge/llm/v1/chat/completions");
+  const headers: Record<string, string> = { "x-request-id": rid };
+  if (result.retryAfter) headers["retry-after"] = String(result.retryAfter);
+  return json(result.body, result.status, headers);
+}
+
+export interface CompletionResult {
+  status: number;
+  body: Record<string, unknown>;
+  retryAfter?: number;
+}
+
+/**
+ * Validate, budget-check and run one chat completion on Workers AI. Shared by the authenticated
+ * proxy and the stream relay (backend hosts that cannot reach Cloudflare). Prompts are never logged.
+ */
+export async function runCompletion(env: Env, ctx: ExecutionContext, body: ChatRequest, rid: string,
+  route: string): Promise<CompletionResult> {
   const checked = validateChat(body, env.LLM_MODEL);
-  if (!checked.ok) return errorResponse(400, "invalid_request", checked.message, rid);
+  if (!checked.ok) return { status: 400, body: { error: { code: "invalid_request", message: checked.message, request_id: rid } } };
 
   const day = utcDay();
   const budget = limits(env).neuronBudget;
@@ -110,9 +128,9 @@ export async function handleChatCompletions(request: Request, env: Env, ctx: Exe
   const used = await getCounter(env.DB, day, "neurons");
   const retryAfter = secondsUntilUtcMidnight();
   if (used + worstCase > budget) {
-    ctx.waitUntil(recordEvent(env.DB, day, { kind: "llm", route: "/edge/llm/v1/chat/completions", status: 429, outcome: "budget_exhausted", latencyMs: 0 }));
-    return errorResponse(429, "quota_exhausted", "The daily free inference budget is used up; it resets at 00:00 UTC.", rid,
-      { retry_after_s: retryAfter }, { "retry-after": String(retryAfter) });
+    ctx.waitUntil(recordEvent(env.DB, day, { kind: "llm", route, status: 429, outcome: "budget_exhausted", latencyMs: 0 }));
+    return { status: 429, retryAfter, body: { error: { code: "quota_exhausted", retry_after_s: retryAfter, request_id: rid,
+      message: "The daily free inference budget is used up; it resets at 00:00 UTC." } } };
   }
 
   const started = Date.now();
@@ -131,15 +149,15 @@ export async function handleChatCompletions(request: Request, env: Env, ctx: Exe
     const message = err instanceof Error ? err.message : String(err);
     const quota = isQuotaError(message);
     const latency = Date.now() - started;
-    ctx.waitUntil(recordEvent(env.DB, day, { kind: "llm", route: "/edge/llm/v1/chat/completions", status: quota ? 429 : 502,
+    ctx.waitUntil(recordEvent(env.DB, day, { kind: "llm", route, status: quota ? 429 : 502,
       outcome: quota ? "platform_quota" : "provider_error", latencyMs: latency, detail: message.slice(0, 120) }));
     if (quota) {
       // Mark the budget as spent so later calls fail fast until the daily reset.
       ctx.waitUntil(addCounter(env.DB, day, "neurons", "", budget).then(() => undefined));
-      return errorResponse(429, "quota_exhausted", "The daily free inference allocation is used up; it resets at 00:00 UTC.", rid,
-        { retry_after_s: retryAfter }, { "retry-after": String(retryAfter) });
+      return { status: 429, retryAfter, body: { error: { code: "quota_exhausted", retry_after_s: retryAfter, request_id: rid,
+        message: "The daily free inference allocation is used up; it resets at 00:00 UTC." } } };
     }
-    return errorResponse(502, "provider_error", "The inference provider returned an error.", rid);
+    return { status: 502, body: { error: { code: "provider_error", message: "The inference provider returned an error.", request_id: rid } } };
   }
   const latency = Date.now() - started;
   const result = normaliseOutput(output);
@@ -150,10 +168,10 @@ export async function handleChatCompletions(request: Request, env: Env, ctx: Exe
   ctx.waitUntil(Promise.all([
     addCounter(env.DB, day, "neurons", "", neurons),
     addCounter(env.DB, day, "llm_calls", "", 1),
-    recordEvent(env.DB, day, { kind: "llm", route: "/edge/llm/v1/chat/completions", status: 200, outcome: "ok", latencyMs: latency,
+    recordEvent(env.DB, day, { kind: "llm", route, status: 200, outcome: "ok", latencyMs: latency,
       detail: `${checked.model}|${promptTokens}|${completionTokens}` }),
   ]).then(() => undefined));
-  return json({
+  return { status: 200, body: {
     id: `edge-${rid}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
@@ -161,7 +179,7 @@ export async function handleChatCompletions(request: Request, env: Env, ctx: Exe
     choices: [{ index: 0, message: { role: "assistant", content: result.text }, finish_reason: "stop" }],
     usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
     edge: { latency_ms: latency, estimated_neurons: Number(neurons.toFixed(2)), neurons_reported: result.neurons !== undefined },
-  }, 200, { "x-request-id": rid });
+  } };
 }
 
 export async function inferenceSummary(env: Env): Promise<Record<string, unknown>> {

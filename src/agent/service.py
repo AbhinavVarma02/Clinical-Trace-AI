@@ -29,6 +29,9 @@ def _inference_label(mode: str, degraded: str | None) -> str:
     if degraded == "quota_exhausted":
         return ("Live inference paused: the daily free inference allocation is used up (resets 00:00 UTC). "
                 "This run used the deterministic planner and composer.")
+    if degraded == "relay_unavailable":
+        return ("Live inference runs on streamed requests through the public edge; this request used the "
+                "deterministic planner and composer.")
     if degraded == "provider_unavailable":
         return "Live inference was unavailable for this run; the deterministic planner and composer answered."
     return "Live language-model inference"
@@ -337,6 +340,8 @@ class AgentService:
         degraded = None
         if mode == "llm" and "ProviderQuotaExhausted" in notes:
             degraded = "quota_exhausted"
+        elif mode == "llm" and "RelayChannelUnavailable" in notes:
+            degraded = "relay_unavailable"
         elif mode == "llm" and "ProviderUnavailable" in notes:
             degraded = "provider_unavailable"
         return {
