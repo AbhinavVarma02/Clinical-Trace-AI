@@ -4,6 +4,16 @@
 
 The reviewer-ready deployment phase is complete: the final release gate (complete primary agent workflow through the unauthenticated public URL) passed on desktop and mobile, including a backend cold start. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md) and [ADR 0007](ADR/0007-public-edge-and-inference.md). The full master plan is not complete: human-review agreement, clinical validation and conditional advanced extensions remain.
 
+The agent reliability continuation is **unreleased**, through implementation
+checkpoint `23ad61c`. It retains genuine inference/tools, rejected-claim visibility,
+patient isolation and human review. Local verification now includes 390 Python,
+42 frontend, 25 Worker and 30 real-backend browser tests. The locked real-model
+gate passes at 37/42 with all finite critical safety checks passing; this does not
+improve on every historical quality metric. Before/after samples, failed
+development candidates, resource limits and remaining exclusions are recorded in
+[AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). The public edge and Space were not
+updated during this continuation.
+
 | Area | Verified evidence |
 | --- | --- |
 | v1 preprocessing, three model families, patient splits, SHAP, MLflow, API and Streamlit | Original functionality retained; original model/processed artifacts unchanged; compatibility tests pass |
@@ -26,9 +36,9 @@ The reviewer-ready deployment phase is complete: the final release gate (complet
 
 | Check | Result / scope |
 | --- | --- |
-| Python suite | **236 passed**, including public-mode isolation, edge secret, quota degradation, inference relay and evidence-snapshot provenance |
-| Frontend `npm run check` | **41 tests**, TypeScript and both builds passed (UI polish, [UI_POLISH.md](UI_POLISH.md)) |
-| Edge Worker `npm run check` | **21 tests** and TypeScript; deploy dry-run and dependency audit in CI |
+| Python suite | **390 passed**, including composer/verification adversarial regressions, public-mode isolation, quota degradation, inference relay and evidence-snapshot provenance |
+| Frontend `npm run check` | **42 tests**, TypeScript and both builds passed |
+| Edge Worker `npm run check` | **25 tests** and TypeScript; local deploy dry-run and dependency audit passed |
 | Playwright | **30 real-backend Chromium cases**, desktop/tablet/mobile; adds the guided case and a simulated cold-start recovery |
 | Ruff / format / mypy | Lint passed; formatting scoped to new modules; mypy explicitly covers four new contract/persistence/telemetry modules |
 | Deterministic evaluation | Gate PASS; 41/42 cases; `ho-013` lexical miss retained; no known test isolation/authorization violations |

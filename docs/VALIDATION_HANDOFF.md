@@ -2,6 +2,12 @@
 
 **Updated 2026-10-18.** Branch `feature/clinical-trace-2.0`; pin `git rev-parse HEAD` before validating.
 
+**Reliability continuation (client date 2026-10-17):** unreleased agent/verifier
+changes and retained before/after experiments are described in
+[AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). This continuation does not change the
+public release or authorize a Space update, deployment or merge. Historical dates
+and deployment evidence below are preserved as recorded by the prior handoff.
+
 ## State
 
 - Public 2.0 demo: https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free edge, release `475f0b6`).

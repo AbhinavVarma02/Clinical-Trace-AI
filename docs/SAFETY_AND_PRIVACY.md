@@ -23,6 +23,16 @@ The agent must not diagnose, prescribe, recommend treatment, predict individual 
 
 Guard rules are pattern-based. They are tested (see `tests/test_safety_v2.py`) but they are not exhaustive; novel phrasings can evade them, which is why verification and patient binding are separate layers.
 
+The unreleased reliability update keeps those input guards and the global lexical
+threshold unchanged. A tightly bounded historical diagnosis/prescription sentence
+can pass only with matching structured evidence and its onset/order date. Dates
+are checked atomically and numeric values are bound to spelling-normalized units;
+unit conversions and general medical synonym inference are not supported.
+Free-form model uncertainty is treated as uncited draft text and visibly rejected
+instead of bypassing verification as a caveat. Application-authored limitations
+remain separate. See [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md) for the experiments
+and regression scope; these checks do not establish clinical entailment.
+
 ## Authorisation (policy-as-code)
 
 - Central `PolicyEngine` in `src/safety/policy.py`; unknown personas, unknown actions, and patient actions outside the panel are denied.
@@ -56,7 +66,7 @@ Guard rules are pattern-based. They are tested (see `tests/test_safety_v2.py`) b
 
 ## Human review
 
-Outputs that include a model risk estimate, inconsistencies, injected text, partial verification, or an LLM fallback are flagged for review. Reviews bind to an artifact content hash; any revision creates a new version and supersedes earlier approvals. Submitters cannot approve their own artifacts.
+Outputs that include a model risk estimate, inconsistencies, injected text, partial verification, or a fallback after a drafted LLM answer fails verification are flagged for review. Reviews bind to an artifact content hash; any revision creates a new version and supersedes earlier approvals. Submitters cannot approve their own artifacts.
 
 ## Retention
 
