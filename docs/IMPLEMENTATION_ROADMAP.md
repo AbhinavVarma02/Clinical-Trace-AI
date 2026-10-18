@@ -84,3 +84,9 @@ The agent reliability continuation is tracked in [AGENT_RELIABILITY.md](AGENT_RE
 4. Collect independent human annotations only with real reviewers; use the paired rubric/runner without fabricating agreement.
 5. Advanced extensions remain dependency-gated and conditional: no timestamp invention for sequence models; predeclare a larger independent retrieval benchmark before embedding/reranking selection; keep SMART launch simulated and kind optional; implement structured document extraction with provenance/uncertainty. PostgreSQL/pgvector remains optional under ADR 0003 for the current 117-chunk corpus.
 6. Preserve HF v1, default branch, private files and current model artifacts throughout. No merge, paid service or public overwrite is authorized.
+
+Focused guided-completeness result: [GUIDED_COMPLETENESS.md](GUIDED_COMPLETENESS.md).
+Seven completed genuine LLM runs cover both events; one cap-blocked fallback
+prevents an eight-run zero-fallback confirmation. Reserve preserved; no further
+inference/deployment. Larger independent completeness coverage and a fresh full
+real-model gate remain to be measured under a new available allocation.

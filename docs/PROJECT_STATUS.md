@@ -4,15 +4,16 @@
 
 The reviewer-ready deployment phase is complete: the final release gate (complete primary agent workflow through the unauthenticated public URL) passed on desktop and mobile, including a backend cold start. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md) and [ADR 0007](ADR/0007-public-edge-and-inference.md). The full master plan is not complete: human-review agreement, clinical validation and conditional advanced extensions remain.
 
-The agent reliability continuation is **unreleased**, through implementation
-checkpoint `23ad61c`. It retains genuine inference/tools, rejected-claim visibility,
-patient isolation and human review. Local verification now includes 390 Python,
-42 frontend, 25 Worker and 30 real-backend browser tests. The locked real-model
-gate passes at 37/42 with all finite critical safety checks passing; this does not
-improve on every historical quality metric. Before/after samples, failed
-development candidates, resource limits and remaining exclusions are recorded in
-[AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). The public edge and Space were not
-updated during this continuation.
+The unreleased guided-completeness follow-up at `e412405` preserves canonical
+structured evidence and prioritizes important documented events. All seven
+completed LLM answers mention and verify both events (42/42 claims); the eighth
+composer was blocked by the declared budget and fell back, so the zero-fallback
+and complete-eight-run confirmation targets remain unmet. Local gates: 409
+Python, 42 frontend, 25 Worker and 30 browser tests; fresh offline gate 41/42.
+The previous real-model 37/42 gate remains historical; a fresh full model gate
+was not funded within the reserve. See [GUIDED_COMPLETENESS.md](GUIDED_COMPLETENESS.md)
+and the retained earlier [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md) experiments.
+The public edge and Space were not updated during either continuation.
 
 | Area | Verified evidence |
 | --- | --- |
@@ -36,7 +37,7 @@ updated during this continuation.
 
 | Check | Result / scope |
 | --- | --- |
-| Python suite | **390 passed**, including composer/verification adversarial regressions, public-mode isolation, quota degradation, inference relay and evidence-snapshot provenance |
+| Python suite | **409 passed**, including composer/verification adversarial regressions, public-mode isolation, quota degradation, inference relay and evidence-snapshot provenance |
 | Frontend `npm run check` | **42 tests**, TypeScript and both builds passed |
 | Edge Worker `npm run check` | **25 tests** and TypeScript; local deploy dry-run and dependency audit passed |
 | Playwright | **30 real-backend Chromium cases**, desktop/tablet/mobile; adds the guided case and a simulated cold-start recovery |
