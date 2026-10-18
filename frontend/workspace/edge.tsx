@@ -5,7 +5,7 @@
 // served directly by FastAPI (local development, container), /edge/status does not exist and the
 // monitor reports "direct" mode, in which the backend is by definition the server of this page.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ApiError, setLimitListener, setTransientListener } from "./api";
+import { ApiError, limitResetAt, setLimitListener, setTransientListener } from "./api";
 
 export type BackendState = "ready" | "waking" | "unavailable" | "not_configured" | "unknown";
 
@@ -119,9 +119,7 @@ export function AvailabilityProvider({ children, pollMs = { waiting: 3000, ready
       if (stateRef.current.backend === "ready") void check();
     });
     setLimitListener(error => {
-      const reset = error.limit?.resetsAt ? Date.parse(error.limit.resetsAt) : NaN;
-      const until = error.code === "daily_limit" ? (Number.isFinite(reset) ? reset : nextUtcReset())
-        : Date.now() + (error.limit?.retryAfterS ?? 60) * 1000;
+      const until = limitResetAt(error);
       setExecutionLimit(previous => previous && previous.until > until ? previous : { error, until });
       void check();
     });

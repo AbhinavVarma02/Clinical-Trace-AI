@@ -1,6 +1,6 @@
 // Shared presentational primitives. All state comes from props; no data fetching here.
-import { useEffect, useRef, type ReactNode } from "react";
-import { isTransient, type ApiError } from "../api";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { isTransient, limitResetAt, type ApiError } from "../api";
 import { Icons } from "./icons";
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger" | "teal" | "violet" | "outline";
@@ -93,6 +93,13 @@ export function EmptyState({ title, children, action }: { title: string; childre
 }
 
 export function ErrorState({ error, onRetry, action }: { error: ApiError; onRetry?: () => void; action?: ReactNode }) {
+  const [now, setNow] = useState(Date.now());
+  const retryAt = error.status === 429 ? limitResetAt(error) : 0;
+  useEffect(() => {
+    if (retryAt <= Date.now()) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(2_147_483_647, retryAt - Date.now() + 10));
+    return () => window.clearTimeout(timer);
+  }, [retryAt]);
   if (isTransient(error)) {
     return (
       <div className="error-state transient" role="status" aria-live="polite">
@@ -129,7 +136,7 @@ export function ErrorState({ error, onRetry, action }: { error: ApiError; onRetr
       <div>{error.message}</div>
       {error.requestId && <div className="faint mono">request {error.requestId.slice(0, 8)}</div>}
       <div className="row" style={{ justifyContent: "center" }}>
-        {onRetry && error.status !== 429 && (
+        {onRetry && (error.status !== 429 || now >= retryAt) && (
           <button className="btn sm" onClick={onRetry}>
             <Icons.refresh size={15} /> Try again
           </button>
