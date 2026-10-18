@@ -25,16 +25,16 @@ export interface EdgeStatus {
     model: string;
     configured: boolean;
     daily_neuron_budget: number;
-    neurons_used_today: number;
-    remaining_fraction: number;
-    quota_state: "available" | "low" | "exhausted";
-    resets_in_s: number;
+    neurons_used_today: number | null;
+    remaining_fraction: number | null;
+    quota_state: "available" | "low" | "exhausted" | "unknown";
+    resets_in_s: number | null;
   };
   limits: {
-    agent_runs_today: number;
+    agent_runs_today: number | null;
     agent_runs_global_per_day: number;
     agent_runs_per_visitor_per_day: number;
-    remaining_agent_runs_today: number;
+    remaining_agent_runs_today: number | null;
   };
 }
 

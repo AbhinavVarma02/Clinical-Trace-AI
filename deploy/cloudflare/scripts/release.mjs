@@ -37,6 +37,8 @@ try {
 } catch {
   console.warn("Could not read the current deployment; automatic rollback will be unavailable.");
 }
+// Schema first: a Worker must never run against an unmigrated database.
+run("npx wrangler d1 migrations apply clinical-trace-edge --remote");
 run(`npx wrangler deploy --var RELEASE:${sha}`);
 mkdirSync(join(here, ".wrangler"), { recursive: true });
 writeFileSync(join(here, ".wrangler", "last-release.json"), JSON.stringify({ sha, previous, at: new Date().toISOString() }, null, 1));

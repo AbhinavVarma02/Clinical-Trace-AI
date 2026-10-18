@@ -136,7 +136,7 @@ export function AgentPage() {
             </p>
           </div>
         </div>
-        {runs.length === 0 && !pending && !error && (
+        {runs.length === 0 && !pending && !queued && !error && (
           <Card>
             <EmptyState title={`Ask about ${selected?.display_name.replace(" (synthetic record)", "") ?? patientId}`}>
               Try a suggested question, or one of the safety probes to see refusals and abstentions.

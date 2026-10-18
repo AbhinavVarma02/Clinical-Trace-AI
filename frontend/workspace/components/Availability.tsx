@@ -66,12 +66,13 @@ export function AvailabilityBanner() {
         <Icons.alert size={18} />
         <div>
           <strong>Today's free live-inference allocation is used up.</strong> Answers still run through the same tools, verification and review,
-          using the deterministic planner and composer, and each answer is labelled. Live inference resumes in {formatDuration(q.resets_in_s)} (00:00 UTC).
+          using the deterministic planner and composer, and each answer is labelled. Live inference resumes at 00:00 UTC{q.resets_in_s !== null ? ` (in ${formatDuration(q.resets_in_s)})` : ""}.
         </div>
       </div>
     );
   }
-  if (a.status.limits.remaining_agent_runs_today <= 0) {
+  const remaining = a.status.limits.remaining_agent_runs_today;
+  if (remaining !== null && remaining <= 0) {
     return <div className="banner warning" role="status"><Icons.alert size={18} /><div><strong>The free daily agent-run limit for this demo is reached.</strong> Browsing, evidence and review remain available; agent runs reset at 00:00 UTC.</div></div>;
   }
   return null;

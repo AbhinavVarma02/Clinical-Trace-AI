@@ -89,7 +89,10 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   if (workspace !== null && !WORKSPACE_RE.test(workspace)) {
     return errorResponse(400, "invalid_workspace", "The demo workspace identifier is malformed.", rid);
   }
-  if (!env.BACKEND_ORIGIN) return errorResponse(503, "backend_not_configured", FAILURE_MESSAGES.backend_not_configured, rid);
+  if (!env.BACKEND_ORIGIN) {
+    ctx.waitUntil(addCounter(env.DB, utcDay(), "error:backend_not_configured", "", 1).then(() => undefined));
+    return errorResponse(503, "backend_not_configured", FAILURE_MESSAGES.backend_not_configured, rid);
+  }
 
   const day = utcDay();
   const client = await clientKey(request, env.EDGE_BACKEND_SECRET ?? "edge", day);
