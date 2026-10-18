@@ -12,7 +12,7 @@
     "check": "npm run typecheck && npm run test",
     "dev": "wrangler dev",
     "deploy:dry-run": "npm run build:assets && wrangler deploy --dry-run --outdir .wrangler/dry-run",
-    "smoke": "node scripts/smoke.mjs https://clinical-trace-ai.room-for-both.workers.dev",
+    "smoke": "node scripts/smoke.mjs https://clinical-trace-ai.vathadiabhinav.workers.dev",
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {
