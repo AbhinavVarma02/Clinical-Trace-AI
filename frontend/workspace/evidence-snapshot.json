@@ -1,0 +1,84 @@
+{
+ "schema_version": 1,
+ "note": "Copied from committed evaluation artifacts (see sources). Scoring is rule-based against versioned synthetic cases; there is no LLM judge, no human rating and no clinical validation.",
+ "agent_evaluations": [
+  {
+   "label": "Deterministic (no language model)",
+   "where": "local CPU",
+   "mode": "deterministic",
+   "model": null,
+   "dataset_version": "v1",
+   "cases": 42,
+   "passed": 41,
+   "gate_passed": true,
+   "answer_correctness": 0.9565,
+   "unsupported_claim_rate": 0.0,
+   "safety_adherence": 1.0,
+   "isolation_violations": 0,
+   "latency_p50_ms": 14.1,
+   "latency_p95_ms": 23.1,
+   "run_at": "2026-10-17T22:01:59Z",
+   "git_commit": "b607d40"
+  },
+  {
+   "label": "Local Ollama · Qwen2.5 7B",
+   "where": "development desktop",
+   "mode": "llm",
+   "model": "qwen2.5:latest",
+   "dataset_version": "v1",
+   "cases": 42,
+   "passed": 35,
+   "gate_passed": true,
+   "answer_correctness": 0.7391,
+   "unsupported_claim_rate": 0.2308,
+   "safety_adherence": 1.0,
+   "isolation_violations": 0,
+   "latency_p50_ms": 2672.5,
+   "latency_p95_ms": 8018.0,
+   "run_at": "2026-10-17T23:02:18Z",
+   "git_commit": "6541d9b"
+  }
+ ],
+ "retrieval": {
+  "mode": "hybrid",
+  "queries": 19,
+  "recall_at_5": 0.9737,
+  "mrr_at_10": 0.9474,
+  "ndcg_at_10": 0.951
+ },
+ "readmission": {
+  "dataset": "UCI Diabetes 130-US hospitals (public benchmark), patient-level held-out test split",
+  "model_version": "20260703051249-local",
+  "test_rows": 19802,
+  "roc_auc": 0.6827,
+  "pr_auc": 0.2398,
+  "threshold": 0.3,
+  "recall_positive": 0.6679,
+  "precision_positive": 0.1697,
+  "brier": 0.1336,
+  "ece": 0.1901,
+  "prevalence": 0.1119,
+  "mean_probability": 0.302,
+  "warning": "Scores are poorly calibrated: the mean predicted probability is far above the observed readmission rate, so they must not be read as patient-level probabilities."
+ },
+ "sources": [
+  {
+   "file": "evaluation/results/latest.json",
+   "sha256": "a2ef291f77f3f3da769e53a8659093e7a1b6b0b4d43d384d75ab0d660d260649",
+   "run_at": "2026-10-17T22:01:59Z",
+   "git_commit": "b607d40"
+  },
+  {
+   "file": "evaluation/results/llm_qwen2.5_7b_durable.json",
+   "sha256": "dfa2f1ce77d5f719b0c38bf6d29ddecd0d3ffab7f47e7f05f3d0166fc7ad36f1",
+   "run_at": "2026-10-17T23:02:18Z",
+   "git_commit": "6541d9b"
+  },
+  {
+   "file": "evaluation/results/readmission_report.json",
+   "sha256": "22630cc586d53ca1e5d8692ea23b5a4e31585dc6f9ca823ec08429186aa788bd",
+   "run_at": "2026-10-17T22:28:20.700Z",
+   "git_commit": "f4f785cc4f3c6b689fd938b6313c1abcce582978"
+  }
+ ]
+}

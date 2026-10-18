@@ -5,8 +5,16 @@ import type { AgentRun, Evidence } from "../types";
 import { EvidenceDrawer } from "./EvidencePanel";
 import { Icons } from "./icons";
 import { Badge, OUTCOME_TONE, humanize, ms } from "./ui";
+import { markGuideStep } from "../guide";
 
 function ModeBadge({ run }: { run: AgentRun }) {
+  if (run.inference.mode === "llm" && run.inference.degraded_reason) {
+    return (
+      <Badge tone="warning" dot title={run.inference.label}>
+        {run.inference.degraded_reason === "quota_exhausted" ? "Deterministic · free LLM quota used" : "Deterministic · LLM unavailable"}
+      </Badge>
+    );
+  }
   if (run.inference.mode === "llm") {
     const model = run.inference.provider?.model ?? "model";
     return (
@@ -34,6 +42,7 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
     setSubmitting(true);
     try {
       const review = await api.submitReview(run.run_id);
+      markGuideStep("submit");
       setReviewState({ status: review.status, message: `Submitted as review ${review.review_id.slice(0, 8)} (artifact v${review.artifact_version}).` });
     } catch (error) {
       setReviewState({ status: "error", message: error instanceof ApiError ? error.message : "Submission failed." });
@@ -96,7 +105,11 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
                           key={citation}
                           type="button"
                           className="citation"
-                          onClick={() => evidence && setOpen(evidence)}
+                          onClick={() => {
+                            if (!evidence) return;
+                            setOpen(evidence);
+                            markGuideStep("citation");
+                          }}
                           disabled={!evidence}
                           aria-label={`Open evidence ${citation}`}
                           title={evidence?.title}

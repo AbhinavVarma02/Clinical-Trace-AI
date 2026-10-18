@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -268,7 +269,8 @@ def run(provider_kind: str = "none", model: str | None = None, base_url: str | N
     provider = None
     if provider_kind != "none":
         provider = OpenAICompatibleProvider(base_url or "http://127.0.0.1:11434/v1", model or "qwen2.5:1.5b",
-                                            provider_kind, timeout_s=120)
+                                            provider_kind, api_key=os.getenv("CLINICAL_TRACE_LLM_API_KEY") or None,
+                                            timeout_s=120)
     with closing(build_runtime(":memory:", provider=provider, enable_model=True)) as rt:
         cases = [{**c, "split": "dev"} for c in load_jsonl(DATASETS / "agent_dev_v1.jsonl")]
         cases += [{**c, "split": "heldout"} for c in load_jsonl(DATASETS / "agent_heldout_v1.jsonl")]
@@ -295,7 +297,8 @@ def run(provider_kind: str = "none", model: str | None = None, base_url: str | N
         }
         if write:
             RESULTS.mkdir(parents=True, exist_ok=True)
-            name = "latest.json" if mode == "deterministic" else f"llm_{(model or 'model').replace(':', '_')}.json"
+            name = ("latest.json" if mode == "deterministic"
+                    else f"llm_{re.sub(r'[^A-Za-z0-9._-]+', '_', model or 'model').strip('_')}.json")
             (RESULTS / name).write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
             with (RESULTS / "history.jsonl").open("a", encoding="utf-8") as history:
                 history.write(json.dumps({
@@ -319,7 +322,7 @@ def run(provider_kind: str = "none", model: str | None = None, base_url: str | N
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--provider", default="none", choices=["none", "ollama", "openai-compatible"])
+    parser.add_argument("--provider", default="none", choices=["none", "ollama", "openai-compatible", "cloudflare-workers-ai"])
     parser.add_argument("--model")
     parser.add_argument("--base-url")
     parser.add_argument("--no-write", action="store_true")

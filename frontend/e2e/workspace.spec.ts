@@ -9,7 +9,7 @@ async function nav(page: Page, name: string) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/app/");
-  await expect(page.getByRole("button", { name: "Start demo", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start guided case", exact: true })).toBeVisible();
 });
 
 for (const demo of DEMOS) {
@@ -128,4 +128,51 @@ test("responsive navigation, keyboard focus, persisted themes, and real errors",
   await page.getByRole("combobox", { name: "Demo persona" }).selectOption("admin.demo");
   await nav(page, "Patients");
   await expect(page.getByRole("alert").first()).toBeVisible();
+});
+
+test("guided case: question to cited, approved artifact in four real steps", async ({ page }) => {
+  await page.getByRole("button", { name: "Start guided case", exact: true }).click();
+  const answer = page.getByRole("article", { name: "Answer to: Summarize this patient journey" });
+  await expect(answer.getByRole("list", { name: "Verified claims" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Guided case progress" })).toContainText("step 2 of 4");
+  await answer.getByRole("button", { name: /^Open evidence / }).first().click();
+  await expect(page.getByRole("dialog").getByText("Evidence text given to the verifier")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Guided case progress" })).toContainText("step 3 of 4");
+  await answer.getByRole("button", { name: "Submit for human review", exact: true }).click();
+  await expect(page.getByText(/Submitted as review/)).toBeVisible();
+  await page.getByRole("region", { name: "Guided case progress" }).getByRole("button", { name: "Switch to reviewer" }).click();
+  await expect(page.getByRole("combobox", { name: "Demo persona" })).toHaveValue("reviewer.demo");
+  await expect(page.getByText("Summarize this patient journey", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(page.getByText("Approval is valid for the exact artifact version shown.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Guided case progress" })).toHaveCount(0);
+  await nav(page, "Overview");
+  await expect(page.getByRole("button", { name: "Run it again" })).toBeVisible();
+});
+
+test("cold start: queued question is sent when the edge reports the backend ready", async ({ page }) => {
+  // Emulate the public edge in front of the real backend: /edge/status reports "waking" and API
+  // calls get the edge's typed 503 until the backend is declared ready; then requests pass through.
+  let ready = false;
+  const status = (state: string) => ({
+    edge: { status: "ok", release: "e2e", served_at: new Date().toISOString() },
+    backend: { state, latency_ms: state === "ready" ? 20 : null, inference_mode: "deterministic", checked_at: new Date().toISOString() },
+    inference: { provider: "cloudflare-workers-ai", model: "@cf/qwen/qwen3-30b-a3b-fp8", configured: true, daily_neuron_budget: 8000,
+      neurons_used_today: 0, remaining_fraction: 1, quota_state: "available", resets_in_s: 3600 },
+    limits: { agent_runs_today: 0, agent_runs_global_per_day: 300, agent_runs_per_visitor_per_day: 25, remaining_agent_runs_today: 300 },
+  });
+  await page.route("**/edge/status", route => route.fulfill({ json: status(ready ? "ready" : "waking") }));
+  await page.route("**/api/v2/**", route => ready ? route.continue() : route.fulfill({
+    status: 503, json: { error: { code: "backend_waking", message: "The analysis backend is starting up after being idle.", request_id: "e2e" } },
+  }));
+  await page.goto("/app/");
+  await expect(page.getByText(/Starting the analysis backend/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Measured evidence" })).toBeVisible();
+  await page.getByRole("button", { name: "Start guided case", exact: true }).click();
+  await expect(page.getByText(/Waiting for the analysis backend to start/)).toBeVisible();
+  ready = true;
+  const answer = page.getByRole("article", { name: "Answer to: Summarize this patient journey" });
+  await expect(answer.getByRole("list", { name: "Verified claims" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Starting the analysis backend/)).toHaveCount(0);
 });

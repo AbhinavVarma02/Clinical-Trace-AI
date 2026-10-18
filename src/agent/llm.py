@@ -7,7 +7,8 @@ configured; without one the agent runs in *deterministic* mode and says so.
 
 Configuration (environment):
 
-* ``CLINICAL_TRACE_LLM_PROVIDER`` - ``none`` (default), ``ollama``, or ``openai-compatible``
+* ``CLINICAL_TRACE_LLM_PROVIDER`` - ``none`` (default), ``ollama``, ``openai-compatible``, or
+  ``cloudflare-workers-ai`` (the public edge's OpenAI-compatible Workers AI proxy)
 * ``CLINICAL_TRACE_LLM_BASE_URL`` - e.g. ``http://127.0.0.1:11434/v1`` for Ollama
 * ``CLINICAL_TRACE_LLM_MODEL`` - e.g. ``qwen2.5:1.5b``
 * ``CLINICAL_TRACE_LLM_API_KEY`` - optional bearer token (never logged)
@@ -29,6 +30,14 @@ import httpx
 
 class ProviderUnavailable(RuntimeError):
     pass
+
+
+class ProviderQuotaExhausted(ProviderUnavailable):
+    """The provider's free allocation is used up; calls fail fast until ``retry_after_s`` elapses."""
+
+    def __init__(self, message: str, retry_after_s: float) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
 
 
 @dataclass
@@ -100,14 +109,37 @@ class OpenAICompatibleProvider:
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.retries = 0
+        self.neurons = 0.0
+        self.quota_rejections = 0
+        self._quota_until: float | None = None
+
+    @property
+    def quota_state(self) -> str:
+        if self._quota_until is not None and time.monotonic() < self._quota_until:
+            return "exhausted"
+        return "available"
 
     def describe(self) -> dict[str, Any]:
+        free_allocation = self.name == "cloudflare-workers-ai"
         return {"provider": self.name, "model": self.model, "circuit": self.breaker.state,
                 "calls": self.calls, "failures": self.failures,
                 "prompt_tokens": self.prompt_tokens, "completion_tokens": self.completion_tokens,
-                "retries": self.retries,
-                "estimated_cost_usd": 0.0 if self.name in {"ollama", "mock"} else None,
-                "cost_note": "local calls have no API charge; hosted pricing is unknown unless configured"}
+                "retries": self.retries, "quota_state": self.quota_state, "quota_rejections": self.quota_rejections,
+                "neurons": round(self.neurons, 2) if free_allocation else None,
+                "estimated_cost_usd": 0.0 if self.name in {"ollama", "mock"} or free_allocation else None,
+                "cost_note": ("Workers AI calls are capped below the 10,000 neuron/day free allocation by the edge; "
+                              "over-budget calls are refused, never billed" if free_allocation else
+                              "local calls have no API charge; hosted pricing is unknown unless configured")}
+
+    def _quota_rejection(self, response: httpx.Response) -> ProviderQuotaExhausted:
+        try:
+            retry_after = float(response.headers.get("retry-after") or 3600)
+        except ValueError:
+            retry_after = 3600.0
+        retry_after = min(max(retry_after, 1.0), 86400.0)
+        self._quota_until = time.monotonic() + retry_after
+        self.quota_rejections += 1
+        return ProviderQuotaExhausted("provider free quota exhausted", retry_after)
 
     def close(self) -> None:
         self._client.close()
@@ -122,6 +154,10 @@ class OpenAICompatibleProvider:
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         last: Exception | None = None
+        if self.quota_state == "exhausted":
+            remaining = (self._quota_until or 0) - time.monotonic()
+            self.quota_rejections += 1
+            raise ProviderQuotaExhausted("provider free quota exhausted", max(remaining, 1.0))
         for attempt in range(self.max_retries + 1):
             if not self.breaker.allow():
                 raise ProviderUnavailable("circuit open or recovery probe already in flight")
@@ -131,12 +167,23 @@ class OpenAICompatibleProvider:
             self.calls += 1
             try:
                 response = self._client.post(f"{self.base_url}/chat/completions", json=payload)
+                if response.status_code == 429 and _error_code(response) == "quota_exhausted":
+                    # Quota exhaustion is a healthy provider saying "not today": no retry, no breaker trip.
+                    self.breaker.record(True)
+                    raise self._quota_rejection(response)
+                if response.status_code in (400, 401, 403, 404, 413, 422):
+                    self.failures += 1
+                    self.breaker.record(False)
+                    raise ProviderUnavailable(f"provider rejected the request (HTTP {response.status_code})")
                 response.raise_for_status()
                 body = response.json()
                 text = body["choices"][0]["message"]["content"] or ""
                 usage = body.get("usage") or {}
                 self.prompt_tokens += int(usage.get("prompt_tokens") or 0)
                 self.completion_tokens += int(usage.get("completion_tokens") or 0)
+                neurons = usage.get("neurons", (body.get("edge") or {}).get("estimated_neurons"))
+                if isinstance(neurons, (int, float)):
+                    self.neurons += float(neurons)
                 self.breaker.record(True)
                 return Completion(text, (time.perf_counter() - started) * 1000,
                                   usage.get("prompt_tokens"), usage.get("completion_tokens"))
@@ -147,6 +194,15 @@ class OpenAICompatibleProvider:
                 if attempt < self.max_retries:
                     time.sleep(0.5 * (2 ** attempt))
         raise ProviderUnavailable(f"provider request failed: {type(last).__name__}")
+
+
+def _error_code(response: httpx.Response) -> str | None:
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    return error.get("code") if isinstance(error, dict) else None
 
 
 def extract_json(text: str) -> Any:

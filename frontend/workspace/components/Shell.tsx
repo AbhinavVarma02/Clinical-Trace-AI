@@ -2,6 +2,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { ROUTES, navigate, useApi, useApp, type RouteName } from "../state";
+import { useAvailability } from "../edge";
+import { AvailabilityBanner, AvailabilityPill, GuideBar } from "./Availability";
 import { Icons } from "./icons";
 import { Badge } from "./ui";
 
@@ -29,6 +31,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [current]);
 
   const mode = status.data?.inference.mode;
+  const availability = useAvailability();
   return (
     <div className="shell">
       <a href="#main" className="sr-only">Skip to content</a>
@@ -72,7 +75,8 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
           <div className="topbar-title">{current?.label}</div>
           <div className="topbar-spacer" />
-          {mode && (
+          <AvailabilityPill />
+          {mode && availability.mode !== "edge" && (
             <span className="hide-mobile">
               {mode === "llm" ? (
                 <Badge tone="violet" dot title={status.data?.inference.label}>Live LLM · {status.data?.inference.provider?.model}</Badge>
@@ -101,6 +105,8 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
         </header>
         <main id="main" className="content" tabIndex={-1}>
+          <AvailabilityBanner />
+          <GuideBar />
           {children}
         </main>
       </div>

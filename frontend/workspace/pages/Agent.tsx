@@ -4,6 +4,8 @@ import { AnswerCard } from "../components/AnswerCard";
 import { Icons } from "../components/icons";
 import { Card, EmptyState, ErrorState } from "../components/ui";
 import { SAFETY_PROBES, SUGGESTED_PROMPTS } from "../demos";
+import { formatDuration, useAvailability } from "../edge";
+import { GUIDE_CASE, markGuideStep } from "../guide";
 import { useApi, useApp } from "../state";
 import type { AgentRun } from "../types";
 
@@ -44,6 +46,9 @@ export function AgentPage() {
   const autoRan = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const routePatient = route.params.get("patient");
+  const availability = useAvailability();
+  const backendReady = availability.mode !== "edge" || availability.backend === "ready";
+  const [queued, setQueued] = useState<string | null>(null);
 
   useEffect(() => {
     if (routePatient && routePatient !== patientId) setPatientId(routePatient);
@@ -57,6 +62,11 @@ export function AgentPage() {
   async function ask(text: string) {
     const trimmed = text.trim();
     if (!trimmed || pending) return;
+    if (!backendReady) {
+      // Cold start: hold the question and send it the moment the backend reports ready.
+      setQueued(trimmed);
+      return;
+    }
     setError(null);
     setPending({ question: trimmed, startedAt: Date.now(), events: [], runId: null });
     try {
@@ -65,6 +75,7 @@ export function AgentPage() {
       setSessions((s) => ({ ...s, [`${persona}:${patientId}`]: run.session_id }));
       setRuns((r) => [...r, run]);
       setQuestion("");
+      if (patientId === GUIDE_CASE.patientId && run.outcome === "answered") markGuideStep("run", run.run_id);
     } catch (err) {
       setError(err instanceof ApiError ? err : new ApiError(0, "unknown", String(err)));
     } finally {
@@ -85,6 +96,14 @@ export function AgentPage() {
       api.run(open).then((run) => setRuns([run])).catch((err: unknown) => setError(err instanceof ApiError ? err : null));
     }
   }, [route, patientId]);
+
+  useEffect(() => {
+    if (backendReady && queued && !pending) {
+      const next = queued;
+      setQueued(null);
+      void ask(next);
+    }
+  }, [backendReady, queued, pending]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -130,6 +149,21 @@ export function AgentPage() {
             <AnswerCard run={run} canReview={persona.startsWith("clinician")} />
           </div>
         ))}
+        {queued && !pending && (
+          <div className="stack">
+            <div className="question-bubble">{queued}</div>
+            <div className="progress-line" role="status" aria-live="polite">
+              <div className="row">
+                <span className="spinner" aria-hidden="true" />
+                <strong style={{ fontSize: 14 }}>
+                  Waiting for the analysis backend to start{availability.waitingSince ? ` · ${formatDuration((Date.now() - availability.waitingSince) / 1000)}` : ""}
+                </strong>
+              </div>
+              <div className="faint" style={{ fontSize: 12 }}>Your question is queued in this browser and is sent automatically when the backend is ready.</div>
+              <button type="button" className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => setQueued(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
         {pending && (
           <div className="stack">
             <div className="question-bubble">{pending.question}</div>

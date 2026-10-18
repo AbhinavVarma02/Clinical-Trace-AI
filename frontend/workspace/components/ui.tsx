@@ -1,6 +1,6 @@
 // Shared presentational primitives. All state comes from props; no data fetching here.
 import { useEffect, useRef, type ReactNode } from "react";
-import type { ApiError } from "../api";
+import { isTransient, type ApiError } from "../api";
 import { Icons } from "./icons";
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger" | "teal" | "violet" | "outline";
@@ -80,8 +80,27 @@ export function EmptyState({ title, children, action }: { title: string; childre
 }
 
 export function ErrorState({ error, onRetry, action }: { error: ApiError; onRetry?: () => void; action?: ReactNode }) {
+  if (isTransient(error)) {
+    return (
+      <div className="error-state transient" role="status" aria-live="polite">
+        <span className="spinner" aria-hidden="true" />
+        <div className="error-title">{error.code === "backend_waking" ? "Analysis backend is starting" : "Reconnecting to the backend"}</div>
+        <div>{error.message}</div>
+        <div className="faint" style={{ fontSize: 12 }}>This section reloads automatically when the backend is ready.</div>
+        {onRetry && (
+          <div className="row" style={{ justifyContent: "center" }}>
+            <button className="btn sm" onClick={onRetry}>
+              <Icons.refresh size={15} /> Retry now
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
   const title =
-    error.status === 403 ? "Not permitted for this persona" : error.status === 401 ? "Persona required" : error.status === 0 ? "Service unreachable" : "Something went wrong";
+    error.status === 403 ? "Not permitted for this persona" : error.status === 401 ? "Persona required"
+      : error.status === 429 ? (error.code === "daily_limit" ? "Daily free limit reached" : "Please slow down")
+      : error.status === 0 ? "Service unreachable" : "Something went wrong";
   return (
     <div className="error-state" role="alert">
       <Icons.alert size={22} />

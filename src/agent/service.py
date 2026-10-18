@@ -20,8 +20,18 @@ from src.config import SAFETY_DISCLAIMER
 from src.errors import NotFoundError
 from src.persistence.db import Database, dumps, utc_now
 from src.retrieval.index import RetrievalIndex
-from src.safety.policy import AccessContext, Action, PolicyEngine
+from src.safety.policy import AccessContext, Action, PolicyEngine, in_scope
 
+
+def _inference_label(mode: str, degraded: str | None) -> str:
+    if mode != "llm":
+        return "Deterministic mode: rule-based planning and template/extractive answers; no language model was called."
+    if degraded == "quota_exhausted":
+        return ("Live inference paused: the daily free inference allocation is used up (resets 00:00 UTC). "
+                "This run used the deterministic planner and composer.")
+    if degraded == "provider_unavailable":
+        return "Live inference was unavailable for this run; the deterministic planner and composer answered."
+    return "Live language-model inference"
 
 class SessionMismatch(PermissionError):
     pass
@@ -98,7 +108,7 @@ class AgentService:
 
     # -------------------------------------------------------------- sessions
     def _session(self, access: AccessContext, patient_id: str, session_id: str | None) -> str:
-        persona = access.persona.persona_id
+        persona = access.principal
         if session_id:
             row = self.db.one("SELECT persona, patient_id FROM agent_session WHERE session_id=?", (session_id,))
             if row is None:
@@ -117,7 +127,7 @@ class AgentService:
 
     def session_history(self, access: AccessContext, session_id: str) -> dict[str, Any]:
         row = self.db.one("SELECT * FROM agent_session WHERE session_id=?", (session_id,))
-        if row is None or row["persona"] != access.persona.persona_id:
+        if row is None or row["persona"] != access.principal:
             raise SessionMismatch("unknown session")
         self.policy.require(access, Action.PATIENT_READ, row["patient_id"])
         runs = self.db.all("SELECT run_id, question, outcome, created_at FROM agent_run WHERE session_id=? "
@@ -128,7 +138,9 @@ class AgentService:
         row = self.db.one("SELECT * FROM agent_run WHERE run_id=?", (run_id,))
         if row is None:
             return None
-        if row["persona"] != access.persona.persona_id:
+        if not in_scope(access, row["persona"]):
+            return None  # another visitor's workspace: indistinguishable from a missing run
+        if row["persona"] != access.principal:
             # Runs are private to their persona; only reviewers may open other personas' runs.
             self.policy.require(access, Action.REVIEW_DECIDE, row["patient_id"])
         self.policy.require(access, Action.PATIENT_READ, row["patient_id"])
@@ -138,7 +150,7 @@ class AgentService:
         row = self.db.one("SELECT * FROM agent_run WHERE run_id=?", (run_id,))
         if row is None:
             raise NotFoundError("run not found")
-        if row["persona"] != access.persona.persona_id:
+        if row["persona"] != access.principal:
             raise SessionMismatch("run belongs to a different persona")
         self.policy.require(access, Action.AGENT_RUN, row["patient_id"])
         return row
@@ -179,7 +191,7 @@ class AgentService:
         with self._slot():
             with self.db.transaction() as conn:
                 previous = conn.execute("SELECT * FROM agent_run WHERE persona=? AND idempotency_key=?",
-                                        (access.persona.persona_id, idempotency_key)).fetchone() if idempotency_key else None
+                                        (access.principal, idempotency_key)).fetchone() if idempotency_key else None
                 if previous:
                     if (previous["patient_id"] != patient_id or previous["question"] != question
                             or (session_id is not None and previous["session_id"] != session_id)):
@@ -193,7 +205,7 @@ class AgentService:
                 conn.execute(
                     "INSERT INTO agent_run(run_id, session_id, persona, patient_id, question, status, inference_mode, "
                     "created_at, idempotency_key, engine_revision, data_version) VALUES (?,?,?,?,?, 'running', ?, ?,?,?,?)",
-                    (run_id, session_id, access.persona.persona_id, patient_id, question, mode, utc_now(),
+                    (run_id, session_id, access.principal, patient_id, question, mode, utc_now(),
                      idempotency_key, self.revision, self._data_version()),
                 )
             return self._execute(access, run_id, session_id, patient_id, question, mode, resume=False, observer=observer)
@@ -321,6 +333,12 @@ class AgentService:
             abstain_reason = (draft.abstain_reason if draft and draft.abstain_reason
                               else "No claim survived evidence verification, so no answer is given.")
         provider = self.provider.describe() if self.provider else None
+        notes = " ".join((plan.notes if plan else []) + (draft.notes if draft else []))
+        degraded = None
+        if mode == "llm" and "ProviderQuotaExhausted" in notes:
+            degraded = "quota_exhausted"
+        elif mode == "llm" and "ProviderUnavailable" in notes:
+            degraded = "provider_unavailable"
         return {
             "run_id": run_id,
             "session_id": session_id,
@@ -356,9 +374,8 @@ class AgentService:
                 "fallback_used": bool(state.get("fallback_used")),
                 "llm_attempt": state.get("llm_attempt"),
                 "provider": provider,
-                "label": ("Live language-model inference" if mode == "llm"
-                          else "Deterministic mode: rule-based planning and template/extractive answers; "
-                               "no language model was called."),
+                "degraded_reason": degraded,
+                "label": _inference_label(mode, degraded),
             },
             "trace": state.get("trace", []),
             "error": state.get("error"),
