@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "../api";
+import { ApiError, api } from "../api";
+import { ErrorState } from "../components/ui";
 import { AvailabilityProvider, executionAllowance, useAvailability, type Availability, type EdgeStatus } from "../edge";
 import { AvailabilityBanner, GuidedCase } from "../components/Availability";
 import { AgentPage } from "../pages/Agent";
@@ -24,6 +25,17 @@ beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.f
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("execution allowance", () => {
+  it.each(["rate_limited", "daily_limit"])("restores an allowed section's manual retry after %s expires", async code => {
+    vi.useFakeTimers();
+    const retry = vi.fn();
+    const error = new ApiError(429, code, "Limit reached", undefined,
+      { retryAfterS: 1, resetsAt: new Date(Date.now() + 1000).toISOString() });
+    render(<ErrorState error={error} onRetry={retry} />);
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    await act(async () => { vi.advanceTimersByTime(1010); });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
   it("never presents global allowance as a visitor's when running against an old Worker", () => {
     const s = status(); delete s.limits.remaining_visitor_agent_runs_today;
     const a = executionAllowance(availability(s));

@@ -19,6 +19,7 @@ import type {
 } from "./types";
 
 export class ApiError extends Error {
+  readonly receivedAt = Date.now();
   constructor(
     public status: number,
     public code: string,
@@ -29,6 +30,16 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+export function limitResetAt(error: ApiError): number {
+  if (error.code === "daily_limit") {
+    const reset = error.limit?.resetsAt ? Date.parse(error.limit.resetsAt) : NaN;
+    if (Number.isFinite(reset)) return reset;
+    const d = new Date(error.receivedAt);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+  }
+  return error.receivedAt + (error.limit?.retryAfterS ?? 60) * 1000;
 }
 
 let currentPersona = "clinician.demo";

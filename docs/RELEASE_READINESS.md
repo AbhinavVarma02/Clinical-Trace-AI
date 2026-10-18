@@ -9,7 +9,7 @@ Deployment, merging, paid services and production credential changes remain
 ## Recoverable phase status
 
 - A — COMPLETE locally: scoped daily allowance/status, reset and temporary-limit
-  UX; 50 frontend tests, 30 Worker tests, 36 real-backend browser tests pass.
+  UX; 52 frontend tests, 30 Worker tests, 36 real-backend browser tests pass.
 - B — **PENDING — QUOTA BLOCKED**. Read-only production preflight at
   `2026-10-18T03:54:14.867Z`: 5,909.2 / 8,000 neurons used; 2,090.8 left,
   only 90.8 above the protected 2,000 reserve. The existing full-gate harness
@@ -63,6 +63,9 @@ inference fallback messaging. Browsing/review controls remain usable. Known-edge
 HTTP/network failures cannot silently switch to direct mode. Tests cover daily
 exhaustion, UTC rollover, visitor identity, unknown accounting, temporary limits,
 stale status, recovery and desktop/tablet/mobile browsing and execution.
+Final review also corrected section-level retry recovery: evidence/review errors
+hide manual retries only until their own Retry-After/reset expires. This is
+separate from agent allowance blocking; two added timer tests cover both cases.
 
 Production read-only baseline: **7/7 passed** at `2026-10-18T03:58:13.569Z`;
 Space metadata pins running `9afa0f8dfe602f42a8a7de3b7ac328da08966de9`,
@@ -85,9 +88,10 @@ the later restoration-tool change is host administration only.
 
 ## Commits and CI
 
-`be52df7` (Phase A) is pushed to the existing feature branch and PR #1.
+`be52df7` (Phase A) and `3c61bc2` (release tools/reports) are pushed to the
+existing feature branch and PR #1.
 Its Actions run `39095723473` completed SUCCESS. Final release-tool/report
-milestone and final-head CI confirmation follow; do not substitute starting
+UI recovery follow-up and final-head CI confirmation follow; do not substitute starting
 CI `39094562508` for new-head checks.
 
 ## Next action

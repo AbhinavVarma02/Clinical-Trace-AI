@@ -16,8 +16,10 @@ under publication/rollback are for an explicitly approved future release.
 Stage preserves the Space's `dashboard/`, models, README and configuration;
 the backend/frontend overlay comes from Git, excluding local private files.
 No v1 dashboard/component source or trained model was changed by this work.
-`be52df7` contains all candidate backend/frontend code; subsequent release-tool
-and documentation commits do not change that verified backend code.
+`be52df7` contains the verified backend and its bundled workspace. The separately
+built edge workspace also includes the later section-retry recovery fix (52
+frontend tests). Backend/v1 code and edge/backend contracts remain the same;
+release-tool and documentation changes do not change the verified backend code.
 
 **Still blocked:** a fresh full locked real-model evaluation and a fresh full
 public LLM workflow. The protected reserve prevents inference in this session.
