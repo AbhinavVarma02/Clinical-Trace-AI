@@ -124,6 +124,7 @@ test("responsive navigation, keyboard focus, persisted themes, and real errors",
   await nav(page, "Evaluation");
   await expect(page.getByRole("heading", { name: /Evaluation/ }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  expect(await page.evaluate(() => { const bar = document.querySelector(".topbar")!; return bar.scrollWidth <= bar.clientWidth; })).toBeTruthy();
   // Administrator has ops access but no clinical-data access: exercise the real error state.
   await page.getByRole("combobox", { name: "Demo persona" }).selectOption("admin.demo");
   await nav(page, "Patients");

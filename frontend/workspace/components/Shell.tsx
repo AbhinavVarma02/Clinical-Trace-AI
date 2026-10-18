@@ -83,7 +83,8 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
           <div className="topbar-title">{current?.label}</div>
           <div className="topbar-spacer" />
-          <AvailabilityPill />
+          {/* On phones the availability banner carries the same state; keep the bar uncluttered. */}
+          <span className="hide-mobile"><AvailabilityPill /></span>
           {mode && availability.mode !== "edge" && (
             <span className="hide-mobile">
               {mode === "llm" ? (

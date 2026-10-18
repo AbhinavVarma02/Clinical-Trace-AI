@@ -33,7 +33,6 @@ let previous = null;
 try {
   const versions = JSON.parse(sh("npx wrangler deployments list --json"));
   versions.sort((a, b) => String(a.created_on).localeCompare(String(b.created_on)));
-  versions.sort((a, b) => String(a.created_on).localeCompare(String(b.created_on)));
   previous = versions.at(-1)?.versions?.[0]?.version_id ?? null;
 } catch {
   console.warn("Could not read the current deployment; automatic rollback will be unavailable.");
