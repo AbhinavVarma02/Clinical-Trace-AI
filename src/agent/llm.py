@@ -85,6 +85,9 @@ class Completion:
     latency_ms: float
     prompt_tokens: int | None
     completion_tokens: int | None
+    # Some compatible endpoints omit this; the edge currently reports "stop"
+    # even when its upstream model exhausts the output budget.
+    finish_reason: str | None = None
 
 
 class OpenAICompatibleProvider:
@@ -178,7 +181,10 @@ class OpenAICompatibleProvider:
                     raise ProviderUnavailable(f"provider rejected the request (HTTP {response.status_code})")
                 response.raise_for_status()
                 body = response.json()
-                text = body["choices"][0]["message"]["content"] or ""
+                choice = body["choices"][0]
+                text = choice["message"]["content"] or ""
+                if not isinstance(text, str):
+                    raise ValueError("provider returned non-text content")
                 usage = body.get("usage") or {}
                 self.prompt_tokens += int(usage.get("prompt_tokens") or 0)
                 self.completion_tokens += int(usage.get("completion_tokens") or 0)
@@ -187,7 +193,8 @@ class OpenAICompatibleProvider:
                     self.neurons += float(neurons)
                 self.breaker.record(True)
                 return Completion(text, (time.perf_counter() - started) * 1000,
-                                  usage.get("prompt_tokens"), usage.get("completion_tokens"))
+                                  usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                                  choice.get("finish_reason"))
             except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
                 last = exc
                 self.failures += 1

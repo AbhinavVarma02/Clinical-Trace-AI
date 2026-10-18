@@ -24,6 +24,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.clinical.consistency import find_inconsistencies
+from src.clinical.fhir_models import parse_timestamp
 from src.clinical.records import ClinicalRecords
 from src.clinical.risk_bridge import assess
 from src.retrieval.index import RetrievalIndex
@@ -131,6 +132,27 @@ def _encounters(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]
             if enc["length_of_stay_days"] is not None else ", no end time recorded"
         text = f"{enc['class_display'].removesuffix(' encounter')} encounter starting {_date(enc['start'])} for {enc['reason']}{stay}."
         evidence.append(_evidence(ctx, enc["source"], text, "encounter", enc["reason"], enc["start"] or ""))
+    inpatient = [enc for enc in items if enc["class"] == "IMP"]
+    for previous, current in zip(inpatient, inpatient[1:]):
+        if not previous["end"] or not current["start"]:
+            continue
+        discharged = parse_timestamp(previous["end"])
+        admitted = parse_timestamp(current["start"])
+        if admitted < discharged:
+            continue
+        # Calendar days match the deterministic composer's explicit days_between computation.
+        gap = (admitted.date() - discharged.date()).days
+        definition = ("meets the thirty-day readmission definition (0 to 30 days)" if gap <= 30
+                      else "is outside the thirty-day readmission window (0 to 30 days)")
+        previous_source, current_source = previous["source"], current["source"]
+        text = (f"The inpatient admission on {_date(current['start'])} began {gap} days after discharge on "
+                f"{_date(previous['end'])}; this interval {definition}. "
+                f"Sources: {previous_source['reference']}@v{previous_source['version']} (discharge) and "
+                f"{current_source['reference']}@v{current_source['version']} (admission).")
+        item = _evidence(ctx, current_source, text, "encounter_interval", "Computed inpatient encounter interval",
+                         current["start"])
+        item.evidence_id = f"check:encounter_interval:{previous['id']}:{current['id']}"
+        evidence.append(item)
     return items, evidence
 
 

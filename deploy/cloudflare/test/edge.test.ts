@@ -244,6 +244,21 @@ describe("inference proxy", () => {
     expect(isQuotaError("Internal server error")).toBe(false);
     expect(adaptMessages("@cf/meta/llama-3.3-70b-instruct-fp8-fast", messages as never)).toEqual(messages);
   });
+
+  it.each(["length", "stop", "content_filter"])("preserves the provider finish reason %s through the proxy", async (finishReason) => {
+    const env = makeEnv({}, () => ({ choices: [{ message: { content: "{}" }, finish_reason: finishReason }] }));
+    const response = await chat(env, { messages });
+    const body = await response.json() as { choices: { finish_reason: string | null }[] };
+    expect(body.choices[0]!.finish_reason).toBe(finishReason);
+  });
+
+  it("reports missing finish metadata as unknown, including non-OpenAI output shapes", async () => {
+    expect(normaliseOutput({ response: "{}", finish_reason: "length" }).finishReason).toBe("length");
+    expect(normaliseOutput({ response: "{}" }).finishReason).toBeNull();
+    const response = await chat(makeEnv(), { messages });
+    const body = await response.json() as { choices: { finish_reason: string | null }[] };
+    expect(body.choices[0]!.finish_reason).toBeNull();
+  });
 });
 
 describe("status resilience", () => {

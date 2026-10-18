@@ -30,6 +30,8 @@ jobs:
         run: ruff format --check evaluation/readmission.py evaluation/readmission_drift.py evaluation/benchmark.py monitoring/drift_report.py src/agent/checkpoints.py src/persistence/metadata.py src/persistence/retention.py src/observability.py api/v2_schemas.py tests/test_agent_recovery.py tests/test_readmission_analysis.py tests/test_drift.py tests/test_retention.py tests/test_http_limits.py tests/test_metadata_contracts.py tests/test_observability.py api/agent_stream.py tests/test_agent_stream.py evaluation/review_agreement.py tests/test_review_agreement.py src/clinical/model_audit.py tests/test_model_audit.py evaluation/evidence_snapshot.py tests/test_public_mode.py tests/test_evidence_snapshot.py tests/test_inference_relay.py src/agent/relay.py
       - name: Tests (includes the offline evaluation gate)
         run: pytest tests/ -q --basetemp="$RUNNER_TEMP/pytest"
+      - name: Format reliability evaluator and regression tests
+        run: ruff format --check evaluation/reliability.py tests/test_reliability_evaluation.py tests/test_composer_reliability.py tests/test_verifier_precision.py tests/test_encounter_evidence.py
       - name: Offline agent evaluation report
         run: python -m evaluation.run_eval --no-write
 

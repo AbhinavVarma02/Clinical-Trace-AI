@@ -139,14 +139,18 @@ def llm_plan(question: str, provider: OpenAICompatibleProvider) -> Plan:
     user = f"Tools:\n{json.dumps(catalog, indent=1)}\n\nQuestion: {question}"
     try:
         completion = provider.complete(PLANNER_SYSTEM, user, max_tokens=300)
+        if completion.finish_reason not in (None, "stop"):
+            raise ValueError("planner completion did not finish normally")
         payload = extract_json(completion.text)
+        if not isinstance(payload, dict) or not isinstance(payload.get("tool_calls"), list):
+            raise ValueError("tool_calls must be an array")
     except (ProviderUnavailable, ValueError) as exc:
         fallback.source = "deterministic-fallback"
         fallback.notes.append(f"LLM planner unavailable ({type(exc).__name__}); used rule-based plan.")
         return fallback
     calls = []
     notes = []
-    for call in (payload.get("tool_calls") if isinstance(payload, dict) else None) or []:
+    for call in payload["tool_calls"]:
         if not isinstance(call, dict):
             continue
         name = str(call.get("name", ""))
@@ -165,13 +169,29 @@ def llm_plan(question: str, provider: OpenAICompatibleProvider) -> Plan:
         return fallback
     # The rule-based plan is the floor: the model may add tools but never drop ones the detected intent
     # requires, so a failed or partial LLM draft can always fall back to a grounded deterministic answer.
+    required = {c["name"]: c for c in fallback.calls}
     chosen = {c["name"] for c in calls}
+    for call in calls:
+        # Required evidence scope comes from the actual question, so a model
+        # cannot turn a broad journey into one filtered lab or a narrow date range.
+        if call["name"] in required and call["args"] != required[call["name"]]["args"]:
+            call["args"] = dict(required[call["name"]]["args"])
+            notes.append(f"restored rule-required scope for '{call['name']}'")
     for call in fallback.calls:
-        if len(calls) >= MAX_TOOL_CALLS:
-            break
         if call["name"] not in chosen:
             calls.append(call)
             chosen.add(call["name"])
             notes.append(f"added rule-required tool '{call['name']}'")
-    return Plan(intents=fallback.intents, calls=calls[:MAX_TOOL_CALLS], source="llm", notes=notes,
+    # Keep the LLM's order where possible while reserving space for the floor.
+    optional_budget = MAX_TOOL_CALLS - len(required)
+    bounded = []
+    for call in calls:
+        if call["name"] in required:
+            bounded.append(call)
+        elif optional_budget > 0:
+            bounded.append(call)
+            optional_budget -= 1
+        else:
+            notes.append(f"omitted optional tool '{call['name']}' to preserve required evidence")
+    return Plan(intents=fallback.intents, calls=bounded, source="llm", notes=notes,
                 latency_ms=completion.latency_ms)
