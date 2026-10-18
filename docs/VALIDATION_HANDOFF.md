@@ -8,6 +8,15 @@ changes and retained before/after experiments are described in
 public release or authorize a Space update, deployment or merge. Historical dates
 and deployment evidence below are preserved as recorded by the prior handoff.
 
+
+**Focused final completeness follow-up:** `e412405` corrects evidence identity/ranking;
+all seven completed LLM answers cover both events, 42/42 claims verify. The eighth
+composer hit the fixed experiment cap: **1/8 fallback**, no JSON/citation errors.
+Local: 409 Python, 42 frontend, 25 Worker, 30 browser; fresh offline 41/42.
+No fresh full real-model gate fits the preserved reserve; 37/42 is historical.
+See [GUIDED_COMPLETENESS.md](GUIDED_COMPLETENESS.md) for every attempt, unmet
+criteria and reproducible artifacts. Inspect PR #1 head-specific CI separately.
+
 ## State
 
 - Public 2.0 demo: https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free edge, release `475f0b6`).

@@ -50,3 +50,8 @@
 - Held-out cases are separate from development cases but not independent of the author.
 - Live-LLM answers lose claims in verification: in a 48-run sample 19% of drafted claims were excluded, concentrated in the multi-encounter summary and warfarin questions, and the model's draft for the guided summary was unusable in about half the runs (deterministic fallback). Many exclusions are conservative false rejections (date and unit wording, past-tense "diagnosed/prescribed" record statements). Excluded claims and reasons are shown in the UI; see [UI_POLISH.md](UI_POLISH.md#verification-badge-follow-up-2026-10-19).
 - That 48-run figure is historical. A fresh frozen-source control and subsequent development candidates are retained separately in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md). The control stopped at its predeclared resource cap; candidate samples are development evidence rather than independent clinical validation. The public application has not received these reliability changes.
+
+- The focused guided-completeness follow-up has seven successful LLM answers,
+  each covering both events, and an eighth cap-blocked deterministic fallback.
+  It misses the zero-fallback confirmation target; no fresh complete real-model
+  42-case gate was funded. See [GUIDED_COMPLETENESS.md](GUIDED_COMPLETENESS.md).

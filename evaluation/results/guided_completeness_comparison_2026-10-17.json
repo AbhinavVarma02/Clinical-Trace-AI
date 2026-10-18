@@ -1,0 +1,188 @@
+{
+  "baseline_commit": "90e9ac6",
+  "implementation_commit": "e412405",
+  "comparison_scope": "Historical development sample of8 guided runs versus one capped prospective sample; no fresh paired control",
+  "expected_annotations": {
+    "patient_id": "synthetic_p001",
+    "admission_ref": "Encounter/p001-e4",
+    "stop_ref": "MedicationRequest/p001-m1",
+    "stop_version": "2",
+    "medication": "Metformin",
+    "stopped_on": "2025-07-04"
+  },
+  "scorer_sha256": "7d6721c7433ef719fa2f16d2bc086545416471af63f4b15f93d21d4683ee1e89",
+  "previous": {
+    "summary": {
+      "runs_attempted": 8,
+      "errors": 0,
+      "llm_composed": 8,
+      "deterministic_fallbacks": 0,
+      "llm_claims_drafted": 48,
+      "llm_claims_accepted": 38,
+      "llm_claims_excluded": 10,
+      "excluded_llm_claim_rate": 0.2083,
+      "runs_with_llm_exclusions": 8,
+      "citation_errors": 0,
+      "parse_failures": 0,
+      "composer_parse_failures": 0,
+      "latency_p50_ms": 3401.66,
+      "latency_p95_ms": 4721.24
+    },
+    "coverage": {
+      "runs": 8,
+      "readmission_mention": 2,
+      "medication_mention": 0,
+      "readmission_grounded": 0,
+      "medication_stop_grounded": 0
+    }
+  },
+  "new": {
+    "completed": false,
+    "stop_reason": "evaluation neuron cap reached before next request",
+    "summary": {
+      "runs_attempted": 8,
+      "errors": 0,
+      "llm_composed": 7,
+      "deterministic_fallbacks": 1,
+      "llm_claims_drafted": 42,
+      "llm_claims_accepted": 42,
+      "llm_claims_excluded": 0,
+      "excluded_llm_claim_rate": 0.0,
+      "runs_with_llm_exclusions": 0,
+      "citation_errors": 0,
+      "parse_failures": 0,
+      "composer_parse_failures": 0,
+      "latency_p50_ms": 2482.68,
+      "latency_p95_ms": 3801.6
+    },
+    "coverage": {
+      "runs": 8,
+      "readmission_mention": 8,
+      "medication_mention": 8,
+      "readmission_grounded": 7,
+      "medication_stop_grounded": 8
+    },
+    "per_run": [
+      {
+        "sequence": 1,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 2,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 3,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 4,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 5,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 6,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 7,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": true,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 6,
+        "fallback": false
+      },
+      {
+        "sequence": 8,
+        "coverage": {
+          "readmission_mention": true,
+          "medication_mention": true,
+          "readmission_grounded": false,
+          "medication_stop_grounded": true
+        },
+        "drafted_claims": 0,
+        "fallback": true
+      }
+    ],
+    "completed_llm_runs": 7,
+    "completed_llm_latency_p50_ms": 2485.91,
+    "resource_blocked_composer_runs": [
+      8
+    ],
+    "all_final_claims": {
+      "drafted": 57,
+      "accepted": 57,
+      "excluded": 0
+    },
+    "interpretation": "All 8 attempts retained. Run 8 planner completed but composer was blocked by conservative remaining-cap estimate; its 15-claim deterministic answer is NOT evidence of LLM completeness. All 7 completed LLM answers cover both events. Zero-fallback target and complete-eight-LLM-run confirmation are unmet."
+  },
+  "limits": {
+    "max_neurons": 200,
+    "max_calls": 20,
+    "reserve_neurons": 2000
+  },
+  "budget": {
+    "charged_or_reserved_neurons": 164.15,
+    "physical_requests": 15,
+    "stop_reason": "evaluation neuron cap reached before next request"
+  },
+  "verification": "No verifier or threshold changes; all attempts retained; mentions are distinguished from citation-grounded typed events",
+  "acceptance": {
+    "coverage_7_of_8": true,
+    "zero_fallbacks": false,
+    "eight_completed_llm_runs": false,
+    "zero_json_failures": true,
+    "llm_at_most_six_claims": true,
+    "all_final_answers_at_most_six_claims": false,
+    "latency_within_20_percent": true,
+    "new_real_model_42_case_gate": "not run; unfunded within predeclared reserve"
+  }
+}

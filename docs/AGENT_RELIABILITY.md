@@ -244,3 +244,16 @@ fact coverage/duplicate claims on a larger independently authored workload. A ne
 balanced repeat sample needs available free quota. Human annotation/agreement
 and clinical validation remain unmeasured; no new model, paid activation, merge
 or deployment is authorized by this report.
+
+
+## Focused guided completeness continuation
+
+The final focused change at `e412405` fixes timeline-first evidence metadata and
+prioritizes documented events in broad summaries. All seven completed LLM
+answers cover both readmission and the medication stop; 42/42 generated claims
+verify. The eighth composer was blocked by the predeclared cap and fell back:
+**1/8 fallbacks**, so the complete-eight-run/zero-fallback targets remain unmet.
+409 local Python, 42 frontend, 25 Worker and 30 browser tests pass; fresh offline
+gate 41/42. The previous real-model 37/42 gate is historical; no fresh full model
+gate fits the preserved reserve. Complete comparison, independent fixtures and
+limitations: [GUIDED_COMPLETENESS.md](GUIDED_COMPLETENESS.md). Unreleased.
