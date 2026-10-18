@@ -1,6 +1,6 @@
 # Project Status
 
-**Updated:** 2026-10-18 · **Version:** 2.0.0-dev · **Branch:** `feature/clinical-trace-2.0` · **Public:** https://clinical-trace-ai.room-for-both.workers.dev (full workflow, live LLM) · v1 dashboard unchanged at the same Space URL. No merge to `main`.
+**Updated:** 2026-10-18 · **Version:** 2.0.0-dev · **Branch:** `feature/clinical-trace-2.0` · **Public:** https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Free account, full workflow, live LLM; see [CLOUDFLARE_ACCOUNT_MIGRATION.md](CLOUDFLARE_ACCOUNT_MIGRATION.md)) · v1 dashboard unchanged at the same Space URL. No merge to `main`.
 
 The reviewer-ready deployment phase is complete: the final release gate (complete primary agent workflow through the unauthenticated public URL) passed on desktop and mobile, including a backend cold start. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md) and [ADR 0007](ADR/0007-public-edge-and-inference.md). The full master plan is not complete: human-review agreement, clinical validation and conditional advanced extensions remain.
 

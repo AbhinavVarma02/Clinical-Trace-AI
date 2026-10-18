@@ -65,8 +65,8 @@ container build/smoke (status, workspace HTML, answered run, non-root user).
 
 ## Public deployment
 
-The 2.0 public edge runs on Cloudflare Workers Free at
-https://clinical-trace-ai.room-for-both.workers.dev. The existing owner-approved
+The 2.0 public edge runs on a dedicated Cloudflare Workers Free account at
+https://clinical-trace-ai.vathadiabhinav.workers.dev ([account record](CLOUDFLARE_ACCOUNT_MIGRATION.md)). The existing owner-approved
 Space co-hosts v1 at `/` and the 2.0 API under `/api/v2`; v1 remains at the same
 URL and behavior. This continuation has not published new code. Historical
 production evidence is in [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md).
