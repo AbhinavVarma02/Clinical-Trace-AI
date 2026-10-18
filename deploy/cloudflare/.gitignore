@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+public/
+worker-configuration.d.ts
+.prod-secrets*.json

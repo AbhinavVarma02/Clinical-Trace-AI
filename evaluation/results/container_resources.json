@@ -1,0 +1,127 @@
+{
+ "measured_at": "2026-10-18",
+ "source_commit": "b51de2a",
+ "image": {
+  "built_from": "LF export of b51de2a + locally trained models (models/ is not tracked)",
+  "id": "sha256:2fc523c29ce2fdc9856562a692b0bd8893304a8300326dbd99f8954c244f4816",
+  "size_bytes": 2011320675
+ },
+ "host": "Docker Desktop 29.8.1 on the development desktop (WSL2 backend); limits applied with --cpus/--memory",
+ "method": "deploy/backend/measure_container.py: time to first /api/v2/system/status 200, then agent run, risk+SHAP, review, approval and four warm agent runs; docker stats sampled about once per second",
+ "inference_mode": "deterministic (no LLM provider configured in the container; hosted-inference latency is reported separately)",
+ "shapes": {
+  "hf_cpu_basic_like_2cpu_4g": {
+   "image": "clinical-trace-ai:measure",
+   "memory_limit": "4g",
+   "cpus": "2",
+   "cold_start_to_ready_ms": 16564,
+   "model_loaded": true,
+   "steps": {
+    "first_agent_run": {
+     "status": 200,
+     "ms": 105,
+     "outcome": "answered"
+    },
+    "risk_with_shap": {
+     "status": 200,
+     "ms": 679
+    },
+    "submit_review": {
+     "status": 200,
+     "ms": 38
+    },
+    "approve": {
+     "status": 200,
+     "ms": 10,
+     "valid": true
+    },
+    "warm_agent_runs": [
+     {
+      "status": 200,
+      "ms": 79,
+      "outcome": "answered"
+     },
+     {
+      "status": 200,
+      "ms": 68,
+      "outcome": "answered"
+     },
+     {
+      "status": 200,
+      "ms": 277,
+      "outcome": "answered"
+     },
+     {
+      "status": 200,
+      "ms": 45,
+      "outcome": "answered"
+     }
+    ]
+   },
+   "workflow_ok": true,
+   "oom_killed": false,
+   "container_running": true,
+   "memory_peak_sampled_mib": 290.4,
+   "memory_samples": 9
+  },
+  "render_free_like_0.1cpu_512m": {
+   "image": "clinical-trace-ai:measure",
+   "memory_limit": "512m",
+   "cpus": "0.1",
+   "cold_start_to_ready_ms": 248834,
+   "model_loaded": true,
+   "steps": {
+    "first_agent_run": {
+     "status": 200,
+     "ms": 1017,
+     "outcome": "answered"
+    },
+    "risk_with_shap": {
+     "status": 200,
+     "ms": 6872
+    },
+    "submit_review": {
+     "status": 200,
+     "ms": 39
+    },
+    "approve": {
+     "status": 200,
+     "ms": 68,
+     "valid": true
+    },
+    "warm_agent_runs": [
+     {
+      "status": 200,
+      "ms": 311,
+      "outcome": "answered"
+     },
+     {
+      "status": 200,
+      "ms": 300,
+      "outcome": "answered"
+     },
+     {
+      "status": 200,
+      "ms": 1500,
+      "outcome": "answered"
+     },
+     {
+      "status": 200,
+      "ms": 382,
+      "outcome": "answered"
+     }
+    ]
+   },
+   "workflow_ok": true,
+   "oom_killed": false,
+   "container_running": true,
+   "memory_peak_sampled_mib": 295.7,
+   "memory_samples": 121
+  }
+ },
+ "limitations": [
+  "Sampled peak memory can miss short spikes.",
+  "Desktop CPU throttled with --cpus is an approximation of a shared 0.1 vCPU host, not that host.",
+  "Excludes platform scheduling/wake time (for example about one minute on Render free)."
+ ]
+}

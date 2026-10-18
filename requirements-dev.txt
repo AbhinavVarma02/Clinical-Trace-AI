@@ -1,0 +1,6 @@
+-c requirements-constraints.txt
+ruff==0.14.0
+
+pytest==9.1.1
+pip-audit==2.9.0
+mypy==1.19.1

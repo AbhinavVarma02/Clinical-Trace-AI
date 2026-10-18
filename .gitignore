@@ -45,3 +45,20 @@ monitoring/reports/*.json
 clinical-trace-ai-guide.md
 
 data/synthetic/
+
+# ===== Private local execution records (never published) =====
+.project-state/
+
+# ===== Local runtime state (SQLite database, caches) =====
+var/
+frontend/dist-workspace/
+
+# Browser test artifacts (may contain synthetic record text)
+frontend/playwright-report/
+frontend/test-results/
+
+# Local Python static-check cache
+.mypy_cache/
+
+# Private reviewer annotations (publish aggregate results only after review)
+evaluation/annotations/

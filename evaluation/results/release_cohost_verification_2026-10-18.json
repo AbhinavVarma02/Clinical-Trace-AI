@@ -1,0 +1,64 @@
+{
+  "scope": "Fresh local co-hosted container verification; deterministic inference, no production publication",
+  "source_commit": "be52df7357d1746d3704b6a140893e4ec2094656",
+  "space_parent": "9afa0f8dfe602f42a8a7de3b7ac328da08966de9",
+  "image_id": "sha256:54511eb5e8d0e9ff1e7310f607cd7e5b1f91490fc7339e5d9999dec7c966c92c",
+  "passed": true,
+  "api_ready_s": 16.5,
+  "streamed_run_ms": 124,
+  "tool_calls": 6,
+  "checks": [
+    {
+      "name": "2.0 API ready through nginx",
+      "passed": true
+    },
+    {
+      "name": "v1 Streamlit health",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "name": "v1 dashboard at /",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "v1 API health/model-info on loopback",
+      "passed": true,
+      "http_statuses": [
+        200,
+        200
+      ]
+    },
+    {
+      "name": "v2 rejects absent edge secret",
+      "passed": true,
+      "http_status": 403
+    },
+    {
+      "name": "public mode requires workspace",
+      "passed": true,
+      "http_status": 400
+    },
+    {
+      "name": "streamed agent result/progress through nginx",
+      "passed": true
+    },
+    {
+      "name": "review approved by second persona",
+      "passed": true,
+      "http_status": 200
+    },
+    {
+      "name": "risk with loaded model",
+      "passed": true,
+      "http_status": 200
+    }
+  ],
+  "limitations": [
+    "Not a real-model test",
+    "No fresh public full-chain release smoke",
+    "No live rollback drill",
+    "No clinical validation"
+  ]
+}

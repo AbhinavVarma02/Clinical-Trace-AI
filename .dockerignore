@@ -25,3 +25,15 @@ mlartifacts/
 clinical-trace-ai-guide.md
 frontend/node_modules/
 frontend/dist/
+frontend/dist-workspace/
+var/
+.project-state/
+.claude/
+.github/
+PROJECT_*.md
+PROJECT_*.pdf
+*.db
+
+.mypy_cache/
+frontend/test-results/
+frontend/playwright-report/

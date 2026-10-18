@@ -6,8 +6,14 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("CLINICAL_TRACE_SKIP_DOTENV", "1")
+# Tests never reach a live model, even if the shell exports provider settings;
+# tests that need a provider set one explicitly with a mocked transport.
+os.environ["CLINICAL_TRACE_LLM_PROVIDER"] = "none"
 import pandas as pd
 import pytest
+
+for _name in ("CLINICAL_TRACE_LLM_BASE_URL", "CLINICAL_TRACE_LLM_API_KEY"):
+    os.environ.pop(_name, None)
 
 
 def make_raw_diabetes_frame(rows: int = 36) -> pd.DataFrame:
@@ -81,3 +87,33 @@ def raw_diabetes_csv(tmp_path: Path, raw_diabetes_frame: pd.DataFrame) -> Path:
     path = tmp_path / "diabetic_data.csv"
     raw_diabetes_frame.to_csv(path, index=False)
     return path
+
+
+# --------------------------------------------------------------------------- #
+# Clinical-Trace AI 2.0 fixtures (synthetic FHIR runtime, in-memory database)
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def runtime():
+    """Fresh runtime per test: in-memory SQLite, synthetic fixture, no LLM, no ML model."""
+    from src.runtime import build_runtime, set_runtime
+
+    rt = build_runtime(":memory:", provider=None, enable_model=False)
+    set_runtime(rt)
+    yield rt
+    set_runtime(None)
+    rt.close()
+
+
+@pytest.fixture()
+def api_client(runtime):
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+    from api.middleware import RATE_LIMITER
+
+    RATE_LIMITER._buckets.clear()
+    return TestClient(app)
+
+
+def persona_headers(persona: str = "clinician.demo") -> dict[str, str]:
+    return {"X-Demo-Persona": persona}

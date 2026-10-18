@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-17T23:03:03.164Z",
+  "source_commit": "6541d9b52bfb386f55d370f66b82f34192fc8f69",
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.2",
+    "cpu_count": 32,
+    "mode": "deterministic",
+    "risk_model": "disabled"
+  },
+  "runtime_initialization_ms": 376.919899999848,
+  "single_request_python_allocation_peak_bytes": 332209,
+  "execution": {
+    "capacity": 4,
+    "active": 0,
+    "closing": false,
+    "checkpoints": "sqlite",
+    "resume_limit": 3
+  },
+  "workloads": [
+    {
+      "concurrency": 1,
+      "requests": 40,
+      "elapsed_s": 1.9036434999998164,
+      "offered_throughput_rps": 21.012337656711384,
+      "successful_throughput_rps": 21.012337656711384,
+      "status_codes": {
+        "200": 40
+      },
+      "outcomes": {
+        "answered": 40
+      },
+      "p50_ms": 46.06075000083365,
+      "p95_ms": 63.45545999947717,
+      "successful_p95_ms": 63.45545999947717,
+      "http_error_rate": 0.0,
+      "isolation_violations": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 40,
+      "elapsed_s": 1.9142156999987492,
+      "offered_throughput_rps": 20.896286661960893,
+      "successful_throughput_rps": 20.896286661960893,
+      "status_codes": {
+        "200": 40
+      },
+      "outcomes": {
+        "answered": 40
+      },
+      "p50_ms": 189.6021499997005,
+      "p95_ms": 248.91934999986915,
+      "successful_p95_ms": 248.91934999986915,
+      "http_error_rate": 0.0,
+      "isolation_violations": 0
+    },
+    {
+      "concurrency": 8,
+      "requests": 40,
+      "elapsed_s": 0.799066400000811,
+      "offered_throughput_rps": 50.058418173958266,
+      "successful_throughput_rps": 15.01752545218748,
+      "status_codes": {
+        "200": 12,
+        "503": 28
+      },
+      "outcomes": {
+        "answered": 12,
+        "None": 28
+      },
+      "p50_ms": 106.62390000015876,
+      "p95_ms": 349.5224049996975,
+      "successful_p95_ms": 437.3934650002411,
+      "http_error_rate": 0.7,
+      "isolation_violations": 0
+    }
+  ],
+  "limitations": [
+    "In-process HTTP; no network/container/cold-process or live-inference claim.",
+    "One run on local hardware; cache/warmup and scheduler affect timings.",
+    "Python allocation peak excludes native libraries and total process RSS.",
+    "HTTP errors include deliberate capacity rejection; successful latency is reported separately."
+  ]
+}

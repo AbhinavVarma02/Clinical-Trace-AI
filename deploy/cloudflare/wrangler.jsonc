@@ -1,0 +1,41 @@
+// Clinical-Trace AI public edge. Workers Free plan only: every limit fails closed with an error,
+// never with a charge. See docs/PUBLIC_DEPLOYMENT.md before deploying.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clinical-trace-ai",
+  // Dedicated Clinical-Trace AI account (public URL clinical-trace-ai.vathadiabhinav.workers.dev).
+  // Pinned so a session logged in to another account fails instead of deploying there.
+  "account_id": "00f876c0ebbf368d25feabe3e49cbc0b",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/edge/*"]
+  },
+  "ai": { "binding": "AI", "remote": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "clinical-trace-edge",
+      "database_id": "fd9f4f5c-e9f4-47d2-b95f-a8c87f9d07a2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    { "name": "API_LIMITER", "namespace_id": "4201", "simple": { "limit": 120, "period": 60 } },
+    { "name": "AGENT_LIMITER", "namespace_id": "4202", "simple": { "limit": 6, "period": 60 } }
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
+  "vars": {
+    "BACKEND_ORIGIN": "https://abhinavvathadi-clinical-trace-ai.hf.space",
+    "LLM_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
+    "DAILY_NEURON_BUDGET": "8000",
+    "DAILY_AGENT_RUNS_GLOBAL": "300",
+    "DAILY_AGENT_RUNS_PER_CLIENT": "25",
+    "RELEASE": "local"
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

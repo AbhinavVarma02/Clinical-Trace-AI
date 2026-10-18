@@ -1,0 +1,398 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-17T22:37:58.590Z",
+  "rows": {
+    "reference": 63807,
+    "current": 19802
+  },
+  "method": {
+    "numeric": "reference quantiles, unbounded outer bins, separate missing bin",
+    "categorical": "reference top-20, other/unseen and missing bins",
+    "smoothing_count": 1e-06,
+    "psi_alert_threshold": 0.2
+  },
+  "features": {
+    "age": {
+      "available": true,
+      "psi": 0.002153190853112084,
+      "alert": false,
+      "reference_counts": [
+        16220,
+        14383,
+        10920,
+        10579,
+        6200,
+        2373,
+        1656,
+        930,
+        446,
+        100,
+        0,
+        0
+      ],
+      "current_counts": [
+        5040,
+        4266,
+        3469,
+        3287,
+        1909,
+        729,
+        547,
+        388,
+        138,
+        29,
+        0,
+        0
+      ],
+      "reference_vocabulary": [
+        "[70-80)",
+        "[60-70)",
+        "[50-60)",
+        "[80-90)",
+        "[40-50)",
+        "[30-40)",
+        "[90-100)",
+        "[20-30)",
+        "[10-20)",
+        "[0-10)"
+      ],
+      "last_bins": [
+        "other_or_unseen",
+        "missing"
+      ],
+      "unseen_rate": 0.0,
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "race": {
+      "available": true,
+      "psi": 0.0005795965204967513,
+      "alert": false,
+      "reference_counts": [
+        47625,
+        11999,
+        1330,
+        930,
+        419,
+        0,
+        1504
+      ],
+      "current_counts": [
+        14886,
+        3707,
+        371,
+        298,
+        122,
+        0,
+        418
+      ],
+      "reference_vocabulary": [
+        "Caucasian",
+        "AfricanAmerican",
+        "Hispanic",
+        "Other",
+        "Asian"
+      ],
+      "last_bins": [
+        "other_or_unseen",
+        "missing"
+      ],
+      "unseen_rate": 0.0,
+      "reference_missing_rate": 0.023571081542777438,
+      "current_missing_rate": 0.021108978891021108
+    },
+    "gender": {
+      "available": true,
+      "psi": 0.000422557599244697,
+      "alert": false,
+      "reference_counts": [
+        34367,
+        29438,
+        2,
+        0,
+        0
+      ],
+      "current_counts": [
+        10645,
+        9157,
+        0,
+        0,
+        0
+      ],
+      "reference_vocabulary": [
+        "Female",
+        "Male",
+        "Unknown/Invalid"
+      ],
+      "last_bins": [
+        "other_or_unseen",
+        "missing"
+      ],
+      "unseen_rate": 0.0,
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "time_in_hospital": {
+      "available": true,
+      "psi": 0.0008426509576055094,
+      "alert": false,
+      "reference_counts": [
+        0,
+        8807,
+        10869,
+        11311,
+        8723,
+        10958,
+        6420,
+        6719,
+        0
+      ],
+      "current_counts": [
+        0,
+        2838,
+        3274,
+        3418,
+        2827,
+        3404,
+        1932,
+        2109,
+        0
+      ],
+      "reference_cutpoints": [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        7.0,
+        9.0
+      ],
+      "last_bin": "missing_or_non_numeric",
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "num_medications": {
+      "available": true,
+      "psi": 0.00029421349963013776,
+      "alert": false,
+      "reference_counts": [
+        4853,
+        4871,
+        6421,
+        7467,
+        7359,
+        7199,
+        5903,
+        6904,
+        5812,
+        7018,
+        0
+      ],
+      "current_counts": [
+        1471,
+        1536,
+        2029,
+        2302,
+        2357,
+        2178,
+        1822,
+        2140,
+        1799,
+        2168,
+        0
+      ],
+      "reference_cutpoints": [
+        7.0,
+        9.0,
+        11.0,
+        13.0,
+        15.0,
+        17.0,
+        19.0,
+        22.0,
+        26.0
+      ],
+      "last_bin": "missing_or_non_numeric",
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "num_lab_procedures": {
+      "available": true,
+      "psi": 0.0007859809722821884,
+      "alert": false,
+      "reference_counts": [
+        6302,
+        6073,
+        6551,
+        6446,
+        5851,
+        7028,
+        6066,
+        6540,
+        6157,
+        6793,
+        0
+      ],
+      "current_counts": [
+        1986,
+        1949,
+        1959,
+        2009,
+        1779,
+        2213,
+        1779,
+        2100,
+        1941,
+        2087,
+        0
+      ],
+      "reference_cutpoints": [
+        14.0,
+        27.0,
+        35.0,
+        40.0,
+        44.0,
+        49.0,
+        54.0,
+        60.0,
+        67.0
+      ],
+      "last_bin": "missing_or_non_numeric",
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "number_inpatient": {
+      "available": true,
+      "psi": 0.0002534866425233014,
+      "alert": false,
+      "reference_counts": [
+        0,
+        42353,
+        12282,
+        9172,
+        0
+      ],
+      "current_counts": [
+        0,
+        13277,
+        3775,
+        2750,
+        0
+      ],
+      "reference_cutpoints": [
+        0.0,
+        1.0,
+        2.0
+      ],
+      "last_bin": "missing_or_non_numeric",
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "number_emergency": {
+      "available": true,
+      "psi": 5.081839584050374e-05,
+      "alert": false,
+      "reference_counts": [
+        0,
+        56672,
+        7135,
+        0
+      ],
+      "current_counts": [
+        0,
+        17632,
+        2170,
+        0
+      ],
+      "reference_cutpoints": [
+        0.0,
+        1.0
+      ],
+      "last_bin": "missing_or_non_numeric",
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    },
+    "number_outpatient": {
+      "available": true,
+      "psi": 2.4310961989148394e-05,
+      "alert": false,
+      "reference_counts": [
+        0,
+        53315,
+        10492,
+        0
+      ],
+      "current_counts": [
+        0,
+        16582,
+        3220,
+        0
+      ],
+      "reference_cutpoints": [
+        0.0,
+        1.0
+      ],
+      "last_bin": "missing_or_non_numeric",
+      "reference_missing_rate": 0.0,
+      "current_missing_rate": 0.0
+    }
+  },
+  "predictions": {
+    "available": true,
+    "psi": 0.00041135802699191035,
+    "alert": false,
+    "reference_counts": [
+      6381,
+      6381,
+      6380,
+      6381,
+      6380,
+      6381,
+      6381,
+      6380,
+      6381,
+      6381,
+      0
+    ],
+    "current_counts": [
+      2033,
+      1992,
+      1987,
+      1957,
+      1955,
+      1919,
+      2057,
+      1968,
+      1998,
+      1936,
+      0
+    ],
+    "reference_cutpoints": [
+      0.15785342156887056,
+      0.1905296266078949,
+      0.21958329379558564,
+      0.24878510236740115,
+      0.28021058440208435,
+      0.31256025433540346,
+      0.3511397004127502,
+      0.4058269083499909,
+      0.48538424968719485
+    ],
+    "last_bin": "missing_or_non_numeric",
+    "reference_missing_rate": 0.0,
+    "current_missing_rate": 0.0
+  },
+  "limitations": [
+    "PSI threshold is a heuristic, not a statistical or clinical conclusion.",
+    "No outcomes used; this cannot establish performance/concept drift.",
+    "Reference/current provenance and temporal meaning must be supplied by the operator.",
+    "No automated retraining, recalibration or deployment is triggered."
+  ],
+  "provenance": {
+    "comparison": "patient-disjoint training versus test, NOT temporal monitoring",
+    "dataset_hash": "0689e7ec031237dc63031b938805c48377748761a3b26acab621567afa24df97",
+    "model_hash": "f1eface1ac0b50127c86d449091e1fd95b8f26308fe541616897e7f3253c0228",
+    "model_version": "20260703051249-local",
+    "alignment": "all saved matrices and labels verified"
+  }
+}

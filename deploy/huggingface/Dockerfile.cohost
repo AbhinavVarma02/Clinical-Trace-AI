@@ -1,0 +1,38 @@
+# Co-hosted Hugging Face Space: the unchanged v1 Streamlit dashboard stays the public page at "/",
+# and the Clinical-Trace AI 2.0 API is added under /api/v2 for the Cloudflare edge.
+# nginx (port 7860, the only port a Space exposes) routes:
+#   /api/v2/*  -> FastAPI 2.0 on 127.0.0.1:8000 (requires the edge secret; SSE unbuffered)
+#   everything else (incl. Streamlit websockets) -> Streamlit v1 dashboard on 127.0.0.1:8501
+# FastAPI still serves the v1 API on loopback for the dashboard (API_BASE_URL), as before.
+
+# ---- Stage 1: static frontends (Node is build tooling only) ----
+FROM node:24-slim AS frontend-build
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build && npm run build:workspace
+
+# ---- Stage 2: Python runtime + nginx, non-root ----
+FROM python:3.12-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nginx-light \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt requirements-constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+COPY --from=frontend-build /frontend/dist /app/frontend/dist
+COPY --from=frontend-build /frontend/dist-workspace /app/frontend/dist-workspace
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /app/var /tmp/nginx \
+    && chmod +x /app/start.sh \
+    && chown -R appuser:appuser /app /tmp/nginx
+USER appuser
+ENV CLINICAL_TRACE_SKIP_DOTENV=1 \
+    PYTHONUNBUFFERED=1 \
+    API_BASE_URL=http://127.0.0.1:8000 \
+    CLINICAL_TRACE_DB_PATH=/app/var/clinical_trace.db \
+    CLINICAL_TRACE_PUBLIC_MODE=1
+EXPOSE 7860
+CMD ["/app/start.sh"]
