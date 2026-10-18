@@ -109,6 +109,9 @@ if (flag("--full")) {
     run = JSON.parse(result.split("\ndata: ")[1]);
     assert(run.outcome === "answered", `outcome ${run.outcome}`);
     assert(run.tool_calls.length > 0 && run.answer.claims.length > 0, "no tools or claims");
+    assert(run.inference?.mode === "llm" && !run.inference?.degraded_reason && !run.inference?.fallback_used
+      && run.inference?.composer?.startsWith("llm") && run.inference?.planner === "llm",
+      `full release gate requires real LLM planning/composition; got ${run.inference?.planner}/${run.inference?.composer}/${run.inference?.degraded_reason ?? "no degradation"}`);
     return { completion_ms: Math.round(performance.now() - started), progress_frames: frames.filter((f) => f.startsWith("event: progress")).length,
       tool_calls: run.tool_calls.length, claims: run.answer.claims.length, inference: run.inference.mode, model: run.inference.provider?.model ?? null,
       degraded: run.inference.degraded_reason ?? null, planner: run.inference.planner };

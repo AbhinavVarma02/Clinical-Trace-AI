@@ -1,6 +1,6 @@
 # Final release readiness
 
-Continuation date: 2026-10-17 (America/New_York). Starting branch
+Continuation began 2026-10-17; updated 2026-10-18 (America/New_York). Starting branch
 `feature/clinical-trace-2.0`, HEAD `ff0a614bd7cbfff8863690ed3646486d1b1ed4d4`.
 PR #1 is open/unmerged; starting CI run `39094562508` completed successfully.
 Deployment, merging, paid services and production credential changes remain
@@ -15,15 +15,23 @@ Deployment, merging, paid services and production credential changes remain
   only 90.8 above the protected 2,000 reserve. The existing full-gate harness
   declares a 750-neuron / 84-call maximum; this allocation cannot fund it.
   No model calls were made. Do not retry until a new allocation is checked.
-- C — IN PROGRESS: coordinated release checklist and read-only public smoke.
-  Production status: edge `475f0b6`, backend ready, real model configured.
-- D — IN PROGRESS: fresh 409 Python tests, repository lint, seven-module mypy,
+- C — PREPARED/LOCALLY VERIFIED: [coordinated release checklist](RELEASE_CHECKLIST.md),
+  read-only public smoke 7/7, staged co-host Docker verification 9/9, v1 health
+  and exact Worker/Space rollback pins. Fresh public full inference smoke remains
+  quota-blocked; production is unchanged. Worker rollback is automatic; Space/D1
+  recovery has separate explicit commands and limitations.
+- D — LOCAL CHECKS COMPLETE: fresh **415 Python tests** (44.51 s), repository
+  lint, seven-module mypy,
   frontend TypeScript/both builds, Worker typecheck/deploy dry-run pass.
   Fresh locked offline gate PASS, 41/42 (known `ho-013` scoring miss); safety
   1.0, citation coverage/precision 1.0, no isolation/authorization/unsafe output
   violations, fallback rate 0, p50/p95 21.73/37.16 ms. Raw new report:
   `evaluation/results/release_readiness_gate_offline_2026-10-17.json`.
-  Dependency/format checks and head-specific CI remain pending.
+  Both Node dependency audits report 0 vulnerabilities; pip-audit reports no
+  known vulnerabilities; pip check clean. Both CI format scopes (35 modules)
+  pass; final tracked/candidate secret scan **297 files, 0 findings**. The six new
+  host-restoration cases pass; Worker suite includes 30 Vitest + 6 isolated Node
+  rollback tests. Head-specific CI confirmation follows the final push.
 
 ## Preserved evidence and files
 
@@ -60,10 +68,38 @@ Production read-only baseline: **7/7 passed** at `2026-10-18T03:58:13.569Z`;
 Space metadata pins running `9afa0f8dfe602f42a8a7de3b7ac328da08966de9`,
 hardware `cpu-basic`, and v1 `/_stcore/health` returned `ok`.
 
+## Release recovery improvements
+
+The release runner now refuses to publish without an exact previous Worker
+version. It captures its receipt before mutation, stops on migration failure,
+rolls back on deploy or smoke error, and reports rollback failure explicitly.
+Six isolated Node tests pass. Full smoke requires genuine LLM planner/composer
+and rejects deterministic fallback. No live release/rollback drill was run.
+
+`restore-cohost` restores an exact prior HF tree in one parent-pinned commit
+without removing relay settings/secrets. It requires owner approval and the
+failed publication's exact SHA; races/v1-only targets fail closed. The old
+v1-only rollback remains available. New mocked tests verify this without any
+Space mutation. The staged backend/frontend at `be52df7` passed 9/9 checks;
+the later restoration-tool change is host administration only.
+
+## Commits and CI
+
+`be52df7` (Phase A) is pushed to the existing feature branch and PR #1.
+Its Actions run `39095723473` completed SUCCESS. Final release-tool/report
+milestone and final-head CI confirmation follow; do not substitute starting
+CI `39094562508` for new-head checks.
+
 ## Next action
 
-Commit/push the verified Phase A milestone. Finish rollback orchestration tests,
-stage/verify the coordinated package locally, complete security/format checks,
-then confirm all five CI jobs on the final pushed head. Live evaluation and a
-fresh public full LLM smoke remain quota-blocked. No deployment or merge is
-authorized. Keep all failed attempts and existing evaluations.
+Commit/push the release-tool/report milestone and confirm all five CI jobs on
+the final pushed head. Live evaluation
+and fresh public full LLM smoke remain quota-blocked. No deployment or merge is
+authorized. Resume by reading this report, `.project-state/HANDOFF.md` and the
+checklist, then inspect branch/HEAD/status and PR #1. Keep existing attempts.
+The private `.project-state/run_release_live_gate.py --output <new-report.json>`
+runner checks a full 750-neuron allocation above reserve before calling the
+unchanged locked evaluator, caps requests at 84, and retains failed attempts.
+Do not use old runners that point at existing report paths. PR description edits
+may still be blocked by the integration's previously observed 403; save prepared
+text in `.project-state/PR_RELEASE_READINESS_BODY.md` if that recurs.

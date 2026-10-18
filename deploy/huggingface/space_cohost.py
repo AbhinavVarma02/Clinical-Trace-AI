@@ -8,6 +8,8 @@ The existing public Space must stay unchanged unless the owner explicitly approv
     python deploy/huggingface/space_cohost.py verify --out <dir>             # docker build + checks
     python deploy/huggingface/space_cohost.py publish --out <dir> --i-have-owner-approval
     python deploy/huggingface/space_cohost.py rollback --i-have-owner-approval  # restore 91e7685
+    python deploy/huggingface/space_cohost.py restore-cohost --revision <known-good-cohost> \
+        --expected-current-revision <failed-publication> --i-have-owner-approval
 
 Staging = the Space tree at the pinned revision (keeps its v1 dashboard fork, README and LFS
 models) + the 2.0 backend/frontend sources from ``git HEAD`` + the co-host Dockerfile, nginx config
@@ -25,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -284,13 +287,49 @@ def rollback(revision: str) -> None:
     print(f"restored tree of {revision}; removed {len(removed)} added files")
 
 
+def restore_cohost(revision: str, expected_current: str) -> None:
+    """Restore one exact co-host tree atomically, preserving current relay settings/secrets.
+
+    The expected current parent prevents overwriting a concurrent Space release.
+    This does not recover ephemeral SQLite data or change account hardware/billing.
+    """
+    from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, snapshot_download
+
+    api = HfApi()
+    if api.space_info(SPACE).sha != expected_current:
+        sys.exit("Space moved from the expected release; inspect it before restoring.")
+    old = set(api.list_repo_files(SPACE, repo_type="space", revision=revision))
+    required = {"COHOST_MANIFEST.json", "start.sh", "api/v2.py", "dashboard/app.py", "deploy/huggingface/nginx.conf"}
+    if not required.issubset(old):
+        sys.exit("Selected revision is not a complete co-host tree; use the v1-only rollback explicitly.")
+    now = set(api.list_repo_files(SPACE, repo_type="space", revision=expected_current))
+    with tempfile.TemporaryDirectory(prefix="ct-cohost-restore-") as scratch:
+        work = Path(scratch)
+        snapshot_download(SPACE, repo_type="space", revision=revision, local_dir=str(work))
+        # Include only actual repository files, never snapshot metadata or cached extras.
+        for name in old:
+            if not (work / name).resolve().is_relative_to(work.resolve()) or not (work / name).is_file():
+                sys.exit("Restoration snapshot contains a missing or invalid file.")
+        operations = [CommitOperationAdd(path_in_repo=name, path_or_fileobj=work / name) for name in sorted(old)]
+        operations.extend(CommitOperationDelete(name) for name in sorted(now - old))
+        info = api.create_commit(
+            SPACE,
+            repo_type="space",
+            operations=operations,
+            parent_commit=expected_current,
+            commit_message=f"Restore co-host tree {revision[:7]} without changing relay settings",
+        )
+    print(f"restored co-host tree {revision} at {info.oid}; settings/secrets unchanged")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["stage", "verify", "publish", "rollback"])
+    parser.add_argument("command", choices=["stage", "verify", "publish", "rollback", "restore-cohost"])
     parser.add_argument("--out", type=Path, default=Path(os.environ.get("TEMP", "/tmp")) / "ct-space-cohost")
     parser.add_argument("--revision", default=V1_REVISION)
     parser.add_argument("--secrets", type=Path, default=ROOT / "deploy" / "cloudflare" / ".prod-secrets.json")
     parser.add_argument("--i-have-owner-approval", action="store_true")
+    parser.add_argument("--expected-current-revision", help="Required parent pin for restore-cohost")
     args = parser.parse_args()
     if args.command == "stage":
         stage(args.out, args.revision)
@@ -300,6 +339,11 @@ def main() -> int:
         _require_approval(args)
         values = json.loads(args.secrets.read_text(encoding="utf-8"))
         publish(args.out, values["EDGE_BACKEND_SECRET"])
+    elif args.command == "restore-cohost":
+        _require_approval(args)
+        if not args.expected_current_revision:
+            parser.error("restore-cohost requires --expected-current-revision")
+        restore_cohost(args.revision, args.expected_current_revision)
     else:
         _require_approval(args)
         rollback(args.revision)
