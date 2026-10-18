@@ -36,9 +36,9 @@ Evidence references point to files, tests, or result artifacts. Branch: `feature
 | P9 | CT-P09-T01 | Request ids, request log, identifier-only traces, ops metrics | TESTED | `api/middleware.py`, `/api/v2/ops/metrics` |
 | P9 | CT-P09-T02 | OpenTelemetry exporter | TESTED | Local-only SDK exporter; trace correlation/content exclusion tests |
 | P10 | CT-P10-T01 | Latency measured per mode | VERIFIED | `docs/EVALUATION.md` |
-| P10 | CT-P10-T02 | Image size / cold start measurement | BLOCKED | Docker daemon not running locally |
+| P10 | CT-P10-T02 | Image size / cold start measurement | VERIFIED | Local Docker 2026-10-18: 2.01 GB image; ready 16.6 s at 2 vCPU, 248.8 s at 0.1 vCPU/512 MB; peak ~296 MiB; `evaluation/results/container_resources.json` |
 | P11 | CT-P11-T01 | Multi-stage non-root Dockerfile, CI workflow | VERIFIED | VERIFIED at 6541d9b; Actions 39077304115: all four jobs passed including real E2E, audit and container smoke |
-| P11 | CT-P11-T02 | Separate 2.0 public deployment and external validation | BLOCKED | Future phase; preserve existing HF v1 unchanged; approval/credentials required |
+| P11 | CT-P11-T02 | Separate 2.0 public deployment and external validation | IN_PROGRESS | Edge + Workers AI live on Cloudflare Free (`docs/PUBLIC_DEPLOYMENT.md`); public backend BLOCKED on owner host decision (new HF Docker Spaces need a paid plan); full chain verified locally |
 | P12 | CT-P12-T01 | Architecture, API, safety, evaluation, deployment, limitations docs | VERIFIED | `docs/` |
 | P13 | CT-P13-T01 | Sequence model vs tabular baseline | NOT_STARTED | — |
 | P13 | CT-P13-T02 | Neural general vs biomedical embedding comparison | NOT_STARTED | needs model downloads (free) and benchmark time |
@@ -68,11 +68,17 @@ See [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). The following 
 | P6 | CT-P06-T05 | Independent paired human-review assessment | BLOCKED | No real reviewer annotations; protocol/runner implemented, no agreement claim |
 | P13 | CT-P13-T07 | Extended native-memory, long-duration, replica/large-corpus stress experiments | NOT_STARTED | Bounded local workload already measured; extension beyond core acceptance |
 
+| P11 | CT-P11-T05 | Zero-cost public edge: static workspace, guarded gateway, rate limits, daily caps, D1 accounting | VERIFIED | `deploy/cloudflare`, 19 Worker tests, live smoke, release script with auto-rollback, rollback drill |
+| P11 | CT-P11-T06 | Free hosted inference selection and benchmark | VERIFIED | Workers AI Qwen3-30B-A3B; recorded gate pass 36/42; model comparison in `docs/EVALUATION.md`; quota exhaustion handling tested |
+| P11 | CT-P11-T07 | Public-mode visitor isolation and edge-only backend | TESTED | `tests/test_public_mode.py`; co-host verify; full-chain smoke |
+| P11 | CT-P11-T08 | Cold-start recovery and availability UX; guided 90-second case | VERIFIED | Playwright cold-start and guided-case tests (3 viewports); full-chain browser run |
+| P11 | CT-P11-T09 | Public backend host (independent free host or approved co-hosting) | BLOCKED | Owner decision; tested reversible co-host package `deploy/huggingface` |
+
 ## Next phase and remaining dependencies
 
-1. Follow the separate [reviewer-ready validation handoff](VALIDATION_HANDOFF.md); pin branch HEAD, confirm its current CI and repeat external-user checks when a 2.0 target is authorized.
-2. Verify the local Docker daemon/WSL integration only when available; then measure image size, native memory and true container/process cold start. Do not substitute in-process timings.
-3. Select and measure a truly free public inference configuration; local 7B gate passage is insufficient evidence for free-CPU hosting.
+1. Owner decision on the public backend host ([PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md#backend-host-options-owner-decision)). After approval: publish, set `BACKEND_ORIGIN`, `npm run release -- --full`, then unauthenticated desktop/mobile validation and public metrics.
+2. Done 2026-10-18: local Docker measurements (CT-P10-T02).
+3. Done 2026-10-18: free hosted inference selected and benchmarked (CT-P11-T06).
 4. Collect independent human annotations only with real reviewers; use the paired rubric/runner without fabricating agreement.
 5. Advanced extensions remain dependency-gated and conditional: no timestamp invention for sequence models; predeclare a larger independent retrieval benchmark before embedding/reranking selection; keep SMART launch simulated and kind optional; implement structured document extraction with provenance/uncertainty. PostgreSQL/pgvector remains optional under ADR 0003 for the current 117-chunk corpus.
 6. Preserve HF v1, default branch, private files and current model artifacts throughout. No merge, paid service or public overwrite is authorized.

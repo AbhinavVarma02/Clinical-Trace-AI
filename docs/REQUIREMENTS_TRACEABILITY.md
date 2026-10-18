@@ -28,3 +28,7 @@ Actual local 7B inference and all four strengthened CI jobs passed at 6541d9b. H
 ## Dependency and scope decisions
 
 The unblocked sequence is browser verification → readmission analysis/drift → durable execution/reliability → contracts/observability/evidence → measured core validation. Advanced experiments depend on a stable core. PostgreSQL, reranking, quantization and Kubernetes are conditional investigations, not required infrastructure for a four-patient zero-cost demo. Record measured reasons for retaining the lightweight default. Public deployment, actual public inference, and external smoke tests remain open acceptance items for the separate deployment/validation phase. Passing deterministic tests does not revalidate earlier LLM outputs or establish clinical safety.
+
+## Reviewer-ready deployment phase (2026-10-18)
+
+Public edge and live free inference are deployed on Cloudflare Workers Free; visitor isolation, edge-only backend access, quota degradation, cold-start recovery, a guided 90-second case, release/rollback automation and container measurements are implemented and verified (CT-P11-T05 to T08, CT-P10-T02). The public backend (CT-P11-T09) is blocked on an owner decision because Hugging Face no longer allows free accounts to create Docker Spaces; a tested reversible co-hosting package exists. The final release gate (complete agent workflow through the public URL) is not met. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md).

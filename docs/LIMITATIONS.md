@@ -37,7 +37,11 @@
 - Demo personas are not authentication.
 - Rate limits and caches are in-process and reset on restart; they do not coordinate across replicas.
 - OpenTelemetry export is opt-in and local-file only; no network collector is configured. Operators must rotate trace files separately from SQLite retention.
-- The handoff container passed real build/smoke tests in Actions 39074327485. Updated dependencies/runtime passed all four jobs in Actions 39077304115 at 6541d9b; inspect newer branch-tip CI separately. Local Docker remains unavailable through WSL integration.
+- The handoff container passed real build/smoke tests in Actions 39074327485. Updated dependencies/runtime passed all four jobs in Actions 39077304115 at 6541d9b; inspect newer branch-tip CI separately. Local Docker became available on 2026-10-18; image size, cold start and memory are recorded in `evaluation/results/container_resources.json` (desktop CPU throttled with `--cpus`, an approximation of hosted vCPUs).
+- The public edge's limits are free-tier platform limits (100,000 Worker requests/day, an 8,000-neuron inference cap). Under heavy use, live inference pauses until 00:00 UTC and agent runs are refused after 300 per day; both are disclosed in the UI.
+- The public backend is not deployed (see [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md)). Any free host sleeps when idle; measured cold starts range from 14-17 s (2 vCPU) to about 4 minutes (0.1 vCPU), plus platform wake time.
+- Free hosts provide no persistent disk for this setup: public runs, reviews and audit events live in an ephemeral SQLite file and disappear on restart or sleep.
+- Public workspaces are random browser-held identifiers, not accounts. Anyone with the same browser storage sees the same workspace; clearing storage starts a new one.
 
 ## Evaluation
 

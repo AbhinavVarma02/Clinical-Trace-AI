@@ -57,3 +57,18 @@ The previous Actions run 39074327485 passed at f4f785c, but its Python audit was
 ## Current core verification
 
 Actions [39077304115](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/39077304115) at 6541d9b passed all four jobs, including real-backend Chromium and a mandatory clean dependency audit plus actual container smoke. The new local 7B report at the same source preserves historical results and passes the locked gate (35/42). Current follow-up coverage is 216 Python/36 frontend tests plus 24 real browser cases. Calibration evidence appears only for matching model/metadata SHA-256s; the paired-review runner rejects empty, partial or duplicate annotations. The header-only template contains no ratings and no human agreement result is claimed.
+
+## Reviewer-ready deployment phase (2026-10-18)
+
+| Claim | Implementation | Verification |
+| --- | --- | --- |
+| Visitors are isolated without accounts | `AccessContext.principal`, `scope_filter` (`src/safety/policy.py`), service/review/audit scoping | `tests/test_public_mode.py` (cross-workspace runs, sessions, reviews, decisions and audit); `smoke.mjs --full` cross-workspace 404 |
+| Public backend accepts only edge traffic | `api/middleware.py` edge secret, `X-Edge-Client` buckets | `test_edge_secret_gates_protected_routes`; co-host verify `403` without secret |
+| Free-quota exhaustion degrades safely and visibly | `ProviderQuotaExhausted`, `_inference_label`, edge neuron budget | `test_quota_exhaustion_fails_fast_without_retry_or_breaker_trip`, `test_agent_run_is_labelled_when_free_quota_is_exhausted`; Worker tests for budget refusal and platform error 4006 |
+| Cold starts are recoverable without user action | `edge.tsx` availability monitor, queued questions, refetch on recovery | Playwright cold-start test (3 viewports); full-chain browser run where a queued question was sent automatically when the backend became ready |
+| Edge only forwards the workspace API, strips credentials and never forwards IPs | `deploy/cloudflare/src/gateway.ts` | `deploy/cloudflare/test/edge.test.ts` (19 tests) |
+| Overview evidence is genuine | `evaluation/evidence_snapshot.py` with source SHA-256s | `tests/test_evidence_snapshot.py` fails if the snapshot drifts from the result files |
+| Release safety | `scripts/release.mjs` (clean tree, D1 migrations, smoke, automatic rollback) | Live rollback drill: 5 s back, 7 s forward |
+| Co-hosting keeps v1 intact | `deploy/huggingface/space_cohost.py verify` | 9/9 checks: v1 dashboard at `/`, v1 `/health` and `/model-info`, 2.0 workflow through nginx |
+
+Measured figures and their scope are listed in [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md#measured-results).

@@ -39,7 +39,7 @@ The image is multi-stage: a Node stage builds `frontend/dist` and `frontend/dist
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CLINICAL_TRACE_DB_PATH` | `var/clinical_trace.db` | SQLite file (`:memory:` for tests) |
-| `CLINICAL_TRACE_LLM_PROVIDER` | `none` | `none`, `ollama`, `openai-compatible` |
+| `CLINICAL_TRACE_LLM_PROVIDER` | `none` | `none`, `ollama`, `openai-compatible`, `cloudflare-workers-ai` |
 | `CLINICAL_TRACE_LLM_BASE_URL` | Ollama default for `ollama` | OpenAI-compatible base URL |
 | `CLINICAL_TRACE_LLM_MODEL` | `qwen2.5:1.5b` | Model name |
 | `CLINICAL_TRACE_LLM_API_KEY` | — | Optional bearer token (never logged) |
@@ -48,23 +48,18 @@ The image is multi-stage: a Node stage builds `frontend/dist` and `frontend/dist
 | `CLINICAL_TRACE_AGENT_RATE_LIMIT_PER_MIN` | `20` | Agent runs per client per minute |
 | `CLINICAL_TRACE_MAX_BODY_BYTES` | `32768` | Request body limit |
 | `CLINICAL_TRACE_SKIP_DOTENV` | — | `1` to ignore a local `.env` |
+| `CLINICAL_TRACE_PUBLIC_MODE` | — | `1` requires an `X-Demo-Workspace` header and isolates visitors |
+| `CLINICAL_TRACE_EDGE_SECRET` | — | When set, `/api/v2` (except status) and `/fhir` accept only requests carrying it |
 
 ## CI
 
 `.github/workflows/ci.yml` runs: ruff lint, pytest (including the evaluation gate), the evaluation report, frontend typecheck/tests/builds, `npm audit`, a tracked-file secret scan, `pip-audit` (warning only), and a container build with a smoke test (status, workspace HTML, an answered agent run, non-root user).
 
-## Public demo (Hugging Face Space)
+## Public deployment
 
-The current public demo (https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai) runs the **v1** Streamlit dashboard and FastAPI from a separate Space repository with its own Dockerfile and `start.sh`. It has **not** been updated to 2.0.
+The 2.0 public edge (React workspace, guarded gateway, Workers AI inference) runs on Cloudflare Workers Free at https://clinical-trace-ai.room-for-both.workers.dev. The public v1 Space (https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai) is unchanged. The public 2.0 backend host awaits owner approval. Architecture, controls, measured results, release/rollback runbooks and the co-hosting plan are in [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md).
 
-Status: **blocked on owner approval** (see `docs/PROJECT_STATUS.md`). The planned path, once approved:
-
-1. Clone the Space, port the 2.0 changes, keep the Streamlit dashboard reachable, and add the workspace at `/app` (or make it the landing page).
-2. Build from an LF-normalised export, run the container smoke test locally.
-3. Commit to the Space pinned to the current parent commit; keep the previous commit as the rollback point.
-4. Verify from an unauthenticated browser: status, guided demos, agent runs, citations, review flow, mobile layout.
-
-Free CPU Spaces run the deterministic mode reliably. Live LLM inference in the public demo needs either an in-container small model (measured locally at ~1 s p50 for 1.5B with poor quality, ~2.7 s for 7B on the development desktop via Ollama — latency on the free CPU Space is unmeasured) or a hosted free-tier endpoint with a secret token; both need an owner decision.
+Public-mode backend settings: `CLINICAL_TRACE_PUBLIC_MODE=1` (workspace header required), `CLINICAL_TRACE_EDGE_SECRET` (protected routes accept only the edge), `CLINICAL_TRACE_LLM_PROVIDER=cloudflare-workers-ai` with `CLINICAL_TRACE_LLM_BASE_URL=<edge>/edge/llm/v1` and `CLINICAL_TRACE_LLM_API_KEY` (the edge's backend token).
 
 ## SQLite runtime lifecycle
 
