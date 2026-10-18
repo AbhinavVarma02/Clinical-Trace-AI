@@ -32,3 +32,5 @@ The unblocked sequence is browser verification â†’ readmission analysis/drift â†
 ## Reviewer-ready deployment phase (2026-10-18)
 
 Public edge and live free inference are deployed on Cloudflare Workers Free; visitor isolation, edge-only backend access, quota degradation, cold-start recovery, a guided 90-second case, release/rollback automation and container measurements are implemented and verified (CT-P11-T05 to T08, CT-P10-T02). The public backend (CT-P11-T09) is blocked on an owner decision because Hugging Face no longer allows free accounts to create Docker Spaces; a tested reversible co-hosting package exists. The final release gate (complete agent workflow through the public URL) is not met. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md).
+
+Update later on 2026-10-18: with owner approval the backend was co-hosted in the existing Space. The first attempt failed its release gate (Spaces cannot reach Cloudflare) and was rolled back to the exact v1 tree; an edge inference relay fixed it. The final release gate passed through the public URL on desktop and mobile, including a cold start (CT-P11-T02 and T09 VERIFIED).

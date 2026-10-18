@@ -1,14 +1,14 @@
 # Public deployment (2.0)
 
-**Updated:** 2026-10-18 · **Status:** edge and live inference are public; the backend host is **pending owner approval**, so the public full agent workflow is **not yet available** and the release gate is open. Decision record: [ADR 0007](ADR/0007-public-edge-and-inference.md).
+**Updated:** 2026-10-18 · **Status: public demo operational.** The final release gate passed through the unauthenticated public URL (full guided workflow with live LLM inference, citations, isolation, review approval) on desktop and mobile, including a backend cold start. Decision record: [ADR 0007](ADR/0007-public-edge-and-inference.md).
 
 | Component | Where | State |
 | --- | --- | --- |
-| React workspace, gateway, status/metrics | https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free) | Live, release `a18a3ea` |
-| Live LLM inference | Workers AI `@cf/qwen/qwen3-30b-a3b-fp8` behind `/edge/llm/v1` (backend token only) | Live; 8,000-neuron daily cap below the 10,000 free allocation |
-| Usage accounting | D1 `clinical-trace-edge` (daily counters, privacy-safe events) | Live |
-| Python FastAPI / LangGraph / SHAP backend | Not public. Tested locally and in CI | **Blocked:** host decision (below) |
-| v1 Streamlit demo | https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai | Unchanged at `91e7685` |
+| React workspace, gateway, status/metrics | https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free) | Live, release `7012e8e` |
+| Live LLM inference | Workers AI `@cf/qwen/qwen3-30b-a3b-fp8`, relayed by the edge during streamed runs | Live; 8,000-neuron daily cap below the 10,000 free allocation |
+| Python FastAPI / LangGraph / SHAP backend | Co-hosted in the existing Space (owner-approved): nginx routes `/api/v2` to FastAPI, everything else to the unchanged v1 Streamlit dashboard | Live, Space commit `9afa0f8`; rollback target `380103e` (identical tree to `91e7685`) |
+| Usage accounting | D1 `clinical-trace-edge` | Live |
+| v1 Streamlit demo | https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai | Same URL and behaviour as before |
 
 ## Architecture
 
@@ -21,8 +21,11 @@ Browser ──> Cloudflare edge (Workers Free)
             │                    daily agent-run caps, 32 KB bodies, typed cold-start errors
             │                    ──> backend (X-Edge-Secret, X-Edge-Client, X-Demo-Workspace)
             └─ /edge/llm/v1/chat/completions  Workers AI proxy, backend token, neuron budget
-Backend (public mode) ──> /edge/llm/v1 for planner and composer calls
+Backend (public mode, relay provider): emits `event: relay` frames on the streamed run;
+the edge runs each completion on Workers AI and POSTs it to /api/v2/agent/relay/{id}.
 ```
+
+**Why a relay.** Hugging Face Spaces cannot open connections to Cloudflare endpoints (observed 2026-10-18: zero requests from the Space reached the Worker; public forum reports describe the same DNS failures and TLS timeouts). The first co-hosting attempt therefore failed the release gate and was rolled back. Inbound traffic (edge to Space) works, so the edge performs inference during the streamed request and returns the result to the waiting backend call. The Space holds no inference URL or token, and relay frames never reach the browser. Non-streamed requests cannot relay and answer in labelled deterministic mode.
 
 The browser never holds a provider key. Each browser creates a random 128-bit workspace id; the backend stores ownership as `persona@sha256(workspace)[:20]`, so runs, sessions, reviews, feedback and audit events are invisible to other visitors. No IP address leaves the edge or is stored; per-visitor limits use a SHA-256 of the IP with a secret salt that rotates daily.
 
@@ -39,7 +42,21 @@ The browser never holds a provider key. Each browser creates a random 128-bit wo
 
 The account is on the Workers Free plan (owner-confirmed 2026-10-18), so every platform limit fails with an error instead of a charge. Do not enable Workers Paid without revisiting ADR 0007.
 
-## Measured results
+## Public validation (2026-10-18, unauthenticated)
+
+| Check | Result |
+| --- | --- |
+| Release gate `npm run release -- --full` at `7012e8e` | 14/14: streamed run 9.6 s, 15 progress frames, 7 tool calls, 15 verified claims, live LLM planner and composer, every citation resolved to versioned same-patient evidence, cross-visitor read 404, review submitted and approved |
+| Desktop browser, fresh workspace | First progress 0.26 s; verified answer 10.9 s (15/15 claims, live LLM); citation drawer with record version; review approved ("valid for the exact artifact version") |
+| Mobile 375 px, fresh workspace | Verified answer 7.5 s (15/15); treatment-advice probe refused in 14 ms before any model call; no horizontal or top-bar overflow; review approved; only this visitor's review listed |
+| Cold start (Space restart) | The edge observed the outage and recovery (2.8 s recorded); the full gate started during the outage waited 5.2 s and passed against the fresh container (uptime 11 s) |
+| v1 dashboard on the Space | Renders; "Model: Loaded · Inference API: Ready" |
+| `/edge/metrics` (window to 01:45 UTC) | 89 gateway requests, 0 availability errors, 7 client errors (4 x 403 policy, 3 x 404); agent completion p50 9.5 s / p95 11.1 s (7 measured); 77 inference calls, p50 576 ms / p95 8.9 s, 0 provider errors, 0 quota rejections; 675 neurons used |
+| First publication attempt (direct proxy) | Failed the gate (the Space could not reach Cloudflare); the edge auto-rolled back; the Space was rolled back to the exact v1 tree (verified identical) and the relay was built |
+
+A sleeping Space (after 48 h idle) restarts its container from scratch; that wake time was not measured because it requires 48 idle hours. The workspace shows a waking state and queues the visitor's question meanwhile.
+
+## Measured results (before publication)
 
 All figures are real measurements; scopes are stated.
 
@@ -47,8 +64,8 @@ All figures are real measurements; scopes are stated.
 | --- | --- | --- |
 | Public page load | TTFB 126-239 ms; first visit load 0.48 s, 107 KB transferred; warm reload 89 ms | Built-in Chromium against the live URL, 2026-10-18 |
 | Public inference proxy | 61 calls, p50 476 ms, p95 4.09 s, 0 provider errors, 0 quota rejections, 350 neurons | Live `/edge/metrics` |
-| Locked 42-case evaluation via the deployed proxy | Gate PASS, 37/42, correctness 0.870, unsupported-claim rate 0.049, p50 1.32 s, p95 5.00 s | Local backend → public edge → Workers AI (exploratory, not written) |
-| Recorded Workers AI evaluation | Gate PASS, 36/42, correctness 0.826, unsupported-claim rate 0.144, p50 1.08 s, p95 3.90 s, 358.5 neurons | `evaluation/results/llm_cf_qwen_qwen3-30b-a3b-fp8.json` at `759e55c` |
+| Locked 42-case evaluation via the deployed proxy (before the planner/composer fix) | Gate PASS, 37/42, correctness 0.870, unsupported-claim rate 0.049, p50 1.32 s, p95 5.00 s | Local backend → public edge → Workers AI (exploratory, not written) |
+| Recorded Workers AI evaluation | Gate PASS, 39/42, correctness 0.870, unsupported-claim rate 0.139, p50 1.48 s, p95 4.54 s, 434 neurons | `evaluation/results/llm_cf_qwen_qwen3-30b-a3b-fp8.json` at `d00dbc7` (36/42 at `759e55c` before the fix) |
 | Full chain, cold start included | Queued guided question sent automatically when the backend became ready; answered with live LLM, 9/9 claims verified (5.67 s); citation, review and approval completed | Local edge → co-hosted container → deployed inference proxy, in the browser |
 | Full chain scripted smoke | 14/14 checks; streamed run 6.74 s, 13 progress frames, 5 tools, 9 claims, LLM planner and composer; cross-workspace read 404 | `deploy/cloudflare/scripts/smoke.mjs --full` against the local edge |
 | Container image | 2.01 GB | Docker Desktop, LF export + trained models |
@@ -57,29 +74,19 @@ All figures are real measurements; scopes are stated.
 | Co-hosted Space image | 2.0 API ready through nginx in 13.7 s; 9/9 checks incl. unchanged v1 dashboard | `deploy/huggingface/space_cohost.py verify` |
 | Rollback drill | Previous Worker live in 5 s, roll-forward in 7 s, smoke passed | `wrangler rollback` on the live edge |
 
-Not yet measurable: public agent completion time, public error rates and real cold-start recovery, because no public backend exists. `/edge/metrics` will report them from the first public runs.
 
-## Backend host options (owner decision)
+## Backend hosting and rollback
 
-Hugging Face now requires a paid plan to create Docker or Gradio Spaces, so a separate free 2.0 Space is impossible. No-card container hosts (Render, SnapDeploy, Railway credit, Back4App) cap at 512 MB / 0.1-0.25 vCPU, sleep after about 15 minutes and require an owner account; always-free compute with more resources requires a payment card.
-
-| Option | Fit | Cost / risk |
-| --- | --- | --- |
-| **A. Co-host in the existing Space (recommended)** | 2 vCPU / 16 GB; measured 13.7-16.6 s start; sleeps after 48 h idle | Modifies the v1 deployment: v1 dashboard stays at `/` unchanged (verified), 2.0 API added at `/api/v2` behind nginx. Rollback is one command to `91e7685` |
-| B. Render free web service | Functionally verified at 512 MB / 0.1 vCPU (no OOM) | About 4 min start plus platform wake after every 15 idle minutes; ephemeral SQLite; owner must create the account and publish an image containing the models |
-| C. No backend | Edge, evidence and inference only | Release gate stays open |
-
-### Co-hosting runbook (only after explicit approval)
+Hugging Face requires a paid plan to create new Docker Spaces, and no-card container hosts cap at 512 MB / 0.1 vCPU (measured: about 4 minutes to start), so the owner approved co-hosting in the existing Space. Re-deploy or update:
 
 ```bash
-python deploy/huggingface/space_cohost.py stage  --out C:/Users/<you>/AppData/Local/Temp/ctch   # short path on Windows
+python deploy/huggingface/space_cohost.py stage  --out C:/Users/<you>/AppData/Local/Temp/ctch --revision <current Space sha>
 python deploy/huggingface/space_cohost.py verify --out C:/Users/<you>/AppData/Local/Temp/ctch   # docker build + 9 checks
 python deploy/huggingface/space_cohost.py publish --out C:/Users/<you>/AppData/Local/Temp/ctch --i-have-owner-approval
-# then set BACKEND_ORIGIN=https://abhinavvathadi-clinical-trace-ai.hf.space in wrangler.jsonc vars, commit, and:
 cd deploy/cloudflare && npm run release -- --full
 ```
 
-`publish` refuses to run if the Space moved from the staged parent revision, sets the edge secret and inference token as Space secrets (never files), and commits with the parent pinned. **Rollback:** `python deploy/huggingface/space_cohost.py rollback --i-have-owner-approval` restores the exact `91e7685` tree, removes added files, secrets and variables; set `BACKEND_ORIGIN` back to empty and release the edge.
+**Rollback:** `python deploy/huggingface/space_cohost.py rollback --i-have-owner-approval --revision 380103e1d89e6c7a4049256fa63f9240d5c6653d` restores the v1 tree (verified identical on 2026-10-18) and removes the 2.0 secret and variables; then set `BACKEND_ORIGIN` to empty and run `npm run release`. The edge alone rolls back with `npx wrangler rollback <version-id>`.
 
 ## Edge operations
 
@@ -95,4 +102,4 @@ Secrets live only in Cloudflare (`wrangler secret bulk`) and the git-ignored `de
 
 ## Release gate
 
-The public demo is **not** ready. Ready requires: an approved public backend, `npm run release -- --full` passing against the public URL (guided workflow, citations, isolation, review approval), desktop and mobile verification by an unauthenticated browser, and `/edge/metrics` showing real public agent completion and error rates.
+**Met on 2026-10-18** (see Public validation). Re-run `npm run release -- --full` after every edge or backend change; the release script rolls the edge back automatically if it fails.

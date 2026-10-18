@@ -1,8 +1,8 @@
 # Project Status
 
-**Updated:** 2026-10-18 · **Version:** 2.0.0-dev · **Branch:** `feature/clinical-trace-2.0` · **Public:** 2.0 edge live at https://clinical-trace-ai.room-for-both.workers.dev (workspace, measured evidence, Workers AI inference); **public backend pending owner approval**; v1 Space unchanged. No merge to `main`.
+**Updated:** 2026-10-18 · **Version:** 2.0.0-dev · **Branch:** `feature/clinical-trace-2.0` · **Public:** https://clinical-trace-ai.room-for-both.workers.dev (full workflow, live LLM) · v1 dashboard unchanged at the same Space URL. No merge to `main`.
 
-The local core is implemented and verified, and the reviewer-ready deployment phase is in progress. The public demo is **not ready**: the release gate requires the complete agent workflow through the public URL, which needs a public backend host. Hugging Face no longer lets free accounts create Docker Spaces, so the options (recommended: reversible co-hosting in the existing Space) await the owner. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md) and [ADR 0007](ADR/0007-public-edge-and-inference.md).
+The reviewer-ready deployment phase is complete: the final release gate (complete primary agent workflow through the unauthenticated public URL) passed on desktop and mobile, including a backend cold start. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md) and [ADR 0007](ADR/0007-public-edge-and-inference.md). The full master plan is not complete: human-review agreement, clinical validation and conditional advanced extensions remain.
 
 | Area | Verified evidence |
 | --- | --- |
@@ -15,7 +15,8 @@ The local core is implemented and verified, and the reviewer-ready deployment ph
 | Metadata/observability | Index/evaluation metadata persisted; typed agent/retrieval/status responses; optional local OpenTelemetry traces exclude source text |
 | Dependencies/CI | Exact roots and transitive constraints; final local runtime audit: 144 packages, no known findings; mandatory audit/type/format/browser gates |
 | Public edge (Cloudflare Workers Free) | Static workspace, allow-listed gateway, per-visitor rate limits and daily caps, D1 accounting, `/edge/status` and `/edge/metrics`; release script with smoke-gated auto-rollback; live rollback drill 5 s / 7 s |
-| Free hosted inference | Workers AI Qwen3-30B-A3B via authenticated proxy; recorded 42-case gate pass 36/42 (correctness 0.826); deployed-proxy run 37/42; 8,000-neuron daily cap; quota exhaustion degrades to labelled deterministic answers |
+| Free hosted inference | Workers AI Qwen3-30B-A3B relayed by the edge; recorded 42-case gate pass 39/42 (correctness 0.870) at `d00dbc7`; 8,000-neuron daily cap; quota exhaustion degrades to labelled deterministic answers |
+| Public release gate | 14/14 through the public URL; desktop 10.9 s and mobile 7.5 s to a verified live-LLM answer; review approved; cold start recovered; 0 availability errors in `/edge/metrics` |
 | Public-mode isolation | Random per-browser workspaces scope runs, sessions, reviews, feedback and audit; backend accepts only edge traffic |
 | Reviewer experience | Guided four-step case, availability indicator, queued questions during cold starts, automatic recovery, static evidence snapshot with source hashes |
 | Containers | 2.01 GB image; ready 16.6 s (2 vCPU) / 248.8 s (0.1 vCPU, 512 MB); peak about 296 MiB; co-hosted v1+2.0 image verified 9/9 |
@@ -25,9 +26,9 @@ The local core is implemented and verified, and the reviewer-ready deployment ph
 
 | Check | Result / scope |
 | --- | --- |
-| Python suite | **228 passed**, including public-mode isolation, edge secret, quota degradation and evidence-snapshot provenance |
+| Python suite | **236 passed**, including public-mode isolation, edge secret, quota degradation, inference relay and evidence-snapshot provenance |
 | Frontend `npm run check` | **40 tests**, TypeScript and both builds passed |
-| Edge Worker `npm run check` | **19 tests** and TypeScript; deploy dry-run and dependency audit in CI |
+| Edge Worker `npm run check` | **21 tests** and TypeScript; deploy dry-run and dependency audit in CI |
 | Playwright | **30 real-backend Chromium cases**, desktop/tablet/mobile; adds the guided case and a simulated cold-start recovery |
 | Ruff / format / mypy | Lint passed; formatting scoped to new modules; mypy explicitly covers four new contract/persistence/telemetry modules |
 | Deterministic evaluation | Gate PASS; 41/42 cases; `ho-013` lexical miss retained; no known test isolation/authorization violations |
@@ -38,8 +39,8 @@ The latest branch run is available in [GitHub Actions](https://github.com/Abhina
 
 ## Remaining work and constraints
 
-- **Release blocker:** public backend host (owner decision). After approval: publish, configure `BACKEND_ORIGIN`, run `npm run release -- --full`, validate desktop/mobile as an unauthenticated visitor and record public agent completion, error rate and cold-start recovery from `/edge/metrics`.
-- Hosted inference quality varies run to run (36-37/42); the recorded run is the reference.
+- Hosted inference quality varies run to run (36-39/42 across code versions and runs); the recorded run is the reference. Live inference needs streamed requests.
+- Free hosting: the Space sleeps after 48 idle hours (wake time unmeasured); SQLite on the Space is ephemeral, so public runs and reviews disappear on restart.
 - Readmission scores remain poorly calibrated (Brier 0.134, ECE 0.190); disclosed in the UI and docs.
 - Human-review agreement is unmeasured; no clinical validation exists.
 - Conditional advanced work remains: sequence models, biomedical embeddings, reranking/PostgreSQL, simulated SMART launch, kind/Kubernetes, deeper stress tests and structured referral/discharge extraction.
