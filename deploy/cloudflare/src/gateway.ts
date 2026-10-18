@@ -4,7 +4,7 @@
 // rate-limited per salted client key and agent runs are capped per client and globally per day.
 // Backend cold starts and outages become typed JSON errors the UI can recover from.
 
-import { limits, utcDay, type Env } from "./config";
+import { limits, secondsUntilUtcMidnight, utcDay, type Env } from "./config";
 import { clientKey, errorResponse } from "./http";
 import { runCompletion, type ChatRequest } from "./inference";
 import { addCounter, recordEvent } from "./store";
@@ -138,14 +138,14 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   if (!general.success) {
     ctx.waitUntil(addCounter(env.DB, day, "rate_limited", "", 1).then(() => undefined));
     return errorResponse(429, "rate_limited", "Too many requests from this connection. Wait a minute and retry.", rid,
-      { retry_after_s: 60 }, { "retry-after": "60" });
+      { scope: "visitor", limit_kind: "api_requests", retry_after_s: 60 }, { "retry-after": "60" });
   }
 
   if (route.kind === "agent") {
     const burst = env.AGENT_LIMITER ? await env.AGENT_LIMITER.limit({ key: client }) : { success: true };
     if (!burst.success) {
       return errorResponse(429, "rate_limited", "Agent runs are limited per minute for each visitor. Wait a moment and retry.", rid,
-        { retry_after_s: 60 }, { "retry-after": "60" });
+        { scope: "visitor", limit_kind: "agent_runs", retry_after_s: 60 }, { "retry-after": "60" });
     }
     const cap = limits(env);
     const [mine, all] = await Promise.all([
@@ -154,8 +154,10 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
     ]);
     if (mine > cap.agentRunsPerClient || all > cap.agentRunsGlobal) {
       const scope = mine > cap.agentRunsPerClient ? "visitor" : "deployment";
+      const retryAfter = secondsUntilUtcMidnight();
       return errorResponse(429, "daily_limit", `The free daily agent-run limit for this ${scope} is reached. It resets at 00:00 UTC.`, rid,
-        { scope });
+        { scope, limit_kind: "agent_runs", retry_after_s: retryAfter,
+          resets_at: `${utcDay(new Date(Date.now() + 86_400_000))}T00:00:00.000Z` }, { "retry-after": String(retryAfter) });
     }
   }
 

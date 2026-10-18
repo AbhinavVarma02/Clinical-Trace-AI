@@ -4,7 +4,7 @@ import { AnswerCard } from "../components/AnswerCard";
 import { Icons } from "../components/icons";
 import { Card, EmptyState, ErrorState } from "../components/ui";
 import { SAFETY_PROBES, SUGGESTED_PROMPTS } from "../demos";
-import { formatDuration, useAvailability } from "../edge";
+import { formatDuration, useAvailability, useExecutionAllowance } from "../edge";
 import { GUIDE_CASE, markGuideStep } from "../guide";
 import { useApi, useApp } from "../state";
 import type { AgentRun } from "../types";
@@ -45,6 +45,7 @@ export function AgentPage() {
   const endRef = useRef<HTMLDivElement>(null);
   const routePatient = route.params.get("patient");
   const availability = useAvailability();
+  const allowance = useExecutionAllowance();
   const backendReady = availability.mode !== "edge" || availability.backend === "ready";
   const [queued, setQueued] = useState<string | null>(null);
 
@@ -59,7 +60,7 @@ export function AgentPage() {
 
   async function ask(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || pending) return;
+    if (!trimmed || pending || allowance.blocked) return;
     if (!backendReady) {
       // Cold start: hold the question and send it the moment the backend reports ready.
       setQueued(trimmed);
@@ -78,6 +79,7 @@ export function AgentPage() {
       setError(err instanceof ApiError ? err : new ApiError(0, "unknown", String(err)));
     } finally {
       setPending(null);
+      availability.checkNow();
     }
   }
 
@@ -96,12 +98,12 @@ export function AgentPage() {
   }, [route, patientId]);
 
   useEffect(() => {
-    if (backendReady && queued && !pending) {
+    if (backendReady && queued && !pending && !allowance.blocked) {
       const next = queued;
       setQueued(null);
       void ask(next);
     }
-  }, [backendReady, queued, pending]);
+  }, [backendReady, queued, pending, allowance.blocked]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -137,7 +139,7 @@ export function AgentPage() {
               Pick a question to start.
               <div className="prompt-chips" style={{ justifyContent: "center", marginTop: "var(--space-3)" }}>
                 {prompts.map((prompt) => (
-                  <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)}>{prompt}</button>
+                  <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={allowance.blocked}>{prompt}</button>
                 ))}
               </div>
             </EmptyState>
@@ -173,7 +175,7 @@ export function AgentPage() {
             }}>Cancel execution</button>}
           </div>
         )}
-        {error && <Card><ErrorState error={error} onRetry={() => setError(null)} /></Card>}
+        {error && <Card><ErrorState error={error} onRetry={allowance.blocked ? undefined : () => setError(null)} /></Card>}
         <div ref={endRef} />
         <form className="card" onSubmit={onSubmit} style={{ position: "sticky", bottom: 12 }}>
           <div className="card-body stack" style={{ gap: 10 }}>
@@ -191,10 +193,11 @@ export function AgentPage() {
             />
             <div className="row-between">
               <span className="faint" style={{ fontSize: 12 }}>Enter to send · Shift+Enter for a new line{question.length >= 800 ? ` · ${question.length}/1000` : ""}</span>
-              <button type="submit" className="btn primary" disabled={!question.trim() || Boolean(pending)}>
+              <button type="submit" className="btn primary" disabled={!question.trim() || Boolean(pending) || allowance.blocked}>
                 <Icons.send size={16} /> Ask
               </button>
             </div>
+            {allowance.blocked && <p className="muted" role="status">{allowance.message}</p>}
           </div>
         </form>
       </div>
@@ -219,7 +222,7 @@ export function AgentPage() {
           <Card title="Suggested questions">
             <div className="prompt-chips">
               {prompts.map((prompt) => (
-                <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending)}>
+                <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending) || allowance.blocked}>
                   {prompt}
                 </button>
               ))}
@@ -229,7 +232,7 @@ export function AgentPage() {
         <Card title="Safety probes" subtitle="Expected to be refused or left unanswered">
           <div className="prompt-chips">
             {SAFETY_PROBES.map((prompt) => (
-              <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending)}>
+              <button key={prompt} type="button" className="chip" onClick={() => void ask(prompt)} disabled={Boolean(pending) || allowance.blocked}>
                 {prompt}
               </button>
             ))}

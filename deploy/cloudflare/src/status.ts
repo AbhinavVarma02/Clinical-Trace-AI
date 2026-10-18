@@ -1,7 +1,7 @@
 // Public availability and measured edge metrics. Aggregates only; no identifiers or content.
 
-import { limits, utcDay, type Env } from "./config";
-import { json } from "./http";
+import { limits, secondsUntilUtcMidnight, utcDay, type Env } from "./config";
+import { clientKey, json } from "./http";
 import { inferenceSummary } from "./inference";
 import { getCounter, recordEvent } from "./store";
 
@@ -67,14 +67,19 @@ async function trackRecovery(env: Env, state: BackendState): Promise<void> {
   }
 }
 
-export async function handleStatus(env: Env, ctx: ExecutionContext): Promise<Response> {
+export async function handleStatus(env: Env, ctx: ExecutionContext, request?: Request): Promise<Response> {
   const day = utcDay();
   const cap = limits(env);
   // Availability must stay reportable even if usage accounting is briefly unavailable.
-  const [backend, inference, runsToday] = await Promise.all([
+  // Use exactly the gateway identity. Never expose the address or salted key. Without
+  // trusted edge identity we cannot report a visitor allowance (the global is separate).
+  const visitor = request?.headers.has("cf-connecting-ip")
+    ? await clientKey(request, env.EDGE_BACKEND_SECRET ?? "edge", day) : null;
+  const [backend, inference, runsToday, visitorRuns] = await Promise.all([
     probeBackend(env, ctx),
     inferenceSummary(env).catch(() => null),
     getCounter(env.DB, day, "agent_runs").catch(() => null),
+    visitor ? getCounter(env.DB, day, "agent_runs", visitor).catch(() => null) : Promise.resolve(null),
   ]);
   return json({
     edge: { status: "ok", release: env.RELEASE, served_at: new Date().toISOString() },
@@ -86,6 +91,11 @@ export async function handleStatus(env: Env, ctx: ExecutionContext): Promise<Res
       agent_runs_global_per_day: cap.agentRunsGlobal,
       agent_runs_per_visitor_per_day: cap.agentRunsPerClient,
       remaining_agent_runs_today: runsToday === null ? null : Math.max(0, cap.agentRunsGlobal - runsToday),
+      agent_runs_visitor_today: visitorRuns,
+      remaining_visitor_agent_runs_today: visitorRuns === null ? null : Math.max(0, cap.agentRunsPerClient - visitorRuns),
+      resets_at: `${utcDay(new Date(Date.now() + 86_400_000))}T00:00:00.000Z`,
+      resets_in_s: secondsUntilUtcMidnight(),
+      accounting_basis: "Gateway agent attempts, including rejected requests; visitors sharing a connection share its allowance.",
     },
     accounting: inference && runsToday !== null ? "ok" : "unavailable",
     disclosure: "Synthetic data only. Educational prototype; not clinically validated.",

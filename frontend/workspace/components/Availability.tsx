@@ -1,6 +1,6 @@
 // Backend availability, free-quota state and the guided-case UI.
 import { useEffect, useState } from "react";
-import { formatDuration, useAvailability } from "../edge";
+import { formatDuration, useAvailability, useExecutionAllowance } from "../edge";
 import { GUIDE_CASE, GUIDE_STEPS, dismissGuide, resetGuide, useGuide } from "../guide";
 import { navigate, useApp } from "../state";
 import { Icons } from "./icons";
@@ -19,9 +19,11 @@ function useElapsed(since: number | null): number {
 /** Compact top-bar indicator: backend state plus live-inference availability. */
 export function AvailabilityPill() {
   const a = useAvailability();
+  const allowance = useExecutionAllowance();
   const elapsed = useElapsed(a.waitingSince);
   if (a.mode !== "edge" || !a.status) return null;
   if (a.backend === "ready") {
+    if (allowance.blocked) return <Badge tone="warning" dot title={allowance.message}>Agent runs paused</Badge>;
     const quota = a.status.inference.quota_state;
     const live = a.status.backend.inference_mode === "llm";
     return (
@@ -39,8 +41,12 @@ export function AvailabilityPill() {
 /** Explains cold starts, outages and free-quota exhaustion where the visitor will see it. */
 export function AvailabilityBanner() {
   const a = useAvailability();
+  const allowance = useExecutionAllowance();
   const elapsed = useElapsed(a.waitingSince);
-  if (a.mode !== "edge" || !a.status) return null;
+  if (allowance.blocked && a.backend !== "not_configured") {
+    return <div className="banner warning" role="status"><Icons.alert size={18} /><div>{allowance.message}</div></div>;
+  }
+  if (a.mode !== "edge") return null;
   if (a.backend === "waking" || a.backend === "unavailable") {
     return (
       <div className="banner info availability-banner" role="status" aria-live="polite">
@@ -48,13 +54,16 @@ export function AvailabilityBanner() {
         <div>
           <strong>{a.backend === "waking" ? "Starting the analysis backend" : "Reconnecting to the analysis backend"} · {formatDuration(elapsed)}</strong>
           <div className="muted" style={{ fontSize: 13 }}>
-            Free hosting sleeps when idle, so the agent needs a short start-up. This page fills in automatically{elapsed > 120 ? "; still retrying." : "."}
+            {a.backend === "waking" ? "Free hosting sleeps when idle, so the agent needs a short start-up."
+              : "The connection or service is unavailable. Checking automatically; no agent run is being retried."}
+            {elapsed > 120 ? " Still checking." : ""}
           </div>
         </div>
         <button type="button" className="btn sm" onClick={a.checkNow}>Check now</button>
       </div>
     );
   }
+  if (!a.status) return null;
   if (a.backend === "not_configured") {
     return <div className="banner danger" role="alert"><Icons.alert size={18} /><div>No analysis backend is connected, so agent features are unavailable.</div></div>;
   }
@@ -66,15 +75,18 @@ export function AvailabilityBanner() {
         <div>
           <strong>Today's free live-AI allocation is used up.</strong> Answers continue in deterministic mode, with the same verification and review, and are labelled.
           Live AI resumes at 00:00 UTC{q.resets_in_s !== null ? ` (in ${formatDuration(q.resets_in_s)})` : ""}.
+          {allowance.visitor !== null && ` Your connection has ${allowance.visitor} daily agent-run attempts left.`}
+          {allowance.global !== null && ` Deployment-wide: ${allowance.global} remaining.`}
         </div>
       </div>
     );
   }
-  const remaining = a.status.limits.remaining_agent_runs_today;
-  if (remaining !== null && remaining <= 0) {
-    return <div className="banner warning" role="status"><Icons.alert size={18} /><div><strong>The free daily agent-run limit is reached.</strong> Browsing, evidence and review still work. It resets at 00:00 UTC.</div></div>;
-  }
-  return null;
+  return <div className="banner info" role="status"><div>
+    {allowance.visitor === null ? "Your connection's remaining agent-run allowance is unavailable."
+      : `${allowance.visitor} of ${a.status.limits.agent_runs_per_visitor_per_day} daily agent-run attempts left for your connection.`}
+    {allowance.global !== null && ` Deployment-wide: ${allowance.global} remaining.`}
+    {" Resets at 00:00 UTC. Visitors sharing a connection share its allowance."}
+  </div></div>;
 }
 
 function startGuidedCase(setPatientId: (id: string) => void) {
@@ -87,6 +99,7 @@ export function GuidedCase() {
   const guide = useGuide();
   const { setPatientId, setPersona } = useApp();
   const a = useAvailability();
+  const allowance = useExecutionAllowance();
   const waiting = a.mode === "edge" && (a.backend === "waking" || a.backend === "unavailable");
   const noBackend = a.mode === "edge" && a.backend === "not_configured";
   return (
@@ -105,7 +118,7 @@ export function GuidedCase() {
               <Icons.play size={16} /> Approve as reviewer
             </button>
           ) : guide.next?.id === "run" ? (
-            <button type="button" className="btn primary hero-cta" onClick={() => startGuidedCase(setPatientId)} disabled={noBackend}
+            <button type="button" className="btn primary hero-cta" onClick={() => startGuidedCase(setPatientId)} disabled={noBackend || allowance.blocked}
               aria-describedby={waiting || noBackend ? "guide-wait" : undefined}>
               <Icons.play size={16} /> Try a guided case
             </button>

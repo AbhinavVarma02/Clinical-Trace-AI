@@ -16,7 +16,7 @@ export default {
     const rid = requestId(request);
     try {
       if (url.pathname.startsWith("/api/")) return await handleApi(request, env, ctx, rid);
-      if (url.pathname === "/edge/status" && request.method === "GET") return await handleStatus(env, ctx);
+      if (url.pathname === "/edge/status" && request.method === "GET") return await handleStatus(env, ctx, request);
       if (url.pathname === "/edge/metrics" && request.method === "GET") return await handleMetrics(env);
       if (url.pathname === "/edge/llm/v1/chat/completions" && request.method === "POST") {
         return await handleChatCompletions(request, env, ctx, rid);
