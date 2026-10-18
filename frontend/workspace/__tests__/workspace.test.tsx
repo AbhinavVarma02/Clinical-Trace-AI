@@ -247,6 +247,28 @@ describe("App shell", () => {
     expect(screen.queryByRole("list", { name: "Verified claims" })).not.toBeInTheDocument();
   });
 
+  it("runs a guided link once, even when switching persona remounts the agent page", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    window.location.hash = "#/agent?patient=synthetic_p001&q=Summarize+this+patient+journey&run=1";
+    mockFetch((url) => {
+      if (url.endsWith("/system/status")) return STATUS;
+      if (url.endsWith("/personas")) return [
+        { persona_id: "clinician.demo", display_name: "Demo Clinician" },
+        { persona_id: "reviewer.demo", display_name: "Demo Reviewer" },
+      ];
+      if (url.endsWith("/patients")) return [];
+      return {};
+    });
+    const run = vi.spyOn(api, "runAgentStream").mockResolvedValue(makeRun());
+    render(<AppProvider><App /></AppProvider>);
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(window.location.hash).not.toContain("run=1");
+    expect(window.location.hash).toContain("q=Summarize");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Demo persona" }), "reviewer.demo");
+    await act(async () => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("renders the overview from live API data and navigates with the sidebar", async () => {
     mockFetch((url) => {
       if (url.endsWith("/system/status")) return STATUS;
