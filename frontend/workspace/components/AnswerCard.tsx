@@ -208,8 +208,7 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
               Excluded draft claims ({excluded.length}) · why they were removed
             </summary>
             <p className="muted" style={{ fontSize: 13, margin: "8px 0 0" }}>
-              The model drafted these, but the cited records did not support them as written, so they are not part of the answer.
-              Nothing is hidden: each claim is listed with the verifier's reason.
+              Drafted by the model but not supported by the cited records as written, so left out of the answer. Each is listed with the verifier's reason.
             </p>
             <ol className="claims" style={{ marginTop: 8 }}>
               {excluded.map((claim, index) => (
@@ -229,7 +228,7 @@ export function AnswerCard({ run, canReview = true }: { run: AgentRun; canReview
           </details>
         )}
 
-        <div className="row-between" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <div className="answer-footer">
           <button type="button" className="btn ghost sm" onClick={() => setShowTrace((v) => !v)} aria-expanded={showTrace}>
             {showTrace ? "Hide" : "Show"} agent activity · {run.tool_calls.length} tool{run.tool_calls.length === 1 ? "" : "s"} used
           </button>

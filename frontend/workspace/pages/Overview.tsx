@@ -101,7 +101,7 @@ export function OverviewPage() {
       )}
 
       <div className="workspace-chip">
-        <span>Private workspace <span className="mono">{workspace.slice(0, 8)}</span>. Only this browser can see your runs. No sign-in.</span>
+        <span>Private workspace <span className="mono">{workspace.slice(0, 8)}</span> · visible only in this browser · no sign-in</span>
         <button type="button" className="btn ghost sm" onClick={newWorkspace}>Start fresh</button>
       </div>
     </>

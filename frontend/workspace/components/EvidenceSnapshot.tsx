@@ -42,8 +42,8 @@ export function EvidenceSnapshot() {
             <div className="stat-note">recall@5 over {snapshot.retrieval.queries} queries</div>
           </div>
         </div>
-        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-          <strong style={{ color: "var(--text)" }}>Known limit:</strong> the readmission risk score is poorly calibrated. It must not be read as a patient-level probability.
+        <p className="limit-note">
+          <strong>Known limit:</strong> the readmission risk score is poorly calibrated. It must not be read as a patient-level probability.
         </p>
         <Disclosure label="All measurements and limits">
           <div className="evidence-grid">

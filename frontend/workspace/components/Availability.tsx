@@ -81,12 +81,34 @@ export function AvailabilityBanner() {
       </div>
     );
   }
-  return <div className="banner info" role="status"><div>
-    {allowance.visitor === null ? "Your connection's remaining agent-run allowance is unavailable."
-      : `${allowance.visitor} of ${a.status.limits.agent_runs_per_visitor_per_day} daily agent-run attempts left for your connection.`}
-    {allowance.global !== null && ` Deployment-wide: ${allowance.global} remaining.`}
-    {" Resets at 00:00 UTC. Visitors sharing a connection share its allowance."}
-  </div></div>;
+  const perVisitor = a.status.limits.agent_runs_per_visitor_per_day;
+  const share = allowance.visitor !== null && perVisitor > 0 ? Math.min(1, Math.max(0, allowance.visitor / perVisitor)) : null;
+  return (
+    <div className="usage" role="status" data-level={share !== null && share <= 0.2 ? "low" : undefined}>
+      {share !== null && <UsageRing share={share} />}
+      <div className="usage-text">
+        <span className="usage-primary">
+          {allowance.visitor === null ? "Your connection's remaining agent-run allowance is unavailable."
+            : `${allowance.visitor} of ${perVisitor} daily agent-run attempts left for your connection.`}
+        </span>{" "}
+        <span className="usage-secondary">
+          {allowance.global !== null && `Deployment-wide: ${allowance.global} remaining. `}
+          Resets at 00:00 UTC. Visitors sharing a connection share its allowance.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Decorative gauge of the visitor's remaining share; the sentence beside it carries the numbers. */
+function UsageRing({ share }: { share: number }) {
+  const circumference = 2 * Math.PI * 12;
+  return (
+    <svg className="usage-ring" viewBox="0 0 30 30" aria-hidden="true" focusable="false">
+      <circle className="usage-track" cx="15" cy="15" r="12" />
+      <circle className="usage-value" cx="15" cy="15" r="12" strokeDasharray={`${share * circumference} ${circumference}`} />
+    </svg>
+  );
 }
 
 function startGuidedCase(setPatientId: (id: string) => void) {
@@ -109,7 +131,7 @@ export function GuidedCase() {
           <span className="eyebrow">Clinical-Trace AI 2.0</span>
           <h1 id="hero-title" className="hero-title"><span className="hero-line">Understand patient records.</span> <span className="hero-line">See the evidence.</span></h1>
         </div>
-        <p className="hero-sub">Explore synthetic clinical cases with an AI agent that explains its findings and cites its sources.</p>
+        <p className="hero-sub">Ask an AI agent about synthetic patient records. It answers only with claims its cited sources support.</p>
         <div className="hero-actions">
           {guide.complete ? (
             <button type="button" className="btn hero-cta" onClick={resetGuide}><Icons.refresh size={16} /> Run it again</button>

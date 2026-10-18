@@ -84,7 +84,7 @@ export function EvaluationPage() {
               </table>
             </div>
           </Card>
-          <div className="grid cols-2">
+          <div className="stack" style={{ gap: "var(--space-6)" }}>
             <Card title="Retrieval benchmark" subtitle={`${r.retrieval.modes.hybrid?.[split]?.queries ?? 0} queries · embedder ${r.retrieval.embedder}`} flush>
               <div className="table-wrap">
                 <table className="table">
@@ -105,7 +105,7 @@ export function EvaluationPage() {
               </div>
             </Card>
             <Card title="Failed cases" subtitle="Reported as measured. Held-out cases are never tuned against." flush>
-              <div className="list">
+              <div className="list scroll-panel" role="region" aria-label="Failed cases list" tabIndex={0}>
                 {columns.flatMap((c, ci) => {
                   const cases = ci === 0 ? r.cases.filter((x) => !x.passed) : r.comparisons[ci - 1]?.failed_cases ?? [];
                   return cases.filter((x) => split === "all" || x.split === split).map((x) => (
