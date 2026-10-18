@@ -163,5 +163,15 @@ def llm_plan(question: str, provider: OpenAICompatibleProvider) -> Plan:
         fallback.source = "deterministic-fallback"
         fallback.notes.extend(notes + ["LLM planner returned no valid tool calls; used rule-based plan."])
         return fallback
+    # The rule-based plan is the floor: the model may add tools but never drop ones the detected intent
+    # requires, so a failed or partial LLM draft can always fall back to a grounded deterministic answer.
+    chosen = {c["name"] for c in calls}
+    for call in fallback.calls:
+        if len(calls) >= MAX_TOOL_CALLS:
+            break
+        if call["name"] not in chosen:
+            calls.append(call)
+            chosen.add(call["name"])
+            notes.append(f"added rule-required tool '{call['name']}'")
     return Plan(intents=fallback.intents, calls=calls[:MAX_TOOL_CALLS], source="llm", notes=notes,
                 latency_ms=completion.latency_ms)

@@ -218,3 +218,12 @@ def test_circuit_breaker_opens_after_failures() -> None:
     provider.breaker = breaker
     with pytest.raises(ProviderUnavailable):
         provider.complete("s", "u")
+
+
+def test_llm_plan_keeps_rule_required_tools() -> None:
+    provider = _provider(lambda s, u: json.dumps({"tool_calls": [{"name": "get_clinical_timeline", "args": {}}]}))
+    plan = llm_plan("Summarize this patient journey", provider)
+    names = [c["name"] for c in plan.calls]
+    assert plan.source == "llm" and names[0] == "get_clinical_timeline"
+    assert {c["name"] for c in deterministic_plan("Summarize this patient journey").calls} <= set(names)
+    assert len(names) <= 8 and any("rule-required" in note for note in plan.notes)

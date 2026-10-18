@@ -307,7 +307,8 @@ def compose_llm(question: str, evidence: dict[str, EvidenceItem], provider: Open
         return draft
     user = f"Question: {question}\n\nEvidence:\n{_evidence_prompt(evidence)}"
     try:
-        completion = provider.complete(COMPOSER_SYSTEM, user, max_tokens=700)
+        # Long journeys produce many claims; 700 tokens truncated JSON (measured). Edge cap is 1,024.
+        completion = provider.complete(COMPOSER_SYSTEM, user, max_tokens=1000)
         payload = extract_json(completion.text)
     except (ProviderUnavailable, ValueError, json.JSONDecodeError) as exc:
         draft.notes.append(f"LLM composer failed ({type(exc).__name__}).")
