@@ -24,6 +24,7 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public requestId?: string,
+    public limit?: { scope?: "visitor" | "deployment"; kind?: "agent_runs" | "api_requests"; retryAfterS?: number; resetsAt?: string },
   ) {
     super(message);
     this.name = "ApiError";
@@ -44,6 +45,18 @@ export function isTransient(error: ApiError | null | undefined): boolean {
 }
 
 let transientListener: ((code: string) => void) | null = null;
+let limitListener: ((error: ApiError) => void) | null = null;
+
+export function setLimitListener(listener: ((error: ApiError) => void) | null): void {
+  limitListener = listener;
+}
+
+function responseError(response: Response, body: ApiErrorBody, fallback: string): ApiError {
+  const e = body.error;
+  const retry = e?.retry_after_s ?? Number(response.headers.get("retry-after"));
+  return new ApiError(response.status, e?.code ?? `http_${response.status}`, e?.message ?? fallback, e?.request_id,
+    { scope: e?.scope, kind: e?.limit_kind, retryAfterS: Number.isFinite(retry) && retry > 0 ? retry : undefined, resetsAt: e?.resets_at });
+}
 
 /** The availability monitor subscribes so a failed request immediately speeds up status polling. */
 export function setTransientListener(listener: ((code: string) => void) | null): void {
@@ -101,6 +114,7 @@ function baseHeaders(init?: HeadersInit): Headers {
 
 function failure(error: ApiError): ApiError {
   if (TRANSIENT_CODES.has(error.code)) transientListener?.(error.code);
+  if (error.status === 429 && (error.code === "daily_limit" || error.code === "rate_limited")) limitListener?.(error);
   return error;
 }
 
@@ -123,7 +137,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const message =
       body.error?.message ??
       (response.status === 422 ? "The request was not valid. Check the input and try again." : `Request failed (HTTP ${response.status}).`);
-    throw failure(new ApiError(response.status, body.error?.code ?? `http_${response.status}`, message, body.error?.request_id));
+    throw failure(responseError(response, body, message));
   }
   return (await response.json()) as T;
 }
@@ -155,8 +169,7 @@ async function runAgentStream(
     } catch {
       // Non-JSON error body.
     }
-    throw failure(new ApiError(response.status, error.error?.code ?? "stream_error",
-      error.error?.message ?? "Execution could not start.", error.error?.request_id));
+    throw failure(responseError(response, error, "Execution could not start."));
   }
   if (!response.body) throw new ApiError(0, "stream_unavailable", "Streaming is unavailable in this browser.");
   const reader = response.body.getReader();

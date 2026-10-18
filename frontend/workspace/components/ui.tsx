@@ -129,7 +129,7 @@ export function ErrorState({ error, onRetry, action }: { error: ApiError; onRetr
       <div>{error.message}</div>
       {error.requestId && <div className="faint mono">request {error.requestId.slice(0, 8)}</div>}
       <div className="row" style={{ justifyContent: "center" }}>
-        {onRetry && (
+        {onRetry && error.status !== 429 && (
           <button className="btn sm" onClick={onRetry}>
             <Icons.refresh size={15} /> Try again
           </button>

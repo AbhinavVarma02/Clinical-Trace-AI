@@ -6,6 +6,7 @@ import { Icons } from "../components/icons";
 import { Badge, Card, ErrorState, OUTCOME_TONE, Skeleton, formatDate, humanize, ms } from "../components/ui";
 import { DEMOS } from "../demos";
 import { reloadGuide, resetGuide } from "../guide";
+import { useExecutionAllowance } from "../edge";
 import { navigate, useApi, useApp } from "../state";
 
 export function OverviewPage() {
@@ -14,6 +15,7 @@ export function OverviewPage() {
   const recent = useApi(api.recentRuns, "recent");
   const s = status.data;
   const [workspace, setWorkspace] = useState(getWorkspaceId);
+  const allowance = useExecutionAllowance();
 
   function newWorkspace() {
     setWorkspace(resetWorkspaceId());
@@ -23,6 +25,7 @@ export function OverviewPage() {
   }
 
   function startDemo(patientId: string, question: string) {
+    if (allowance.blocked) return;
     setPatientId(patientId);
     navigate("agent", { patient: patientId, q: question, run: "1" });
   }
@@ -57,7 +60,7 @@ export function OverviewPage() {
         </div>
         <div className="grid cols-4">
           {DEMOS.map((demo) => (
-            <button key={demo.id} type="button" className="card interactive scenario" onClick={() => startDemo(demo.patientId, demo.question)}>
+            <button key={demo.id} type="button" className="card interactive scenario" disabled={allowance.blocked} onClick={() => startDemo(demo.patientId, demo.question)}>
               <span className="row-between" style={{ flexWrap: "nowrap" }}>
                 <span className="item-title">{demo.title}</span>
                 <span className="scenario-go"><Icons.arrow size={16} /></span>

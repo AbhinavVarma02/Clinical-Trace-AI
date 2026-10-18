@@ -1,6 +1,58 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DEMOS } from "../workspace/demos";
 
+test("daily allowance disables execution, preserves browsing, and resets", async ({ page }) => {
+  let exhausted = true;
+  let starts = 0;
+  page.on("request", r => { if (r.url().endsWith("/agent/runs/stream")) starts++; });
+  await page.route("**/edge/status", route => route.fulfill({ json: {
+    edge: { status: "ok", release: "quota-test", served_at: new Date().toISOString() },
+    backend: { state: "ready", checked_at: new Date().toISOString(), latency_ms: 1, inference_mode: "llm" },
+    inference: { quota_state: "available", configured: true },
+    limits: { agent_runs_per_visitor_per_day: 25, remaining_visitor_agent_runs_today: exhausted ? 0 : 25,
+      remaining_agent_runs_today: 200, resets_at: new Date(Date.now() + 60_000).toISOString() },
+  } }));
+  await page.goto("/app/");
+  await expect(page.getByRole("button", { name: "Try a guided case", exact: true })).toBeDisabled();
+  await expect(page.getByText(/Your connection's daily agent-run allowance is used up/)).toBeVisible();
+  await nav(page, "Patients");
+  await expect(page.getByRole("heading", { level: 1, name: "Patients" })).toBeVisible();
+  await nav(page, "Case Review Agent");
+  await page.getByRole("textbox", { name: "Question", exact: true }).fill("Why was metformin stopped?");
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeDisabled();
+  await page.getByRole("textbox", { name: "Question", exact: true }).press("Enter");
+  expect(starts).toBe(0);
+  exhausted = false;
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(page.getByRole("article", { name: "Answer to: Why was metformin stopped?" })).toBeVisible();
+  expect(starts).toBe(1);
+});
+
+test("temporary run limit pauses retries and recovers without replaying the request", async ({ page }) => {
+  await page.route("**/edge/status", route => route.fulfill({ json: {
+    edge: { status: "ok", release: "quota-test", served_at: new Date().toISOString() },
+    backend: { state: "ready", checked_at: new Date().toISOString(), latency_ms: 1 },
+    inference: { quota_state: "available" }, limits: { remaining_agent_runs_today: 200 },
+  } }));
+  let starts = 0;
+  await page.route("**/api/v2/agent/runs/stream", route => {
+    starts++;
+    return route.fulfill({ status: 429, headers: { "retry-after": "2" }, json: {
+      error: { code: "rate_limited", message: "Temporary agent-run limit", scope: "visitor", limit_kind: "agent_runs", retry_after_s: 2 },
+    } });
+  });
+  await page.goto("/app/");
+  await nav(page, "Case Review Agent");
+  await page.getByRole("textbox", { name: "Question", exact: true }).fill("Why was metformin stopped?");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeEnabled({ timeout: 5000 });
+  expect(starts).toBe(1);
+});
+
 async function nav(page: Page, name: string) {
   const menu = page.getByRole("button", { name: "Open navigation" });
   if (await menu.isVisible()) await menu.click();

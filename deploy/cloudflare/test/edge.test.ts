@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateNeurons, limits, MODEL_PRICES, secondsUntilUtcMidnight, type Env } from "../src/config";
 import { classifyBackendResponse, handleApi, matchRoute } from "../src/gateway";
 import { clientKey, safeEqual } from "../src/http";
 import { adaptMessages, handleChatCompletions, isQuotaError, normaliseOutput, validateChat } from "../src/inference";
-import { percentile } from "../src/status";
+import { handleStatus, percentile } from "../src/status";
+
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 /** Minimal in-memory stand-in for the D1 statements this Worker issues. */
 class FakeD1 {
@@ -262,6 +264,58 @@ describe("inference proxy", () => {
 });
 
 describe("status resilience", () => {
+  it("separates visitor/global allowance using the gateway's identity without leaking it", async () => {
+    const env = makeEnv({ BACKEND_ORIGIN: "" });
+    const request = new Request("https://edge.example/edge/status", { headers: { "cf-connecting-ip": "198.51.100.9" } });
+    const key = await clientKey(request, env.EDGE_BACKEND_SECRET!, new Date().toISOString().slice(0, 10));
+    const day = new Date().toISOString().slice(0, 10);
+    env.DB.counters.set(`${day}|agent_runs|${key}`, 2);
+    env.DB.counters.set(`${day}|agent_runs|`, 1);
+    const response = await handleStatus(env, ctx(), request);
+    const body = await response.json() as any;
+    expect(body.limits.remaining_visitor_agent_runs_today).toBe(0);
+    expect(body.limits.remaining_agent_runs_today).toBe(2);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(JSON.stringify(body)).not.toContain(key);
+    expect(JSON.stringify(body)).not.toContain("198.51.100.9");
+    const other = await (await handleStatus(env, ctx(), new Request("https://edge.example/edge/status", { headers: { "cf-connecting-ip": "198.51.100.10" } }))).json() as any;
+    expect(other.limits.remaining_visitor_agent_runs_today).toBe(2);
+    const unknown = await (await handleStatus(env, ctx())).json() as any;
+    expect(unknown.limits.remaining_visitor_agent_runs_today).toBeNull();
+    expect(unknown.limits.remaining_agent_runs_today).toBe(2);
+  });
+
+  it("recovers daily execution and both counters at UTC midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-17T23:59:30Z"));
+    const env = makeEnv({ DAILY_AGENT_RUNS_PER_CLIENT: "1" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { headers: { "content-type": "application/json" } })));
+    const run = () => handleApi(new Request("https://edge.example/api/v2/agent/runs", { method: "POST", body: "{}", headers: { "cf-connecting-ip": "198.51.100.8" } }), env, ctx(), "rid");
+    expect((await run()).status).toBe(200);
+    const exhausted = await run();
+    expect(exhausted.headers.get("retry-after")).toBe("30");
+    expect((await exhausted.json() as any).error).toMatchObject({ scope: "visitor", limit_kind: "agent_runs", resets_at: "2026-10-18T00:00:00.000Z", retry_after_s: 30 });
+    vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
+    expect((await run()).status).toBe(200);
+  });
+
+  it.each(["AGENT_LIMITER", "API_LIMITER"] as const)("reports %s as a temporary visitor limit before spending daily allowance", async (limiter) => {
+    const env = makeEnv({ [limiter]: { limit: async () => ({ success: false }) } as RateLimit });
+    const response = await handleApi(new Request("https://edge.example/api/v2/agent/runs", { method: "POST", body: "{}" }), env, ctx(), "rid");
+    expect(response.status).toBe(429);
+    expect((await response.json() as any).error).toMatchObject({ code: "rate_limited", scope: "visitor", retry_after_s: 60, limit_kind: limiter === "API_LIMITER" ? "api_requests" : "agent_runs" });
+    expect(env.DB.counters.size).toBe(limiter === "API_LIMITER" ? 1 : 0);
+  });
+
+  it("allows evidence reads and review writes when daily agent allowance is exhausted", async () => {
+    const env = makeEnv();
+    env.DB.counters.set(`${new Date().toISOString().slice(0, 10)}|agent_runs|`, 300);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { headers: { "content-type": "application/json" } })));
+    for (const [path, method] of [["/patients/synthetic_p001/documents/doc1", "GET"], ["/reviews", "POST"]]) {
+      expect((await handleApi(new Request(`https://edge.example/api/v2${path}`, { method }), env, ctx(), "rid")).status).toBe(200);
+    }
+  });
+
   it("reports availability even when usage accounting fails", async () => {
     const { handleStatus } = await import("../src/status");
     const env = makeEnv({ BACKEND_ORIGIN: "" });

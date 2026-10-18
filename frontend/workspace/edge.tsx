@@ -5,7 +5,7 @@
 // served directly by FastAPI (local development, container), /edge/status does not exist and the
 // monitor reports "direct" mode, in which the backend is by definition the server of this page.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { setTransientListener } from "./api";
+import { ApiError, setLimitListener, setTransientListener } from "./api";
 
 export type BackendState = "ready" | "waking" | "unavailable" | "not_configured" | "unknown";
 
@@ -35,6 +35,10 @@ export interface EdgeStatus {
     agent_runs_global_per_day: number;
     agent_runs_per_visitor_per_day: number;
     remaining_agent_runs_today: number | null;
+    agent_runs_visitor_today?: number | null;
+    remaining_visitor_agent_runs_today?: number | null;
+    resets_at?: string;
+    resets_in_s?: number;
   };
 }
 
@@ -48,6 +52,7 @@ export interface Availability {
   /** Increments each time the backend becomes ready after not being ready; data hooks refetch on change. */
   readyEpoch: number;
   checkNow: () => void;
+  executionLimit?: { error: ApiError; until: number } | null;
 }
 
 const DEFAULT: Availability = { mode: "direct", backend: "ready", status: null, waitingSince: null, readyEpoch: 0, checkNow: () => undefined };
@@ -66,6 +71,7 @@ export function AvailabilityProvider({ children, pollMs = { waiting: 3000, ready
     mode: "unknown", backend: "unknown", status: null, waitingSince: null, readyEpoch: 0,
   });
   const timer = useRef<number | null>(null);
+  const [executionLimit, setExecutionLimit] = useState<Availability["executionLimit"]>(null);
   const inFlight = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -87,9 +93,11 @@ export function AvailabilityProvider({ children, pollMs = { waiting: 3000, ready
           waitingSince: ready ? null : prev.waitingSince ?? Date.now(),
           readyEpoch: ready && prev.backend !== "ready" && prev.backend !== "unknown" ? prev.readyEpoch + 1 : prev.readyEpoch,
         };
-      } else {
+      } else if (prev.mode !== "edge" && (response.status === 404 || (response.ok && !(response.headers.get("content-type") ?? "").includes("application/json")))) {
         next = { mode: "direct", backend: "ready", status: null, waitingSince: null,
           readyEpoch: prev.backend !== "ready" && prev.backend !== "unknown" ? prev.readyEpoch + 1 : prev.readyEpoch };
+      } else {
+        throw new Error("Edge status unavailable");
       }
     } catch {
       // The edge itself is unreachable (offline). Treat as unavailable and keep checking.
@@ -110,23 +118,71 @@ export function AvailabilityProvider({ children, pollMs = { waiting: 3000, ready
       // A request just failed transiently: re-check promptly (and start monitoring in direct mode).
       if (stateRef.current.backend === "ready") void check();
     });
+    setLimitListener(error => {
+      const reset = error.limit?.resetsAt ? Date.parse(error.limit.resetsAt) : NaN;
+      const until = error.code === "daily_limit" ? (Number.isFinite(reset) ? reset : nextUtcReset())
+        : Date.now() + (error.limit?.retryAfterS ?? 60) * 1000;
+      setExecutionLimit(previous => previous && previous.until > until ? previous : { error, until });
+      void check();
+    });
     const onVisible = () => {
       if (document.visibilityState === "visible") void check();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       setTransientListener(null);
+      setLimitListener(null);
       document.removeEventListener("visibilitychange", onVisible);
       if (timer.current !== null) window.clearTimeout(timer.current);
     };
   }, [check]);
 
-  const value = useMemo<Availability>(() => ({ ...state, checkNow: () => void check() }), [state, check]);
+  const value = useMemo<Availability>(() => ({ ...state, executionLimit, checkNow: () => void check() }), [state, executionLimit, check]);
   return <AvailabilityContext.Provider value={value}>{children}</AvailabilityContext.Provider>;
 }
 
 export function useAvailability(): Availability {
   return useContext(AvailabilityContext);
+}
+
+function nextUtcReset(now = Date.now()): number {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+}
+
+/** Old Workers expose only the deployment counter. Never use it as the visitor's. */
+export function executionAllowance(a: Availability, now = Date.now()) {
+  const s = a.status;
+  const reset = s?.limits.resets_at ? Date.parse(s.limits.resets_at) : nextUtcReset(s ? Date.parse(s.edge.served_at) : now);
+  const fresh = Number.isFinite(reset) && now < reset;
+  const visitor = fresh ? s?.limits.remaining_visitor_agent_runs_today ?? null : null;
+  const global = fresh ? s?.limits.remaining_agent_runs_today ?? null : null;
+  const active = a.executionLimit && now < a.executionLimit.until ? a.executionLimit : null;
+  const scope = visitor === 0 ? "visitor" : global === 0 ? "deployment" : null;
+  const daily = active?.error.code === "daily_limit" || scope !== null;
+  const blocked = Boolean(active || scope || (a.mode === "edge" && a.backend === "not_configured"));
+  const until = active?.until ?? reset;
+  const reason = daily ? ((scope ?? active?.error.limit?.scope) === "visitor"
+    ? "Your connection's daily agent-run allowance is used up." : (scope ?? active?.error.limit?.scope) === "deployment"
+      ? "The deployment-wide daily agent-run allowance is used up." : "The daily agent-run allowance is used up.")
+    : active ? (active.error.limit?.kind === "api_requests" ? "Temporary request limit for this connection." : "Temporary agent-run limit for this connection.")
+    : a.backend === "not_configured" ? "No analysis backend is connected." : "";
+  return { blocked, daily, reason, until, visitor, global,
+    message: reason + (daily ? ` Resets at ${new Date(until).toLocaleString()} (00:00 UTC). Browsing, evidence and review remain available.`
+      : active ? ` Available again in ${formatDuration((until - now) / 1000)}.` : "") };
+}
+
+export function useExecutionAllowance() {
+  const a = useAvailability();
+  const [now, setNow] = useState(Date.now());
+  const allowance = executionAllowance(a, now);
+  useEffect(() => {
+    if (!allowance.blocked) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [allowance.blocked]);
+  useEffect(() => { setNow(Date.now()); }, [a.status, a.executionLimit]);
+  return allowance;
 }
 
 export function formatDuration(seconds: number): string {

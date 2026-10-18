@@ -484,6 +484,7 @@ export interface EvaluationReport {
 }
 
 export interface ApiErrorBody {
-  error?: { code: string; message: string; request_id?: string };
+  error?: { code: string; message: string; request_id?: string; scope?: "visitor" | "deployment";
+    limit_kind?: "agent_runs" | "api_requests"; retry_after_s?: number; resets_at?: string };
   detail?: unknown;
 }
