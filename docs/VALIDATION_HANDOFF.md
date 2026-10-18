@@ -4,7 +4,7 @@
 
 ## State
 
-- Public 2.0 demo: https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free edge, release `7012e8e`).
+- Public 2.0 demo: https://clinical-trace-ai.room-for-both.workers.dev (Cloudflare Workers Free edge, release `475f0b6`).
 - Backend: co-hosted in the existing Space (commit `9afa0f8`), owner-approved; the v1 Streamlit dashboard is unchanged at https://huggingface.co/spaces/abhinavvathadi/clinical-trace-ai.
 - Inference: Workers AI Qwen3-30B-A3B, relayed by the edge during streamed runs because Spaces cannot reach Cloudflare.
 - Final release gate met: complete guided workflow through the public URL on desktop and mobile, plus a cold start. Evidence: [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md#public-validation-2026-10-18-unauthenticated).

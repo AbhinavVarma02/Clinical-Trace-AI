@@ -1,6 +1,6 @@
 # UI polish: less reading, clearer results
 
-Frontend-only simplification of the React workspace (`frontend/workspace/`). No backend, model, Worker or deployment change. **Not yet published**: the public site keeps serving release `7012e8e` until the owner approves a release.
+Frontend-only simplification of the React workspace (`frontend/workspace/`). No backend, model, Worker or deployment change. **Published 2026-10-19 (owner-approved)** as edge release `475f0b6`; the backend and Space were not touched.
 
 ## Principle
 
@@ -47,4 +47,4 @@ Synthetic-data and not-clinically-validated notice (hero and sidebar), calibrati
 
 ## Releasing
 
-When approved: `cd deploy/cloudflare && npm run release -- --full` (see [DEPLOYMENT.md](DEPLOYMENT.md)). After release, update the live-demo wording in `README.md` line 9 (**Start guided case** is now **Try a guided case**).
+Released with `cd deploy/cloudflare && npm run release -- --full` (see [DEPLOYMENT.md](DEPLOYMENT.md)); the full public smoke passed on the first attempt, so no rollback was needed. README line 9 now says **Try a guided case**. Rollback if ever needed: `npx wrangler deployments list`, then `npx wrangler rollback <previous-version-id>` (previous release `7012e8e`).
