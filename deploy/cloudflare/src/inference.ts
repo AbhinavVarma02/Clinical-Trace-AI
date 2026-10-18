@@ -35,12 +35,14 @@ export function stripReasoning(text: string): string {
 }
 
 /** Normalise the different Workers AI text-generation output shapes. */
-export function normaliseOutput(output: unknown): { text: string; promptTokens?: number; completionTokens?: number; neurons?: number } {
+export function normaliseOutput(output: unknown): { text: string; promptTokens?: number; completionTokens?: number; neurons?: number; finishReason: string | null } {
   const o = (output ?? {}) as Record<string, any>;
   const usage = (o.usage ?? {}) as Record<string, number | undefined>;
   let text = "";
+  let finishReason: unknown = o.finish_reason;
   if (Array.isArray(o.choices) && o.choices.length) {
     text = String(o.choices[0]?.message?.content ?? o.choices[0]?.text ?? "");
+    finishReason = o.choices[0]?.finish_reason ?? finishReason;
   } else if (typeof o.response === "string") {
     text = o.response;
   } else if (o.response && typeof o.response === "object") {
@@ -49,7 +51,8 @@ export function normaliseOutput(output: unknown): { text: string; promptTokens?:
     text = output;
   }
   return { text: stripReasoning(text), promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
-    neurons: typeof usage.neurons === "number" ? usage.neurons : undefined };
+    neurons: typeof usage.neurons === "number" ? usage.neurons : undefined,
+    finishReason: typeof finishReason === "string" ? finishReason : null };
 }
 
 /**
@@ -176,7 +179,8 @@ export async function runCompletion(env: Env, ctx: ExecutionContext, body: ChatR
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model: checked.model,
-    choices: [{ index: 0, message: { role: "assistant", content: result.text }, finish_reason: "stop" }],
+    // Missing metadata is unknown. Reporting "stop" used to conceal provider truncation.
+    choices: [{ index: 0, message: { role: "assistant", content: result.text }, finish_reason: result.finishReason }],
     usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
     edge: { latency_ms: latency, estimated_neurons: Number(neurons.toFixed(2)), neurons_reported: result.neurons !== undefined },
   } };
