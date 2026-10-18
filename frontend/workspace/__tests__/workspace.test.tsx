@@ -5,6 +5,7 @@ import { ApiError, api, setApiPersona } from "../api";
 import { App } from "../App";
 import { AnswerCard } from "../components/AnswerCard";
 import { LabTrendChart } from "../components/charts";
+import { reloadGuide } from "../guide";
 import { AppProvider } from "../state";
 import { makeRun } from "./fixtures";
 import { RiskPage } from "../pages/Risk";
@@ -38,6 +39,7 @@ const STATUS = {
 
 beforeEach(() => {
   window.localStorage.clear();
+  reloadGuide();
   window.location.hash = "";
   setApiPersona("clinician.demo");
 });
@@ -138,6 +140,18 @@ describe("AnswerCard", () => {
     expect(screen.getByText(/numbers not found/)).toBeInTheDocument();
   });
 
+  it("previews long answers and reveals every verified claim on request", async () => {
+    mockFetch(() => ({}));
+    const claim = (n: number) => ({ text: `Verified statement ${n}.`, citations: ["p001-m1@v2"], kind: "medication_status" });
+    render(<AppProvider><AnswerCard run={makeRun({ answer: { summary: null, claims: Array.from({ length: 8 }, (_, i) => claim(i + 1)),
+      rejected_claims: [], uncertainty: [], abstain_reason: null } })} /></AppProvider>);
+    const claims = screen.getByRole("list", { name: "Verified claims" });
+    expect(within(claims).getAllByRole("listitem")).toHaveLength(5);
+    await userEvent.click(screen.getByRole("button", { name: "Show all 8 verified claims" }));
+    expect(within(screen.getByRole("list", { name: "Verified claims" })).getAllByRole("listitem")).toHaveLength(8);
+    expect(screen.getByRole("button", { name: "Show fewer claims" })).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("submits an answered run for review", async () => {
     const fetchMock = mockFetch((url) =>
       url.endsWith("/reviews") ? { review_id: "rev-abcdef12", status: "pending_review", artifact_version: 1 } : {},
@@ -213,9 +227,13 @@ describe("App shell", () => {
       return {};
     });
     render(<AppProvider><App /></AppProvider>);
-    expect(await screen.findByText("Passed")).toBeInTheDocument();
-    expect(screen.getByText("No runs yet")).toBeInTheDocument();
-    expect(screen.getAllByText("Deterministic").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Evaluation gate passed")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Understand patient records. See the evidence." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try a guided case" })).toBeEnabled();
+    expect(screen.getAllByText("Deterministic mode").length).toBeGreaterThan(0);
+    // Safety statement stays visible on the first screen; the long measurements stay behind a disclosure.
+    expect(screen.getByText(/Not clinically validated\. Not for medical use\./, { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("All measurements and limits").closest("details")).not.toHaveAttribute("open");
     await userEvent.click(screen.getByRole("button", { name: /Evaluation/ }));
     await act(async () => {
       window.dispatchEvent(new HashChangeEvent("hashchange"));

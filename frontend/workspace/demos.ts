@@ -13,28 +13,28 @@ export const DEMOS: DemoScenario[] = [
     title: "Readmission journey",
     patientId: "synthetic_p001",
     question: "Summarize this patient journey",
-    shows: "Four encounters, a 30-day readmission computed and verified from dates, rising HbA1c, metformin stop.",
+    shows: "Four visits, a verified 30-day readmission, and a metformin stop.",
   },
   {
     id: "contradictory-notes",
     title: "Contradictory notes",
     patientId: "synthetic_p002",
     question: "Is the smoking history consistent across notes?",
-    shows: "Cross-document contradiction detection with every conflicting source cited and review flagged.",
+    shows: "Conflicting smoking history, with every source cited.",
   },
   {
     id: "incomplete-record",
     title: "Incomplete documentation",
     patientId: "synthetic_p003",
     question: "What information is missing from this record?",
-    shows: "Missing discharge summary, open admission, unit-less lab, and why the risk model is unavailable.",
+    shows: "What is missing from the record, and why risk is unavailable.",
   },
   {
     id: "anticoagulation",
     title: "Medication versions",
     patientId: "synthetic_p004",
     question: "How has the warfarin dose changed and what were the INR values?",
-    shows: "Three versions of one warfarin order alongside the INR series, each tied to its record version.",
+    shows: "Three warfarin dose versions beside the INR results.",
   },
 ];
 

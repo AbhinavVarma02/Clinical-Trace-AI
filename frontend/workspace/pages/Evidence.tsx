@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ApiError, api } from "../api";
 import { EvidenceDrawer } from "../components/EvidencePanel";
-import { Badge, Card, EmptyState, ErrorState, Segmented, formatDate, humanize, ms } from "../components/ui";
+import { Badge, Card, Disclosure, EmptyState, ErrorState, Segmented, formatDate, humanize, ms } from "../components/ui";
 import { useApi, useApp } from "../state";
 import type { Evidence, RetrievalResponse } from "../types";
 
@@ -39,10 +39,7 @@ export function EvidencePage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Evidence Explorer</h1>
-          <p className="page-subtitle">
-            Inspect patient-scoped retrieval directly: BM25 lexical ranking, dense LSA embeddings, and their reciprocal-rank fusion, with scores, record
-            versions, and safety flags. Each patient has an isolated index partition.
-          </p>
+          <p className="page-subtitle">Search one patient's record and compare keyword, semantic and combined ranking.</p>
         </div>
       </div>
       <Card>
@@ -76,7 +73,7 @@ export function EvidencePage() {
       {result && (
         <Card
           title={`${result.results.length} results`}
-          subtitle={`${result.diagnostics.fusion} · embedder ${result.diagnostics.embedder} · index ${result.diagnostics.index_version} · partition ${result.diagnostics.partition_size} chunks · ${ms(result.diagnostics.latency_ms)}${result.diagnostics.cache_hit ? " (cache hit)" : ""}`}
+          subtitle={`${result.diagnostics.partition_size} chunks searched · ${ms(result.diagnostics.latency_ms)}${result.diagnostics.cache_hit ? " (cache hit)" : ""}`}
           flush
         >
           {result.results.length === 0 ? <EmptyState title="No matching evidence">Try another query or widen the date range.</EmptyState> : (
@@ -108,7 +105,14 @@ export function EvidencePage() {
           )}
         </Card>
       )}
-      {!result && !error && <Card><EmptyState title="Run a search to inspect ranking">Results stay within the selected patient's partition.</EmptyState></Card>}
+      {result && (
+        <Disclosure label="Retrieval diagnostics">
+          <p className="mono muted" style={{ fontSize: 12, margin: 0 }}>
+            {result.diagnostics.fusion} · embedder {result.diagnostics.embedder} · index {result.diagnostics.index_version} · partition {result.diagnostics.partition_size} chunks
+          </p>
+        </Disclosure>
+      )}
+      {!result && !error && <Card><EmptyState title="Search to see ranked evidence">Results stay inside this patient's record.</EmptyState></Card>}
       {open && <EvidenceDrawer evidence={open} patientId={patientId} onClose={() => setOpen(null)} />}
     </>
   );

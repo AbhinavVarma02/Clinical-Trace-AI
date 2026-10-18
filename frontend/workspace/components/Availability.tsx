@@ -48,8 +48,7 @@ export function AvailabilityBanner() {
         <div>
           <strong>{a.backend === "waking" ? "Starting the analysis backend" : "Reconnecting to the analysis backend"} · {formatDuration(elapsed)}</strong>
           <div className="muted" style={{ fontSize: 13 }}>
-            The workspace is served instantly from the edge; the Python agent runs on free hosting that sleeps when idle and needs a short
-            start-up. Panels fill in automatically as soon as it is ready{elapsed > 120 ? ". This is taking longer than usual; the status check keeps retrying." : "."}
+            Free hosting sleeps when idle, so the agent needs a short start-up. This page fills in automatically{elapsed > 120 ? "; still retrying." : "."}
           </div>
         </div>
         <button type="button" className="btn sm" onClick={a.checkNow}>Check now</button>
@@ -57,7 +56,7 @@ export function AvailabilityBanner() {
     );
   }
   if (a.backend === "not_configured") {
-    return <div className="banner danger" role="alert"><Icons.alert size={18} /><div>This deployment has no analysis backend configured. The interface loads, but agent features are unavailable.</div></div>;
+    return <div className="banner danger" role="alert"><Icons.alert size={18} /><div>No analysis backend is connected, so agent features are unavailable.</div></div>;
   }
   const q = a.status.inference;
   if (a.status.backend.inference_mode === "llm" && q.quota_state === "exhausted") {
@@ -65,15 +64,15 @@ export function AvailabilityBanner() {
       <div className="banner warning" role="status">
         <Icons.alert size={18} />
         <div>
-          <strong>Today's free live-inference allocation is used up.</strong> Answers still run through the same tools, verification and review,
-          using the deterministic planner and composer, and each answer is labelled. Live inference resumes at 00:00 UTC{q.resets_in_s !== null ? ` (in ${formatDuration(q.resets_in_s)})` : ""}.
+          <strong>Today's free live-AI allocation is used up.</strong> Answers continue in deterministic mode, with the same verification and review, and are labelled.
+          Live AI resumes at 00:00 UTC{q.resets_in_s !== null ? ` (in ${formatDuration(q.resets_in_s)})` : ""}.
         </div>
       </div>
     );
   }
   const remaining = a.status.limits.remaining_agent_runs_today;
   if (remaining !== null && remaining <= 0) {
-    return <div className="banner warning" role="status"><Icons.alert size={18} /><div><strong>The free daily agent-run limit for this demo is reached.</strong> Browsing, evidence and review remain available; agent runs reset at 00:00 UTC.</div></div>;
+    return <div className="banner warning" role="status"><Icons.alert size={18} /><div><strong>The free daily agent-run limit is reached.</strong> Browsing, evidence and review still work. It resets at 00:00 UTC.</div></div>;
   }
   return null;
 }
@@ -83,7 +82,7 @@ function startGuidedCase(setPatientId: (id: string) => void) {
   navigate("agent", { patient: GUIDE_CASE.patientId, q: GUIDE_CASE.question, run: "1" });
 }
 
-/** Full guided-case card for the overview page. */
+/** Overview hero: what this is, why it matters, and the one obvious thing to click. */
 export function GuidedCase() {
   const guide = useGuide();
   const { setPatientId, setPersona } = useApp();
@@ -91,68 +90,67 @@ export function GuidedCase() {
   const waiting = a.mode === "edge" && (a.backend === "waking" || a.backend === "unavailable");
   const noBackend = a.mode === "edge" && a.backend === "not_configured";
   return (
-    <section className="card guide-card" aria-labelledby="guide-title">
-      <div className="card-body stack">
-        <div className="row-between" style={{ alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ minWidth: 0, flex: "1 1 320px" }}>
-            <span className="eyebrow">Guided case · about 90 seconds</span>
-            <h2 id="guide-title" className="guide-title">See one answer go from question to approved, cited artifact</h2>
-            <p className="muted" style={{ fontSize: 14, margin: 0 }}>
-              A synthetic patient with a 30-day readmission. Every step below calls the real backend: tool execution, claim-level verification
-              against versioned sources, and a hash-bound human review.
-            </p>
-          </div>
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            {guide.complete ? (
-              <button type="button" className="btn" onClick={resetGuide}><Icons.refresh size={15} /> Run it again</button>
-            ) : guide.next?.id === "approve" ? (
-              <button type="button" className="btn primary" onClick={() => { setPersona("reviewer.demo"); navigate("governance"); }}>
-                <Icons.play size={16} /> Approve as reviewer
-              </button>
-            ) : guide.next?.id === "run" ? (
-              <button type="button" className="btn primary" onClick={() => startGuidedCase(setPatientId)} disabled={noBackend}
-                aria-describedby={waiting || noBackend ? "guide-wait" : undefined}>
-                <Icons.play size={16} /> Start guided case
-              </button>
-            ) : (
-              <button type="button" className="btn primary" onClick={() => navigate("agent", guide.runId
-                ? { patient: GUIDE_CASE.patientId, open: guide.runId } : { patient: GUIDE_CASE.patientId })}>
-                <Icons.arrow size={16} /> Continue in the agent
-              </button>
-            )}
-          </div>
+    <section className="card hero" aria-labelledby="hero-title">
+      <div className="hero-body">
+        <div>
+          <span className="eyebrow">Clinical-Trace AI 2.0</span>
+          <h1 id="hero-title" className="hero-title"><span className="hero-line">Understand patient records.</span> <span className="hero-line">See the evidence.</span></h1>
+        </div>
+        <p className="hero-sub">Explore synthetic clinical cases with an AI agent that explains its findings and cites its sources.</p>
+        <div className="hero-actions">
+          {guide.complete ? (
+            <button type="button" className="btn hero-cta" onClick={resetGuide}><Icons.refresh size={16} /> Run it again</button>
+          ) : guide.next?.id === "approve" ? (
+            <button type="button" className="btn primary hero-cta" onClick={() => { setPersona("reviewer.demo"); navigate("governance"); }}>
+              <Icons.play size={16} /> Approve as reviewer
+            </button>
+          ) : guide.next?.id === "run" ? (
+            <button type="button" className="btn primary hero-cta" onClick={() => startGuidedCase(setPatientId)} disabled={noBackend}
+              aria-describedby={waiting || noBackend ? "guide-wait" : undefined}>
+              <Icons.play size={16} /> Try a guided case
+            </button>
+          ) : (
+            <button type="button" className="btn primary hero-cta" onClick={() => navigate("agent", guide.runId
+              ? { patient: GUIDE_CASE.patientId, open: guide.runId } : { patient: GUIDE_CASE.patientId })}>
+              <Icons.arrow size={16} /> Continue
+            </button>
+          )}
+          <span className="hero-meta">About 90 seconds · runs the real agent</span>
         </div>
         {(waiting || noBackend) && guide.next?.id === "run" && (
-          <p id="guide-wait" className="faint" style={{ fontSize: 12, margin: 0 }}>
-            {noBackend
-              ? "This deployment has no analysis backend connected yet, so the guided case cannot run here. The measured evidence below is still available."
-              : "The backend is starting; the question is sent as soon as it is ready."}
+          <p id="guide-wait" className="hero-meta" style={{ margin: 0 }}>
+            {noBackend ? "No backend is connected, so the guided case cannot run here. Measured results below still work."
+              : "Starting up. Your case runs as soon as the backend is ready."}
           </p>
         )}
-        <ol className="guide-steps">
-          {GUIDE_STEPS.map((step, i) => {
-            const done = guide.done.includes(step.id);
-            const current = guide.next?.id === step.id;
-            return (
-              <li key={step.id} className="guide-step" data-state={done ? "done" : current ? "current" : "todo"} aria-current={current ? "step" : undefined}>
-                <span className="guide-index" aria-hidden="true">{done ? <Icons.check size={14} /> : i + 1}</span>
-                <div>
-                  <div className="item-title">{step.title}{done && <span className="sr-only"> (completed)</span>}</div>
-                  <div className="muted" style={{ fontSize: 13 }}>{step.detail}</div>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+        <p className="hero-note" role="note">
+          <Icons.alert size={16} />
+          <span><strong>Synthetic data only.</strong> Not clinically validated. Not for medical use.</span>
+        </p>
       </div>
+      <ol className="guide-steps" aria-label="Guided case steps">
+        {GUIDE_STEPS.map((step, i) => {
+          const done = guide.done.includes(step.id);
+          const current = guide.next?.id === step.id;
+          return (
+            <li key={step.id} className="guide-step" data-state={done ? "done" : current ? "current" : "todo"} aria-current={current ? "step" : undefined}>
+              <span className="guide-index" aria-hidden="true">{done ? <Icons.check size={14} /> : i + 1}</span>
+              <div>
+                <div className="item-title">{step.title}{done && <span className="sr-only"> (completed)</span>}</div>
+                <div className="muted" style={{ fontSize: 13 }}>{step.detail}</div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
 
 const NEXT_HINT: Record<string, string> = {
-  citation: "Open a numbered citation in the answer to inspect the exact source record and version.",
+  citation: "Open a numbered citation to see its source record.",
   submit: "Choose “Submit for human review” under the answer.",
-  approve: "Switch to the Demo Reviewer persona and approve the submitted artifact.",
+  approve: "Switch to the reviewer and approve the submitted answer.",
 };
 
 /** Slim next-step strip on the other pages while the guided case is in progress. */

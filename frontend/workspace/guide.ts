@@ -6,10 +6,10 @@ import { useSyncExternalStore } from "react";
 export type GuideStep = "run" | "citation" | "submit" | "approve";
 
 export const GUIDE_STEPS: { id: GuideStep; title: string; detail: string }[] = [
-  { id: "run", title: "Run the agent", detail: "Ask about a synthetic readmission journey and watch real tool calls stream in." },
-  { id: "citation", title: "Check a citation", detail: "Open a numbered citation to see the exact source record and version." },
-  { id: "submit", title: "Submit for review", detail: "Send the verified answer to the hash-bound human review queue." },
-  { id: "approve", title: "Approve as reviewer", detail: "Switch to the Demo Reviewer persona and record a decision." },
+  { id: "run", title: "Run the agent", detail: "Watch the agent work on a synthetic case." },
+  { id: "citation", title: "Check a citation", detail: "Open the source behind any claim." },
+  { id: "submit", title: "Submit for review", detail: "Send the answer to human review." },
+  { id: "approve", title: "Approve as reviewer", detail: "Switch to the reviewer and decide." },
 ];
 
 export const GUIDE_CASE = {

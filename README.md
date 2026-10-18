@@ -70,7 +70,7 @@ cd frontend && npm ci && npm run build:workspace && cd ..
 uvicorn api.main:app --port 8000
 ```
 
-Open http://localhost:8000/app/ and choose **Start guided case**, or one of the guided scenarios:
+Open http://localhost:8000/app/ and choose **Try a guided case**, or one of the guided scenarios:
 
 1. **Readmission journey** (`synthetic_p001`): a summary with a verified 19-day readmission, the HbA1c trend, and the metformin stop.
 2. **Contradictory notes** (`synthetic_p002`): smoking history recorded inconsistently, every source cited, review flagged.

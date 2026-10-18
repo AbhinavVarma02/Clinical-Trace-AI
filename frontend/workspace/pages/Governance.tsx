@@ -142,10 +142,10 @@ function ReviewQueue() {
   const active = selected ?? reviews.data?.[0]?.review_id ?? null;
   return (
     <div className="split">
-      <Card title="Review queue" subtitle="Agent outputs submitted for human review" flush>
+      <Card title="Review queue" subtitle="Answers submitted for human review" flush>
         {reviews.loading && <div className="card-body"><Skeleton /></div>}
         {reviews.error && <ErrorState error={reviews.error} onRetry={reviews.reload} />}
-        {reviews.data?.length === 0 && <EmptyState title="Nothing submitted yet">Answer a question as a clinician and choose “Submit for human review”.</EmptyState>}
+        {reviews.data?.length === 0 && <EmptyState title="Nothing submitted yet">Ask a question as a clinician, then choose “Submit for human review”.</EmptyState>}
         <div className="list">
           {(reviews.data ?? []).map((r) => (
             <button key={r.review_id} type="button" className="list-item" aria-current={r.review_id === active} onClick={() => setSelected(r.review_id)}>
@@ -211,7 +211,7 @@ function AccessControl() {
         </div>
       </Card>
       <p className="faint" style={{ fontSize: 12 }}>
-        Demo personas are synthetic access contexts selected without login. This demonstrates enforcement design; it is not authentication and makes no compliance claim.
+        Demo personas are synthetic access contexts, not authentication. No compliance claim is made.
       </p>
     </div>
   );
@@ -265,7 +265,7 @@ export function GovernancePage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Governance & Review</h1>
-          <p className="page-subtitle">Human review bound to exact artifact versions, default-deny access control, and an identifier-only audit trail.</p>
+          <p className="page-subtitle">Reviews tied to one exact answer version, default-deny access, and an identifier-only audit trail.</p>
         </div>
       </div>
       <Tabs<Tab> label="Governance sections" value={tab} onChange={setTab} tabs={[{ value: "reviews", label: "Review queue" }, { value: "access", label: "Access control" }, { value: "audit", label: "Audit log" }]} />

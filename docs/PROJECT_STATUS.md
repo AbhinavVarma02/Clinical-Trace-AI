@@ -27,7 +27,7 @@ The reviewer-ready deployment phase is complete: the final release gate (complet
 | Check | Result / scope |
 | --- | --- |
 | Python suite | **236 passed**, including public-mode isolation, edge secret, quota degradation, inference relay and evidence-snapshot provenance |
-| Frontend `npm run check` | **40 tests**, TypeScript and both builds passed |
+| Frontend `npm run check` | **41 tests**, TypeScript and both builds passed (UI polish, [UI_POLISH.md](UI_POLISH.md)) |
 | Edge Worker `npm run check` | **21 tests** and TypeScript; deploy dry-run and dependency audit in CI |
 | Playwright | **30 real-backend Chromium cases**, desktop/tablet/mobile; adds the guided case and a simulated cold-start recovery |
 | Ruff / format / mypy | Lint passed; formatting scoped to new modules; mypy explicitly covers four new contract/persistence/telemetry modules |

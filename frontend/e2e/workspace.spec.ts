@@ -9,7 +9,7 @@ async function nav(page: Page, name: string) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/app/");
-  await expect(page.getByRole("button", { name: "Start guided case", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try a guided case", exact: true })).toBeVisible();
 });
 
 for (const demo of DEMOS) {
@@ -132,7 +132,7 @@ test("responsive navigation, keyboard focus, persisted themes, and real errors",
 });
 
 test("guided case: question to cited, approved artifact in four real steps", async ({ page }) => {
-  await page.getByRole("button", { name: "Start guided case", exact: true }).click();
+  await page.getByRole("button", { name: "Try a guided case", exact: true }).click();
   const answer = page.getByRole("article", { name: "Answer to: Summarize this patient journey" });
   await expect(answer.getByRole("list", { name: "Verified claims" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Guided case progress" })).toContainText("step 2 of 4");
@@ -169,8 +169,8 @@ test("cold start: queued question is sent when the edge reports the backend read
   }));
   await page.goto("/app/");
   await expect(page.getByText(/Starting the analysis backend/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Measured evidence" })).toBeVisible();
-  await page.getByRole("button", { name: "Start guided case", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Measured results" })).toBeVisible();
+  await page.getByRole("button", { name: "Try a guided case", exact: true }).click();
   await expect(page.getByText(/Waiting for the analysis backend to start/)).toBeVisible();
   ready = true;
   const answer = page.getByRole("article", { name: "Answer to: Summarize this patient journey" });
