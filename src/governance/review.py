@@ -19,7 +19,7 @@ from typing import Any
 from src.errors import NotFoundError
 from src.governance.audit import AuditLog
 from src.persistence.db import Database, dumps, utc_now
-from src.safety.policy import AccessContext, Action, PolicyEngine
+from src.safety.policy import AccessContext, Action, PolicyEngine, display_principal, in_scope, scope_filter
 
 DECISIONS = {"approved", "rejected", "needs_revision"}
 OPEN_STATES = {"pending_review", "needs_revision"}
@@ -110,16 +110,16 @@ class ReviewService:
             if open_review:
                 return self.get(access, open_review["review_id"])
         content = artifact_content_from_run(run)
-        digest = self._write_artifact(artifact_id, 1, run["run_id"], patient_id, content, access.persona.persona_id)
-        review_id = self._open_review(artifact_id, 1, digest, patient_id, access.persona.persona_id)
+        digest = self._write_artifact(artifact_id, 1, run["run_id"], patient_id, content, access.principal)
+        review_id = self._open_review(artifact_id, 1, digest, patient_id, access.principal)
         self.audit.event(access, "review:submitted", f"Review/{review_id}", "artifact v1 submitted")
         return self.get(access, review_id)
 
     def revise(self, access: AccessContext, review_id: str, remove_claims: list[int], note: str | None
                ) -> dict[str, Any]:
-        review = self._review_row(review_id)
+        review = self._review_row(review_id, access)
         self.policy.require(access, Action.REVIEW_SUBMIT, review["patient_id"])
-        if access.persona.persona_id != review["submitted_by"]:
+        if access.principal != review["submitted_by"]:
             raise ReviewError("only the submitter can revise an artifact")
         current = self._current_artifact(review["artifact_id"])
         assert current is not None
@@ -131,17 +131,17 @@ class ReviewService:
         content["reviewer_note"] = (note or "")[:500] or None
         new_version = int(current["version"]) + 1
         digest = self._write_artifact(review["artifact_id"], new_version, current["run_id"], review["patient_id"],
-                                      content, access.persona.persona_id)
+                                      content, access.principal)
         superseded = self.db.all(
             "SELECT review_id, status, artifact_hash FROM review WHERE artifact_id=? AND status IN "
             "('pending_review','needs_revision','approved')", (review["artifact_id"],))
         for row in superseded:
             self.db.execute("UPDATE review SET status='superseded', updated_at=? WHERE review_id=?",
                             (utc_now(), row["review_id"]))
-            self._event(row["review_id"], access.persona.persona_id, "superseded", row["status"], "superseded",
+            self._event(row["review_id"], access.principal, "superseded", row["status"], "superseded",
                         row["artifact_hash"], f"artifact revised to v{new_version}")
         new_review = self._open_review(review["artifact_id"], new_version, digest, review["patient_id"],
-                                       access.persona.persona_id)
+                                       access.principal)
         self.audit.event(access, "review:revised", f"Review/{new_review}", f"artifact v{new_version} created")
         return self.get(access, new_review)
 
@@ -149,11 +149,11 @@ class ReviewService:
                comment: str | None) -> dict[str, Any]:
         if decision not in DECISIONS:
             raise ReviewError(f"decision must be one of {sorted(DECISIONS)}")
-        review = self._review_row(review_id)
+        review = self._review_row(review_id, access)
         self.policy.require(access, Action.REVIEW_DECIDE, review["patient_id"])
         if review["status"] not in OPEN_STATES:
             raise ReviewConflict(f"review is {review['status']} and cannot be decided")
-        if access.persona.persona_id == review["submitted_by"]:
+        if access.principal == review["submitted_by"]:
             raise ReviewError("the submitter cannot review their own artifact")
         current = self._current_artifact(review["artifact_id"])
         assert current is not None
@@ -162,25 +162,29 @@ class ReviewService:
         if decision in ("rejected", "needs_revision") and not (comment or "").strip():
             raise ReviewError("a comment is required when rejecting or requesting revision")
         self.db.execute("UPDATE review SET status=?, updated_at=? WHERE review_id=?", (decision, utc_now(), review_id))
-        self._event(review_id, access.persona.persona_id, "decided", review["status"], decision,
+        self._event(review_id, access.principal, "decided", review["status"], decision,
                     review["artifact_hash"], (comment or "")[:1000] or None)
         self.audit.event(access, f"review:{decision}", f"Review/{review_id}",
                          f"decision on artifact v{review['artifact_version']}")
         return self.get(access, review_id)
 
     # ---------------------------------------------------------------- reads
-    def _review_row(self, review_id: str) -> dict[str, Any]:
+    def _review_row(self, review_id: str, access: AccessContext) -> dict[str, Any]:
         row = self.db.one("SELECT * FROM review WHERE review_id=?", (review_id,))
-        if row is None:
+        if row is None or not in_scope(access, row["submitted_by"]):
             raise NotFoundError("review not found")
         return dict(row)
+
+    @staticmethod
+    def _public(review: dict[str, Any]) -> dict[str, Any]:
+        return {**review, "submitted_by": display_principal(review["submitted_by"])}
 
     def approval_valid(self, review: dict[str, Any]) -> bool:
         current = self._current_artifact(review["artifact_id"])
         return bool(review["status"] == "approved" and current and current["content_hash"] == review["artifact_hash"])
 
     def get(self, access: AccessContext, review_id: str) -> dict[str, Any]:
-        review = self._review_row(review_id)
+        review = self._review_row(review_id, access)
         self.policy.require(access, Action.REVIEW_READ)
         can_read_patient = self.policy.authorize(access, Action.PATIENT_READ, review["patient_id"]).allowed
         artifact = self.db.one("SELECT * FROM artifact WHERE artifact_id=? AND version=?",
@@ -188,18 +192,19 @@ class ReviewService:
         events = self.db.all("SELECT actor, action, from_status, to_status, artifact_hash, comment, created_at "
                              "FROM review_event WHERE review_id=? ORDER BY created_at", (review_id,))
         return {
-            **review,
+            **self._public(review),
             "approval_valid": self.approval_valid(review),
             "artifact": ({"version": artifact["version"], "content_hash": artifact["content_hash"],
                           "content": json.loads(artifact["content"])}
                          if artifact and can_read_patient else None),
             "content_visible": can_read_patient,
-            "events": [dict(e) for e in events],
+            "events": [{**dict(e), "actor": display_principal(e["actor"])} for e in events],
         }
 
     def list(self, access: AccessContext, status: str | None = None) -> list[dict[str, Any]]:
         self.policy.require(access, Action.REVIEW_READ)
-        rows = self.db.all("SELECT * FROM review ORDER BY updated_at DESC LIMIT 200")
+        clause, params = scope_filter(access, "submitted_by")
+        rows = self.db.all(f"SELECT * FROM review WHERE {clause} ORDER BY updated_at DESC LIMIT 200", params)
         items = []
         for row in rows:
             review = dict(row)
@@ -208,5 +213,5 @@ class ReviewService:
             if access.persona.role != "admin" and review["patient_id"] not in access.persona.panel:
                 continue
             review["approval_valid"] = self.approval_valid(review)
-            items.append(review)
+            items.append(self._public(review))
         return items

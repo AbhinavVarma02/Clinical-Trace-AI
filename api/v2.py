@@ -9,6 +9,8 @@ consistent ``{"error": {"code", "message", "request_id"}}`` body in
 from __future__ import annotations
 
 import json
+import os
+import re
 import statistics
 import time
 import uuid
@@ -48,15 +50,33 @@ class MissingPersona(PermissionError):
     pass
 
 
+class WorkspaceRequired(PermissionError):
+    pass
+
+
+WORKSPACE_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,64}")
+
+
+def public_mode() -> bool:
+    """Public demo deployments isolate every visitor in an opaque per-browser workspace."""
+    return os.getenv("CLINICAL_TRACE_PUBLIC_MODE", "").strip() == "1"
+
+
 def runtime() -> Runtime:
     return get_runtime()
 
 
-def access(request: Request, x_demo_persona: str | None = Header(None)) -> AccessContext:
+def access(request: Request, x_demo_persona: str | None = Header(None),
+           x_demo_workspace: str | None = Header(None)) -> AccessContext:
     persona = resolve_persona(x_demo_persona)
     if persona is None:
         raise MissingPersona("select a synthetic demo persona with the X-Demo-Persona header")
-    return AccessContext(persona=persona, request_id=getattr(request.state, "request_id", None))
+    if x_demo_workspace is not None and not WORKSPACE_PATTERN.fullmatch(x_demo_workspace):
+        raise WorkspaceRequired("the X-Demo-Workspace header is malformed")
+    if x_demo_workspace is None and public_mode():
+        raise WorkspaceRequired("public demo requests need an X-Demo-Workspace header")
+    return AccessContext(persona=persona, request_id=getattr(request.state, "request_id", None),
+                         workspace=x_demo_workspace)
 
 
 # ------------------------------------------------------------------- system
@@ -293,7 +313,7 @@ def agent_recent(ctx: AccessContext = Depends(access), rt: Runtime = Depends(run
                  limit: int = Query(10, ge=1, le=50)) -> list[dict[str, Any]]:
     rows = rt.db.all("SELECT run_id, session_id, patient_id, question, outcome, inference_mode, latency_ms, "
                      "created_at FROM agent_run WHERE persona=? ORDER BY created_at DESC LIMIT ?",
-                     (ctx.persona.persona_id, limit))
+                     (ctx.principal, limit))
     return [dict(r) for r in rows if r["patient_id"] in ctx.persona.panel]
 
 
@@ -306,7 +326,7 @@ def agent_feedback(run_id: str, body: RunFeedbackRequest, ctx: AccessContext = D
     rt.policy.require(ctx, Action.FEEDBACK_SUBMIT, run["patient_id"])
     feedback_id = str(uuid.uuid4())
     rt.db.execute("INSERT INTO feedback(feedback_id, run_id, persona, category, rating, comment, created_at) "
-                  "VALUES (?,?,?,?,?,?,?)", (feedback_id, run_id, ctx.persona.persona_id, body.category,
+                  "VALUES (?,?,?,?,?,?,?)", (feedback_id, run_id, ctx.principal, body.category,
                                              body.rating, body.comment, utc_now()))
     return {"feedback_id": feedback_id, "status": "recorded",
             "note": "Feedback is stored for offline review. It never changes model or agent behaviour automatically."}
@@ -352,7 +372,8 @@ def audit_events(ctx: AccessContext = Depends(access), rt: Runtime = Depends(run
                  decision: str | None = Query(None, pattern="^(allow|deny)$"),
                  limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
     rt.policy.require(ctx, Action.AUDIT_READ)
-    return {"counts": rt.audit.counts(), "events": rt.audit.recent(limit, decision)}
+    scope = ctx if ctx.workspace else None
+    return {"counts": rt.audit.counts(scope), "events": rt.audit.recent(limit, decision, scope)}
 
 
 def _percentile(values: list[float], pct: float) -> float | None:

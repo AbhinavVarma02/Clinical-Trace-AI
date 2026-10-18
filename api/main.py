@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from api.fhir import router as fhir_router
 from api.middleware import RequestContextMiddleware
 from api.routes import router
-from api.v2 import MissingPersona
+from api.v2 import MissingPersona, WorkspaceRequired
 from api.v2 import router as v2_router
 from src.agent.service import AgentBusy, RunConflict, SessionMismatch
 from src.config import POSITIONING_STATEMENT, PROJECT_ROOT
@@ -82,6 +82,11 @@ def _error(request: Request, status: int, code: str, message: str) -> JSONRespon
 @app.exception_handler(MissingPersona)
 async def _missing_persona(request: Request, exc: MissingPersona) -> JSONResponse:
     return _error(request, 401, "persona_required", str(exc))
+
+
+@app.exception_handler(WorkspaceRequired)
+async def _workspace_required(request: Request, exc: WorkspaceRequired) -> JSONResponse:
+    return _error(request, 400, "workspace_required", str(exc))
 
 
 @app.exception_handler(RequestValidationError)

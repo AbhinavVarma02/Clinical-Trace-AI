@@ -1,6 +1,7 @@
 // App-wide state: persona, theme, selected patient, and a tiny hash router.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, setApiPersona } from "./api";
+import { useAvailability } from "./edge";
 
 export type Theme = "light" | "dark";
 export type RouteName = "overview" | "patients" | "agent" | "risk" | "evidence" | "evaluation" | "operations" | "governance";
@@ -124,14 +125,18 @@ export interface ApiState<T> {
   reload: () => void;
 }
 
-/** Fetch on mount and whenever `key` (or the persona) changes; stale responses are ignored. */
+/**
+ * Fetch on mount and whenever `key` (or the persona) changes; stale responses are ignored.
+ * Data is also refetched when the backend becomes ready again after a cold start or outage.
+ */
 export function useApi<T>(fetcher: () => Promise<T>, key: string, enabled = true): ApiState<T> {
   const { persona } = useApp();
+  const { readyEpoch } = useAvailability();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [nonce, setNonce] = useState(0);
-  const scope = `${persona}:${key}:${nonce}:${enabled}`;
+  const scope = `${persona}:${key}:${nonce}:${enabled}:${readyEpoch}`;
   const [loadedScope, setLoadedScope] = useState("");
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
@@ -163,7 +168,7 @@ export function useApi<T>(fetcher: () => Promise<T>, key: string, enabled = true
     return () => {
       active = false;
     };
-  }, [key, persona, nonce, enabled]);
+  }, [key, persona, nonce, enabled, readyEpoch]);
 
   const current = enabled && loadedScope === scope;
   return { data: current ? data : null, error: current ? error : null,

@@ -8,9 +8,11 @@ cannot choose a bucket. Actual streamed bytes are limited before route parsing.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -27,6 +29,7 @@ logger = logging.getLogger("clinical_trace.http")
 MAX_BODY_BYTES = int(os.getenv("CLINICAL_TRACE_MAX_BODY_BYTES", str(32 * 1024)))
 BODY_TIMEOUT_S = 10.0
 PROTECTED_PREFIXES = ("/api/v2", "/fhir")
+EDGE_CLIENT_PATTERN = re.compile(r"[0-9a-f]{8,64}")
 
 
 class TokenBucketLimiter:
@@ -134,6 +137,16 @@ class RequestContextMiddleware:
                 bucket = "agent" if execution and request.method == "POST" else "default"
                 # Uvicorn may set client from forwarded headers only for configured trusted proxies.
                 peer = request.client.host if request.client else "unknown"
+                edge_secret = os.getenv("CLINICAL_TRACE_EDGE_SECRET", "")
+                if edge_secret and not (request.method == "GET" and path == "/api/v2/system/status"):
+                    # Public deployments accept protected traffic only from their edge, which has already
+                    # applied per-visitor limits; its salted client key then selects the bucket.
+                    if not hmac.compare_digest(request.headers.get("x-edge-secret", ""), edge_secret):
+                        await reject(403, "edge_required", "this deployment only accepts requests through its public edge")
+                        return
+                    edge_client = request.headers.get("x-edge-client", "")
+                    if EDGE_CLIENT_PATTERN.fullmatch(edge_client):
+                        peer = f"edge:{edge_client}"
                 allowed, retry_after = RATE_LIMITER.allow(peer, bucket)
                 if not allowed:
                     await reject(429, "rate_limited", "rate limit exceeded; retry shortly", retry_after)

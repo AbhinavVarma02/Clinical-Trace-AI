@@ -1,7 +1,11 @@
-import { api } from "../api";
+import { useState } from "react";
+import { api, getWorkspaceId, resetWorkspaceId } from "../api";
+import { GuidedCase } from "../components/Availability";
+import { EvidenceSnapshot } from "../components/EvidenceSnapshot";
 import { Icons } from "../components/icons";
 import { Badge, Card, EmptyState, ErrorState, OUTCOME_TONE, Skeleton, Stat, formatDate, humanize, ms, pct } from "../components/ui";
 import { DEMOS } from "../demos";
+import { reloadGuide, resetGuide } from "../guide";
 import { navigate, useApi, useApp } from "../state";
 
 export function OverviewPage() {
@@ -10,6 +14,14 @@ export function OverviewPage() {
   const patients = useApi(api.patients, "patients");
   const recent = useApi(api.recentRuns, "recent");
   const s = status.data;
+  const [workspace, setWorkspace] = useState(getWorkspaceId);
+
+  function newWorkspace() {
+    setWorkspace(resetWorkspaceId());
+    resetGuide();
+    reloadGuide();
+    recent.reload();
+  }
 
   function startDemo(patientId: string, question: string) {
     setPatientId(patientId);
@@ -26,10 +38,9 @@ export function OverviewPage() {
             against cited sources, with explainable readmission risk, human review, and measured quality.
           </p>
         </div>
-        <button type="button" className="btn primary" onClick={() => startDemo(DEMOS[0]!.patientId, DEMOS[0]!.question)}>
-          <Icons.play size={16} /> Start demo
-        </button>
       </div>
+
+      <GuidedCase />
 
       <div className="banner warning" role="note">
         <Icons.alert size={18} />
@@ -37,6 +48,11 @@ export function OverviewPage() {
           <strong>Synthetic, educational prototype.</strong> All patients are generated fixtures. Outputs are decision-support demonstrations, not medical
           advice, and the system is not clinically validated.
         </div>
+      </div>
+
+      <div className="workspace-chip">
+        <span>Private demo workspace <span className="mono">{workspace.slice(0, 8)}</span>: your runs, reviews and audit events are visible only in this browser. No sign-in, no personal data.</span>
+        <button type="button" className="btn ghost sm" onClick={newWorkspace}>Start fresh</button>
       </div>
 
       {status.error && <ErrorState error={status.error} onRetry={status.reload} />}
@@ -78,8 +94,10 @@ export function OverviewPage() {
         </div>
       </Card>
 
+      <EvidenceSnapshot />
+
       <div className="split-wide">
-        <Card title="Recent analysis sessions" subtitle="Runs made with the current persona" flush>
+        <Card title="Recent analysis sessions" subtitle="Runs made with the current persona in this workspace" flush>
           {recent.loading && <div className="card-body"><Skeleton /></div>}
           {recent.error && <ErrorState error={recent.error} onRetry={recent.reload} />}
           {recent.data && recent.data.length === 0 && (

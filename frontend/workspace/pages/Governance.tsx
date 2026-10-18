@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError, api } from "../api";
 import { EvidenceDrawer } from "../components/EvidencePanel";
 import { Badge, Card, EmptyState, ErrorState, REVIEW_TONE, Skeleton, Tabs, formatDate, humanize } from "../components/ui";
+import { markGuideStep } from "../guide";
 import { useApi, useApp } from "../state";
 import type { Evidence, Review } from "../types";
 
@@ -88,7 +89,11 @@ function ReviewDetail({ reviewId, onChanged }: { reviewId: string; onChanged: ()
               <textarea className="textarea" value={comment} maxLength={1000} onChange={(e) => setComment(e.target.value)} />
             </label>
             <div className="row">
-              <button type="button" className="btn success" onClick={() => act(() => api.decide(r.review_id, { decision: "approved", artifact_hash: r.artifact_hash, comment }), "Approved this artifact version.")}>Approve</button>
+              <button type="button" className="btn success" onClick={() => act(async () => {
+                const decided = await api.decide(r.review_id, { decision: "approved", artifact_hash: r.artifact_hash, comment });
+                markGuideStep("approve");
+                return decided;
+              }, "Approved this artifact version.")}>Approve</button>
               <button type="button" className="btn" onClick={() => act(() => api.decide(r.review_id, { decision: "needs_revision", artifact_hash: r.artifact_hash, comment }), "Requested revision.")}>Needs revision</button>
               <button type="button" className="btn danger" onClick={() => act(() => api.decide(r.review_id, { decision: "rejected", artifact_hash: r.artifact_hash, comment }), "Rejected.")}>Reject</button>
             </div>

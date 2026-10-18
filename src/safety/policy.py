@@ -11,6 +11,7 @@ authentication and makes no compliance claim.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
@@ -83,8 +84,47 @@ PERSONAS: dict[str, Persona] = {
 
 @dataclass(frozen=True)
 class AccessContext:
+    """Who is acting. ``workspace`` is an opaque per-visitor scope used by the public demo.
+
+    Ownership is stored as a *principal*: the persona id, plus ``@<tag>`` (a SHA-256 prefix of the
+    workspace) when a workspace is present. The raw workspace value is never stored, so seeing a
+    stored principal does not let anyone act inside that workspace.
+    """
+
     persona: Persona
     request_id: str | None = None
+    workspace: str | None = None
+
+    @property
+    def workspace_tag(self) -> str | None:
+        return hashlib.sha256(self.workspace.encode()).hexdigest()[:20] if self.workspace else None
+
+    @property
+    def principal(self) -> str:
+        tag = self.workspace_tag
+        return f"{self.persona.persona_id}@{tag}" if tag else self.persona.persona_id
+
+
+def principal_tag(principal: str) -> str | None:
+    return principal.split("@", 1)[1] if "@" in principal else None
+
+
+def display_principal(principal: str) -> str:
+    """The persona part of a stored principal (workspace tags are never shown)."""
+    return principal.split("@", 1)[0]
+
+
+def in_scope(context: AccessContext, principal: str) -> bool:
+    """True when a stored principal belongs to the caller's workspace (or both are unscoped)."""
+    return principal_tag(principal) == context.workspace_tag
+
+
+def scope_filter(context: AccessContext, column: str) -> tuple[str, tuple[str, ...]]:
+    """SQL fragment restricting ``column`` (a stored principal) to the caller's workspace."""
+    tag = context.workspace_tag
+    if tag:
+        return f"{column} LIKE ?", (f"%@{tag}",)
+    return f"instr({column}, '@') = 0", ()
 
 
 @dataclass(frozen=True)

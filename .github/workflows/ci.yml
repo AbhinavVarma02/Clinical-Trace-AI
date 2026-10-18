@@ -27,7 +27,7 @@ jobs:
       - name: Type-check response contracts and new persistence/telemetry modules
         run: mypy api/v2_schemas.py src/persistence/metadata.py src/persistence/retention.py src/observability.py --follow-imports=silent --ignore-missing-imports --check-untyped-defs
       - name: Format new modules (preserve legacy formatting)
-        run: ruff format --check evaluation/readmission.py evaluation/readmission_drift.py evaluation/benchmark.py monitoring/drift_report.py src/agent/checkpoints.py src/persistence/metadata.py src/persistence/retention.py src/observability.py api/v2_schemas.py tests/test_agent_recovery.py tests/test_readmission_analysis.py tests/test_drift.py tests/test_retention.py tests/test_http_limits.py tests/test_metadata_contracts.py tests/test_observability.py api/agent_stream.py tests/test_agent_stream.py evaluation/review_agreement.py tests/test_review_agreement.py src/clinical/model_audit.py tests/test_model_audit.py
+        run: ruff format --check evaluation/readmission.py evaluation/readmission_drift.py evaluation/benchmark.py monitoring/drift_report.py src/agent/checkpoints.py src/persistence/metadata.py src/persistence/retention.py src/observability.py api/v2_schemas.py tests/test_agent_recovery.py tests/test_readmission_analysis.py tests/test_drift.py tests/test_retention.py tests/test_http_limits.py tests/test_metadata_contracts.py tests/test_observability.py api/agent_stream.py tests/test_agent_stream.py evaluation/review_agreement.py tests/test_review_agreement.py src/clinical/model_audit.py tests/test_model_audit.py evaluation/evidence_snapshot.py tests/test_public_mode.py tests/test_evidence_snapshot.py
       - name: Tests (includes the offline evaluation gate)
         run: pytest tests/ -q --basetemp="$RUNNER_TEMP/pytest"
       - name: Offline agent evaluation report
@@ -68,6 +68,34 @@ jobs:
             frontend/playwright-report/
             frontend/test-results/
           retention-days: 7
+
+  edge:
+    name: Edge Worker typecheck, tests, deploy dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            deploy/cloudflare/package-lock.json
+      - name: Build the workspace served by the edge
+        working-directory: frontend
+        run: npm ci && npm run build:workspace
+      - name: Install edge tooling
+        working-directory: deploy/cloudflare
+        run: npm ci
+      - name: Typecheck and unit tests
+        working-directory: deploy/cloudflare
+        run: npm run check
+      - name: Bundle and validate bindings without publishing
+        working-directory: deploy/cloudflare
+        run: npm run deploy:dry-run
+      - name: Edge dependency audit (high severity)
+        working-directory: deploy/cloudflare
+        run: npm audit --audit-level=high
 
   security:
     name: Secret and dependency scanning

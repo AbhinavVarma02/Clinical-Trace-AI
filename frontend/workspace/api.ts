@@ -36,15 +36,82 @@ export function setApiPersona(persona: string): void {
   currentPersona = persona;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
+/** Errors meaning "the backend is starting or briefly unreachable", which recover on their own. */
+export const TRANSIENT_CODES = new Set(["backend_waking", "backend_unavailable", "backend_timeout", "network_error"]);
+
+export function isTransient(error: ApiError | null | undefined): boolean {
+  return Boolean(error && TRANSIENT_CODES.has(error.code));
+}
+
+let transientListener: ((code: string) => void) | null = null;
+
+/** The availability monitor subscribes so a failed request immediately speeds up status polling. */
+export function setTransientListener(listener: ((code: string) => void) | null): void {
+  transientListener = listener;
+}
+
+function newWorkspaceId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+let workspaceId: string | null = null;
+
+/**
+ * Opaque, random per-browser workspace. Public deployments keep each visitor's runs, reviews and
+ * audit trail separate by this value; it is not an account and carries no personal data.
+ */
+export function getWorkspaceId(): string {
+  if (workspaceId) return workspaceId;
+  try {
+    const stored = window.localStorage.getItem("ct-workspace");
+    if (stored && /^[a-f0-9]{32}$/.test(stored)) workspaceId = stored;
+  } catch {
+    // Storage unavailable: the workspace then lasts for this page load only.
+  }
+  if (!workspaceId) {
+    workspaceId = newWorkspaceId();
+    try {
+      window.localStorage.setItem("ct-workspace", workspaceId);
+    } catch {
+      // Ignore; see above.
+    }
+  }
+  return workspaceId;
+}
+
+/** Start a fresh private workspace (previous runs and reviews stay on the server but become unreachable). */
+export function resetWorkspaceId(): string {
+  workspaceId = newWorkspaceId();
+  try {
+    window.localStorage.setItem("ct-workspace", workspaceId);
+  } catch {
+    // Ignore.
+  }
+  return workspaceId;
+}
+
+function baseHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
   headers.set("X-Demo-Persona", currentPersona);
+  headers.set("X-Demo-Workspace", getWorkspaceId());
+  return headers;
+}
+
+function failure(error: ApiError): ApiError {
+  if (TRANSIENT_CODES.has(error.code)) transientListener?.(error.code);
+  return error;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = baseHeaders(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
   let response: Response;
   try {
     response = await fetch(`/api/v2${path}`, { ...init, headers });
   } catch {
-    throw new ApiError(0, "network_error", "The API could not be reached. Check that the server is running.");
+    throw failure(new ApiError(0, "network_error", "The API could not be reached. Check your connection; the workspace retries automatically."));
   }
   if (!response.ok) {
     let body: ApiErrorBody = {};
@@ -56,7 +123,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const message =
       body.error?.message ??
       (response.status === 422 ? "The request was not valid. Check the input and try again." : `Request failed (HTTP ${response.status}).`);
-    throw new ApiError(response.status, body.error?.code ?? `http_${response.status}`, message, body.error?.request_id);
+    throw failure(new ApiError(response.status, body.error?.code ?? `http_${response.status}`, message, body.error?.request_id));
   }
   return (await response.json()) as T;
 }
@@ -75,15 +142,21 @@ async function runAgentStream(
   body: { patient_id: string; question: string; session_id?: string | null },
   onProgress: (event: AgentProgress) => void,
 ): Promise<AgentRun> {
+  const headers = baseHeaders({ "Content-Type": "application/json" });
   const response = await fetch("/api/v2/agent/runs/stream", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Demo-Persona": currentPersona },
+    headers,
     body: JSON.stringify(body),
-  }).catch(() => { throw new ApiError(0, "network_error", "The API could not be reached. Check that the server is running."); });
+  }).catch(() => { throw failure(new ApiError(0, "network_error", "The API could not be reached. Check your connection and try again.")); });
   if (!response.ok) {
-    const error = await response.json() as ApiErrorBody;
-    throw new ApiError(response.status, error.error?.code ?? "stream_error",
-      error.error?.message ?? "Execution could not start.", error.error?.request_id);
+    let error: ApiErrorBody = {};
+    try {
+      error = await response.json() as ApiErrorBody;
+    } catch {
+      // Non-JSON error body.
+    }
+    throw failure(new ApiError(response.status, error.error?.code ?? "stream_error",
+      error.error?.message ?? "Execution could not start.", error.error?.request_id));
   }
   if (!response.body) throw new ApiError(0, "stream_unavailable", "Streaming is unavailable in this browser.");
   const reader = response.body.getReader();
