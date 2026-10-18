@@ -45,7 +45,14 @@ export function Shell({ children }: { children: ReactNode }) {
       <a href="#main" className="sr-only">Skip to content</a>
       <aside className="sidebar" data-open={menuOpen} aria-label="Primary">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true">CT</div>
+          <span className="brand-mark" aria-hidden="true">
+            {/* A record trace that ends in a cited point: the product in one glyph. */}
+            <svg viewBox="0 0 32 32" focusable="false">
+              <rect width="32" height="32" rx="8" fill="currentColor" />
+              <path d="M6.5 17.5h4l2.5-6.5 4 12 2.75-8.25 1.5 2.75h3.25" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="25.5" cy="17.5" r="1.9" fill="#fff" />
+            </svg>
+          </span>
           <div>
             <div className="brand-name">Clinical-Trace AI</div>
             <div className="brand-sub">Evidence-grounded record review</div>
@@ -71,7 +78,8 @@ export function Shell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="sidebar-footer">
-          <strong style={{ color: "var(--text)" }}>Synthetic data only.</strong> Not clinically validated. Not for medical use.
+          <Icons.alert size={14} />
+          <div><strong>Synthetic data only.</strong> Not clinically validated. Not for medical use.</div>
         </div>
       </aside>
       {menuOpen && <div className="drawer-backdrop" style={{ zIndex: 45 }} onClick={() => setMenuOpen(false)} />}
@@ -80,7 +88,11 @@ export function Shell({ children }: { children: ReactNode }) {
           <button type="button" className="btn icon ghost menu-button" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
             <Icons.menu />
           </button>
-          <div className="topbar-title">{current?.label}</div>
+          <div className="topbar-title">
+            <span className="topbar-crumb hide-mobile">Workspace</span>
+            <span className="topbar-sep hide-mobile" aria-hidden="true">/</span>
+            <span className="topbar-page">{current?.label}</span>
+          </div>
           <div className="topbar-spacer" />
           {/* On phones the availability banner carries the same state; keep the bar uncluttered. */}
           <span className="hide-mobile"><AvailabilityPill /></span>

@@ -179,7 +179,7 @@ export function AgentPage() {
         )}
         {error && <Card><ErrorState error={error} onRetry={allowance.blocked ? undefined : () => setError(null)} /></Card>}
         <div ref={endRef} />
-        <form className="card" onSubmit={onSubmit} style={{ position: "sticky", bottom: 12 }}>
+        <form className="card composer" onSubmit={onSubmit}>
           <div className="card-body stack" style={{ gap: 10 }}>
             <label className="sr-only" htmlFor="question">Question</label>
             <textarea
