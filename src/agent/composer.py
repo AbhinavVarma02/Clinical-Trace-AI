@@ -148,8 +148,17 @@ def _lab_claims(result: ToolResult) -> list[dict[str, Any]]:
 
 
 def _missing_claims(result: ToolResult) -> list[dict[str, Any]]:
-    return [_claim(f"Documentation gap: {e.text}", [e.evidence_id], "missing_information")
-            for e in result.evidence]
+    checks = [e for e in result.evidence if e.evidence_id.startswith("check:")]
+    sources = [e for e in result.evidence if not e.evidence_id.startswith("check:")]
+    findings = result.data if isinstance(result.data, list) and len(result.data) == len(checks) else []
+    claims = []
+    for index, check in enumerate(checks):
+        finding = findings[index] if findings else {}
+        refs = {s["reference"] for s in finding.get("sources") or []}
+        cited = list(dict.fromkeys(s.evidence_id for s in sources if s.source_ref in refs))
+        claims.append(_claim(f"Documentation gap: {check.text}", [check.evidence_id] + cited,
+                             "missing_information"))
+    return claims
 
 
 def _inconsistency_claims(result: ToolResult) -> list[dict[str, Any]]:
@@ -257,8 +266,12 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
             draft.uncertainty.append(unavailable)
             if intents == ["risk"]:
                 draft.abstain_reason = unavailable
+    # Only a documentation gap's own check marks a source as covered. Its supporting citations (for example
+    # the note that states a date) must not stop other sections of that note from being quoted.
     structured_sources = {
-        ref for claim in draft.claims for ref in _sources_of(claim["citations"], results)
+        ref for claim in draft.claims
+        for ref in _sources_of(claim["citations"][:1] if claim["kind"] == "missing_information"
+                               else claim["citations"], results)
     }
     quotes, flagged = _extract_claims(question, ok.get("retrieve_clinical_notes"), structured_sources)
     draft.claims.extend(quotes)

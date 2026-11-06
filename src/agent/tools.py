@@ -265,6 +265,11 @@ def _missing(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
             source_ref=source["reference"], source_version=str(source.get("version") or "current"),
             text=finding["message"], kind="completeness_check", title=finding["category"],
         ))
+        # A finding that involves several resources lists them all so its claim can cite each one.
+        for cited in finding.get("sources") or []:
+            evidence.append(_evidence(ctx, cited, f"{cited['title']} ({_date(cited['date'])}): "
+                                                  f"\"{cited['excerpt']}\"", "completeness_check",
+                                      cited["title"], cited["date"]))
     return findings, evidence
 
 

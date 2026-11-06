@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.clinical.consistency import encounter_documentation_gaps
 from src.clinical.fhir_models import (
     decode_attachment,
     display_text,
@@ -298,4 +299,6 @@ class ClinicalRecords:
                     findings.append({"category": "note_incomplete", "severity": "medium",
                                      "message": f"'{doc['title']}' contains the phrase \"{marker}\".",
                                      "source": doc["source"]})
+        # Last, so the positions (and check ids) of the findings above never change.
+        findings.extend(encounter_documentation_gaps(self, patient_id))
         return findings
