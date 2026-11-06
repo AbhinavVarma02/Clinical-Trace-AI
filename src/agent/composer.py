@@ -202,9 +202,21 @@ def _risk_claims(prediction: ToolResult | None, explanation: ToolResult | None) 
     return claims, caveats, None
 
 
+def _quotable(item: EvidenceItem, require: frozenset[str]) -> list[str]:
+    """Sentences of a retrieved chunk that may be quoted: no instruction-like text, and a required token if any."""
+    body = item.text.split("): ", 1)[1] if "): " in item.text else item.text
+    sentences = [s.strip() for s in SENTENCE.split(body) if s.strip()]
+    if item.flags:
+        sentences = [s for s in sentences if not flag_content(s)]
+    if require:
+        sentences = [s for s in sentences if require & set(tokenize(s))]
+    return sentences
+
+
 def _extract_claims(
     question: str, result: ToolResult | None, skip_sources: set[str], limit: int = 3,
     ignore: frozenset[str] = frozenset(), require: frozenset[str] = frozenset(),
+    status_drugs: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, Any]], int]:
     """Quote the best-matching sentence from each lexically relevant retrieved chunk.
 
@@ -213,33 +225,34 @@ def _extract_claims(
     claim are skipped to avoid restating the same fact. ``ignore`` (opt-in) drops
     generic question words and one-letter tokens from the match; ``require``
     (opt-in) makes only sentences containing one of those tokens quotable.
+    ``status_drugs`` (opt-in) quotes every sentence holding a documented status
+    entry for those drugs instead of the best match, and quotes such chunks first.
     """
     if result is None or not result.ok:
         return [], 0
     query = set(tokenize(question))
     if ignore:
         query = {t for t in query if len(t) > 1 and t not in ignore}
+    items = [item for item in result.evidence
+             if item.source_ref not in skip_sources and item.scores and item.scores.get("bm25")]
+    if status_drugs:  # a stable sort: the quote limit can no longer drop a lower-ranked status entry
+        items.sort(key=lambda item: not _status_sentences(_quotable(item, require), status_drugs))
     claims = []
     flagged = 0
-    for item in result.evidence:
-        if item.source_ref in skip_sources:
-            continue
-        if not item.scores or not item.scores.get("bm25"):
-            continue
-        body = item.text.split("): ", 1)[1] if "): " in item.text else item.text
-        sentences = [s.strip() for s in SENTENCE.split(body) if s.strip()]
-        if item.flags:
-            flagged += 1
-            sentences = [s for s in sentences if not flag_content(s)]
-        if require:
-            sentences = [s for s in sentences if require & set(tokenize(s))]
-        scored = [(len(query & set(tokenize(s))), s) for s in sentences]
-        overlap, best = max(scored, key=lambda pair: pair[0], default=(0, ""))
-        if not best or overlap == 0:
-            continue
-        claims.append(_claim(f"{item.title} ({d(item.date)}): \"{best}\"", [item.evidence_id], "quote"))
-        if len(claims) >= limit:
-            break
+    for item in items:
+        flagged += bool(item.flags)
+        sentences = _quotable(item, require)
+        picked = _status_sentences(sentences, status_drugs)
+        if not picked:
+            scored = [(len(query & set(tokenize(s))), s) for s in sentences]
+            overlap, best = max(scored, key=lambda pair: pair[0], default=(0, ""))
+            if not best or overlap == 0:
+                continue
+            picked = [best]
+        for sentence in picked:
+            claims.append(_claim(f"{item.title} ({d(item.date)}): \"{sentence}\"", [item.evidence_id], "quote"))
+            if len(claims) >= limit:
+                return claims, flagged
     return claims, flagged
 
 
@@ -285,12 +298,40 @@ CURRENT_QUESTION = re.compile(r"\b(still|currently|current|now|presently|today|a
 REASON_MARKER = re.compile(r"\b(because|due to|owing to|secondary to|as a result of|in view of|in order to|"
                            r"reasons?)\b", re.I)
 NOTE_ENTRY = re.compile(r"\s-\s|;|\n|\.\s")  # one list item or clause of a quoted note sentence
+# A status question (a named drug, no asked event or dose) is answered first from the drug's documented status
+# entries. Only past-tense words document a status, so a plan or a condition ("hold furosemide if ...") does not.
+DOCUMENTED_STATUS = re.compile(r"\b(stopped|discontinued|ceased|held|started|restarted|resumed|initiated|continued|"
+                               r"changed|increased|decreased|reduced|switched|titrated|adjusted)\b", re.I)
+DOCUMENTED_STOP = re.compile(r"\b(stopped|discontinued|ceased|held)\b", re.I)
+DOCUMENTED_ONGOING = re.compile(r"\b(started|restarted|resumed|initiated|continued)\b", re.I)
+STOP_NOTE = ("The cited note ({date}) documents that {drug} was stopped. A documented stop is note text, not a "
+             "verified current medication status; current medication status is unverified.")
+CONFLICT_NOTE = ("The cited notes record more than one status for {drug} (a stop and a start or continuation); the "
+                 "record does not establish which is current. Current medication status is unverified.")
+CONTEXT_NOTE = ("Other cited passages mention {drug} without a documented status; each reflects only the time its "
+                "note was written and does not establish current use.")
 
 
 def _named_drugs(question: str) -> list[str]:
     """Specific medications the question names (the planner's medication vocabulary, generic words excluded)."""
     return list(dict.fromkeys(m.lower() for m in MEDICATION_NAMES.findall(question)
                               if m.lower() not in GENERIC_MEDICATION_WORDS))
+
+
+def _status_drugs(question: str) -> list[str]:
+    """Drugs a status question names: a named drug, with no asked event (stop/start/change) and no asked dose."""
+    if any(pattern.search(question) for pattern in MEDICATION_EVENTS.values()) or DOSE_QUESTION.search(question):
+        return []
+    return _named_drugs(question)
+
+
+def _status_entries(text: str, drug: str) -> list[str]:
+    """Entries of a quote that name the drug with a documented (past-tense) status."""
+    return [entry for entry in NOTE_ENTRY.split(text.lower()) if drug in entry and DOCUMENTED_STATUS.search(entry)]
+
+
+def _status_sentences(sentences: list[str], drugs: tuple[str, ...]) -> list[str]:
+    return [s for s in sentences if any(_status_entries(s, drug) for drug in drugs)]
 
 
 def _no_medication_orders(results: dict[str, ToolResult]) -> bool:
@@ -353,6 +394,7 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
     _note(draft, MEDICATION_COVERAGE[coverage])
     _note(draft, NOTE_TEXT_CAVEAT)
     dates = {e.evidence_id: e.date for r in results.values() for e in r.evidence}
+    status = _status_drugs(question)
     for drug in drugs:
         supporting = [(c, _entries(c["text"], drug, events, dose)) for c in quotes]
         supporting = [(c, entries) for c, entries in supporting if entries]
@@ -366,10 +408,22 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
                              "the reason is unknown.")
             else:
                 _note(draft, f"The cited note mentions {drug} but does not state why; the reason is unknown.")
-        if CURRENT_QUESTION.search(question):
+        # A status question: a documented stop is reported as note text, never as verified current status, and
+        # a stop next to a start or continuation is reported without choosing between them.
+        mentions = [c for c, _ in supporting] if drug in status else []
+        entries = [(c, entry) for c in mentions for entry in _status_entries(c["text"], drug)]
+        stopped = [c for c, entry in entries if DOCUMENTED_STOP.search(entry)]
+        ongoing = [c for c, entry in entries if DOCUMENTED_ONGOING.search(entry) and not DOCUMENTED_STOP.search(entry)]
+        if stopped and ongoing:
+            _note(draft, CONFLICT_NOTE.format(drug=drug))
+        elif stopped:
+            _note(draft, STOP_NOTE.format(date=max(d(dates.get(c["citations"][0])) for c in stopped), drug=drug))
+        elif CURRENT_QUESTION.search(question):
             latest = max(d(dates.get(c["citations"][0])) for c, _ in supporting)
             _note(draft, f"The cited note ({latest}) documents {drug} only as of that date; it does not establish "
                          "current use. Current medication status is unverified.")
+        if entries and any(not _status_entries(c["text"], drug) for c in mentions):
+            _note(draft, CONTEXT_NOTE.format(drug=drug))
 
 
 # ------------------------------------------------------------- deterministic
@@ -409,7 +463,8 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     # merely shares another question word (e.g. "doses") cannot displace the drug's own note entry.
     named = frozenset(t for drug in _named_drugs(question) for t in tokenize(drug)) if zero_orders else frozenset()
     quotes, flagged = _extract_claims(question, ok.get("retrieve_clinical_notes"), structured_sources,
-                                      ignore=GENERIC_QUESTION_WORDS if zero_orders else frozenset(), require=named)
+                                      ignore=GENERIC_QUESTION_WORDS if zero_orders else frozenset(), require=named,
+                                      status_drugs=tuple(_status_drugs(question)) if zero_orders else ())
     draft.claims.extend(quotes)
     if flagged:
         draft.uncertainty.append(

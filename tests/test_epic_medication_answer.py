@@ -153,3 +153,49 @@ def test_the_documentation_gap_keeps_its_wording_and_gains_the_import_scope(meds
     gaps = [c["text"] for c in result["answer"]["claims"] if c["kind"] == "missing_information"]
     assert "Documentation gap: No medication orders are recorded for this patient." in gaps
     assert NOT_IMPORTED in result["answer"]["uncertainty"]
+
+
+# L1 on the Epic pathway: as in the LIVE G3b snapshot, the Discharge Summary mentions IV furosemide before its
+# STOPPED entry, and a Consult with the same note date mentions "his current furosemide".
+STATUS_DS_SOURCE = "DocumentReference/eStatusDischarge2026"
+STATUS_CONSULT_SOURCE = "DocumentReference/eStatusConsult2026"
+STATUS_DS_HTML = ("<html><body><p>HOSPITAL DISCHARGE SUMMARY</p><p>He received IV furosemide with brisk diuresis over "
+                  "the admission.</p><p>MEDICATION CHANGES THIS ADMISSION - STOPPED: furosemide 40 mg daily - STARTED: "
+                  "torsemide 40 mg daily - CONTINUED: metformin 1000 mg twice daily</p></body></html>")
+STATUS_CONSULT_HTML = ("<html><body><p>Nephrology Consultation Note</p><p>He describes variable urine output on his "
+                       "current furosemide 40 mg daily.</p></body></html>")
+
+
+@pytest.fixture(scope="module")
+def status_meds(tmp_path_factory):
+    patcher = pytest.MonkeyPatch()
+    patcher.setattr(settings, "REPO_ROOT", tmp_path_factory.mktemp("medication-status-repo"))
+    patcher.delenv("CLINICAL_TRACE_DB_PATH", raising=False)
+    pid, resources, binaries = fixture_patient()
+    resources += [_note(pid, "eStatusDischarge2026", "18842-5", "Discharge Summary", "2026-11-02T05:03:06Z",
+                        "Binary/eStatusDischargeBin"),
+                  _note(pid, "eStatusConsult2026", "11488-4", "Consults", "2026-11-02T05:03:06Z",
+                        "Binary/eStatusConsultBin")]
+    for ref, html in (("Binary/eStatusDischargeBin", STATUS_DS_HTML), ("Binary/eStatusConsultBin", STATUS_CONSULT_HTML)):
+        binaries[ref] = BinaryContent(reference=ref, content_type="text/html", data=html.encode())
+    snapshot = workspace.write_snapshot(pid, resources, binaries, retrieved_at=RETRIEVED_AT, mode="MOCK",
+                                       snapshot_id="medication-status-01")
+    runtime = workspace.load_runtime(snapshot.path)
+    yield snapshot, runtime, snapshot.patient_ids[0]
+    runtime.close()
+    patcher.undo()
+
+
+def test_a_status_question_quotes_the_stopped_entry_first_and_keeps_the_consult_mention(status_meds):
+    result, evidence = _run(status_meds, "Is the patient currently taking furosemide?")
+    assert result["outcome"] == "answered"
+    sources = _quote_sources(status_meds, result, evidence)
+    assert sources[0][0] == STATUS_DS_SOURCE and "STOPPED: furosemide 40 mg daily" in sources[0][1]
+    assert any(src == STATUS_CONSULT_SOURCE and "his current furosemide 40 mg daily" in text for src, text in sources)
+    assert result["answer"]["uncertainty"] == [
+        NONE, NOT_IMPORTED, CAVEAT,
+        "The cited note (2026-11-02) documents that furosemide was stopped. A documented stop is note text, not a "
+        "verified current medication status; current medication status is unverified.",
+        "Other cited passages mention furosemide without a documented status; each reflects only the time its note "
+        "was written and does not establish current use.",
+    ]

@@ -10,6 +10,10 @@ The answer keeps three things apart:
 A question about a specific drug is answered only from a note entry for that drug that documents the asked
 event; otherwise it abstains with an explanation. A documented stop does not give its reason, and a historical
 entry does not give current use: both unanswered parts are stated. Records with orders are unchanged.
+
+A status question ("Is the patient currently taking furosemide?") quotes the drug's documented status entry first,
+keeps the other mentions, labels a documented stop as note text rather than verified current status, and never
+chooses between conflicting statuses (L1).
 """
 
 from __future__ import annotations
@@ -263,3 +267,144 @@ def test_the_gap_answer_carries_a_declared_coverage_note_only(rt):
     assert NOT_IMPORTED in declared["answer"]["uncertainty"]
     undeclared = ask(rt, "Is any documentation missing?")
     assert not any(s in notes_of(undeclared) for s in (NOT_IMPORTED, RETURNED_NONE, UNDECLARED))
+
+
+# ------------------------------------------------------------------------- status questions (L1)
+# Invented records shaped like the LIVE G3b case: in the Discharge Summary a narrative furosemide sentence comes
+# before the STOPPED entry, and a Consult mentioning "his current furosemide" has the same note date.
+STATUS_DS = ("He received IV furosemide with brisk diuresis over the admission. "
+             "MEDICATION CHANGES THIS ADMISSION - STOPPED: furosemide 40 mg daily - STARTED: torsemide 40 mg daily - "
+             "CONTINUED: metformin 1000 mg twice daily")
+STATUS_CONSULT = ("He describes variable urine output on his current furosemide 40 mg daily. "
+                  "Variable response on oral furosemide is consistent with gut edema.")
+STATUS_MENTIONS = ("Furosemide was discussed with the patient at length.", "He asked about furosemide side effects.",
+                   "Furosemide timing was reviewed with pharmacy.", "Family asked about furosemide.")
+STATUS_PATIENTS = {
+    "synthetic_l1same": [("l1-same-ds", STATUS_DS, "Discharge Summary", "2026-11-02T05:03:06Z"),
+                         ("l1-same-consult", STATUS_CONSULT, "Consults", "2026-11-02T05:03:06Z")],
+    "synthetic_l1rank": [("l1-rank-ds", STATUS_DS, "Discharge Summary", "2026-08-07T12:00:00Z")]
+                        + [(f"l1-rank-m{i}", text, "Progress Notes", f"2026-09-0{i + 1}T09:00:00Z")
+                           for i, text in enumerate(STATUS_MENTIONS)],
+    "synthetic_l1conflict": [("l1-conflict-ds", STATUS_DS, "Discharge Summary", "2026-08-07T12:00:00Z"),
+                             ("l1-conflict-pn", "Progress note: volume overload recurred; furosemide restarted at "
+                              "20 mg daily.", "Progress Notes", "2026-09-01T09:00:00Z")],
+    "synthetic_l1prose": [("l1-prose-pn", "Progress note: furosemide was discontinued after the creatinine rise.",
+                           "Progress Notes", "2026-09-01T09:00:00Z"),
+                          ("l1-prose-consult", STATUS_CONSULT, "Consults", "2026-08-01T09:00:00Z")],
+    "synthetic_l1hold": [("l1-hold-pn", "Plan: hold furosemide if systolic pressure is below 90.", "Progress Notes",
+                          "2026-09-01T09:00:00Z")],
+    "synthetic_l1plain": [("l1-plain-consult", STATUS_CONSULT, "Consults", "2026-08-01T09:00:00Z")],
+}
+STATUS_QUESTIONS = ("Is the patient currently taking furosemide?", "Is the patient still on furosemide?",
+                    "Is the patient taking furosemide?")
+OTHER_DRUG_QUESTIONS = ("Was furosemide stopped?", "Why was furosemide stopped?", "When was furosemide started?",
+                        "What dose of furosemide is documented?", "What medications are documented?")
+STOP = ("The cited note ({date}) documents that furosemide was stopped. A documented stop is note text, not a verified "
+        "current medication status; current medication status is unverified.")
+CONFLICT = ("The cited notes record more than one status for furosemide (a stop and a start or continuation); the "
+            "record does not establish which is current. Current medication status is unverified.")
+CONTEXT = ("Other cited passages mention furosemide without a documented status; each reflects only the time its note "
+           "was written and does not establish current use.")
+AS_OF = ("The cited note ({date}) documents furosemide only as of that date; it does not establish current use. "
+         "Current medication status is unverified.")
+
+
+@pytest.fixture()
+def status_rt(tmp_path):
+    resources = [patient(pid) for pid in STATUS_PATIENTS]
+    resources += [note(did, text, title, date, pid=pid)
+                  for pid, notes in STATUS_PATIENTS.items() for did, text, title, date in notes]
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps({"resourceType": "Bundle", "type": "collection",
+                                  "entry": [{"resource": r} for r in resources]}), encoding="utf-8")
+    runtime = build_runtime(":memory:", fixture=bundle, provider=None, enable_model=False)
+    yield runtime
+    runtime.close()
+
+
+@pytest.mark.parametrize("question", STATUS_QUESTIONS)
+def test_a_status_question_quotes_the_documented_stop_first_and_keeps_the_other_mentions(status_rt, question):
+    # L1: three furosemide sentences tie on word overlap; the earliest used to win and the STOPPED entry was lost.
+    result = ask(status_rt, question, pid="synthetic_l1same", coverage="not_imported")
+    assert result["outcome"] == "answered"
+    texts = [q["text"] for q in quotes(result)]
+    assert "STOPPED: furosemide 40 mg daily" in texts[0]
+    assert any("his current furosemide 40 mg daily" in t for t in texts)  # the other mention is kept
+    assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT, STOP.format(date="2026-11-02"), CONTEXT]
+    assert AS_OF.format(date="2026-11-02") not in notes_of(result)
+
+
+def test_a_stop_entry_in_a_lower_ranked_note_is_still_quoted(status_rt):
+    # Four plain mentions outrank the Discharge Summary; the 3-quote limit used to drop its STOPPED entry.
+    result = ask(status_rt, "Is the patient currently taking furosemide?", pid="synthetic_l1rank")
+    texts = [q["text"] for q in quotes(result)]
+    assert len(texts) == 3 and "STOPPED: furosemide 40 mg daily" in texts[0]
+    assert sum(any(m in t for m in STATUS_MENTIONS) for t in texts) == 2  # the remaining slots keep the mentions
+    assert result["answer"]["uncertainty"] == [NONE, UNDECLARED, CAVEAT, STOP.format(date="2026-08-07"), CONTEXT]
+
+
+def test_conflicting_statuses_are_both_quoted_and_neither_is_chosen(status_rt):
+    result = ask(status_rt, "Is the patient currently taking furosemide?", pid="synthetic_l1conflict",
+                 coverage="not_imported")
+    texts = [q["text"] for q in quotes(result)]
+    assert any("STOPPED: furosemide 40 mg daily" in t for t in texts)
+    assert any("furosemide restarted at 20 mg daily" in t for t in texts)
+    assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT, CONFLICT]
+
+
+def test_a_stop_written_as_prose_is_also_a_documented_stop(status_rt):
+    result = ask(status_rt, "Is the patient taking furosemide?", pid="synthetic_l1prose", coverage="not_imported")
+    texts = [q["text"] for q in quotes(result)]
+    assert "furosemide was discontinued after the creatinine rise." in texts[0]
+    assert any("his current furosemide 40 mg daily" in t for t in texts)
+    assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT, STOP.format(date="2026-09-01"), CONTEXT]
+
+
+@pytest.mark.parametrize("pid, date", [("synthetic_l1hold", "2026-09-01"), ("synthetic_l1plain", "2026-08-01")])
+def test_without_a_documented_status_the_answer_is_unchanged(status_rt, pid, date):
+    # A conditional instruction ("hold ... if") is not a documented stop, and plain mentions get today's notes only.
+    result = ask(status_rt, "Is the patient currently taking furosemide?", pid=pid, coverage="not_imported")
+    assert result["outcome"] == "answered"
+    assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT, AS_OF.format(date=date)]
+    # Isolation: other patients' STOPPED and restarted entries are never quoted.
+    assert not any("STOPPED" in q["text"] or "restarted" in q["text"] for q in quotes(result))
+
+
+def test_the_status_rule_changes_only_status_questions_on_entries_with_a_documented_status(status_rt, runtime,
+                                                                                          monkeypatch):
+    access = AccessContext(PERSONAS["clinician.demo"])
+
+    def answers():
+        out = {}
+        for pid in STATUS_PATIENTS:
+            for question in STATUS_QUESTIONS + OTHER_DRUG_QUESTIONS:
+                r = ask(status_rt, question, pid=pid, coverage="not_imported")
+                out[(pid, question)] = (r["outcome"], r["answer"]["claims"], r["answer"]["uncertainty"],
+                                        r["answer"]["abstain_reason"])
+        for pid in ("synthetic_p001", "synthetic_p002", "synthetic_p003", "synthetic_p004"):  # synthetic demo
+            for question in STATUS_QUESTIONS + ("Is the patient still on metformin?", "Is the patient taking insulin?",
+                                                "Is the patient still on warfarin?"):
+                r = runtime.agent.run(access, pid, question)
+                out[(pid, question)] = (r["outcome"], r["answer"]["claims"], r["answer"]["uncertainty"],
+                                        r["answer"]["abstain_reason"])
+        return out
+
+    current = answers()
+    monkeypatch.setattr(composer, "_status_drugs", lambda question: [])
+    without = answers()
+    changed = {key for key in current if current[key] != without[key]}
+    assert changed == {(pid, q) for pid in ("synthetic_l1same", "synthetic_l1rank", "synthetic_l1conflict",
+                                            "synthetic_l1prose") for q in STATUS_QUESTIONS}
+
+
+def test_status_notes_invent_nothing(status_rt):
+    for pid in STATUS_PATIENTS:
+        for question in STATUS_QUESTIONS:
+            result = ask(status_rt, question, pid=pid, coverage="not_imported")
+            assert all(c["kind"] == "quote" for c in result["answer"]["claims"])  # quotes are the only claims
+            cited_text = " ".join(e["text"] for e in result["evidence"] if e["cited"])
+            for claim in result["answer"]["claims"]:
+                assert all(dose in cited_text for dose in DOSE.findall(claim["text"]))
+            notes = notes_of(result)
+            assert not DOSE.search(notes)
+            assert not re.search(r"\b(is|are|was) (not )?(taking|on)\b|\bno longer\b|\bbecause\b|\bdue to\b", notes)

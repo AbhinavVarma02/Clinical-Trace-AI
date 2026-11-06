@@ -28,6 +28,7 @@
   - Note passages that mention medications are quoted verbatim, labelled as note text rather than verified orders.
   - An uncited note says that no orders are recorded and gives the import coverage the data source declared.
   - A question about a specific drug is answered only from a note entry that documents the asked event; otherwise it abstains with an explanation.
+  - A question about whether a drug is taken quotes that drug's documented status entry first (for example "STOPPED: furosemide 40 mg daily") and keeps its other mentions. A documented stop is labelled as note text, not verified current status, and a stop next to a restart or continuation is reported without choosing one. Only past-tense status words count, and only the retrieved passages are searched.
   - No reason, current status or dose is inferred.
   - Drug names outside the planner's medication vocabulary (for example apixaban) are not recognised as medication questions.
 - Actual progress is streamed; clinical answer text is returned only after verification. Durable SQLite checkpoints support explicit compatible restart recovery. Cancellation is cooperative between nodes, not a forced interruption of running Python code.
