@@ -126,7 +126,7 @@ def _run_dashboard_prediction(monkeypatch, disabled: bool):
         monkeypatch.delenv(shap_explorer.DISABLE_ENV_VAR, raising=False)
     monkeypatch.setattr(shap_explorer, "explorer_available", lambda: not disabled)
 
-    app = AppTest.from_file("dashboard/app.py", default_timeout=120)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard" / "app.py"), default_timeout=120)
     app.run()
     app.button(key="FormSubmitter:patient_risk_simulator-Run risk simulation").click().run()
     app.radio(key="active_section").set_value("Explainability").run()
