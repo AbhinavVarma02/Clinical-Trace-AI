@@ -60,7 +60,7 @@ python -m src.interop.epic.cli keys generate
 - This writes `<kid>.pem` and `<kid>.jwks.json` to `%USERPROFILE%\.clinical-trace\epic\keys\`. The tool refuses any path inside the repository and never overwrites a key.
 - Set a passphrase in the session first (`EPIC_SANDBOX_KEY_PASSPHRASE`), or answer the prompt. Never put the passphrase in a file.
 - `kid` is the RFC 7638 thumbprint, and the algorithm is RS384.
-- Restrict the file to your account. On Windows: `icacls "<path>" /inheritance:r /grant:r "%USERNAME%:R"`.
+- Restrict the file to your account. On Windows: `icacls "<path>" /inheritance:r /grant:r "<your account>:F"`. The tool prints this with your account name filled in. Full control lets you delete the key during rotation.
 
 **Publish only the public file:**
 - Use a dedicated orphan branch `epic-jwks` containing `.nojekyll`, `jwks.json` and a short README.

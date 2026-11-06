@@ -127,7 +127,10 @@ def key_file_permission_advice(path: str | Path) -> str | None:
     """Best-effort advice when the key file may be readable by other accounts."""
     target = Path(path)
     if os.name == "nt":
-        return f'restrict the key file to your account: icacls "{target}" /inheritance:r /grant:r "%USERNAME%:R"'
+        # Name the account explicitly: %USERNAME% is not expanded by PowerShell. Full control (not read-only)
+        # keeps the owner able to delete the key during rotation.
+        user = os.environ.get("USERNAME") or "<your Windows account>"
+        return f'restrict the key file to your account: icacls "{target}" /inheritance:r /grant:r "{user}:F"'
     if target.stat().st_mode & 0o077:
         return f'the key file is readable by other users: chmod 600 "{target}"'
     return None
