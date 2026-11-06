@@ -367,7 +367,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit({"ok": False, "error": str(exc)})
         return 2
     except (EpicAuthError, EpicFHIRError, PatientScopeViolation) as exc:
-        _emit({"ok": False, "error": str(exc), "category": getattr(exc, "category", "patient_scope")})
+        payload = {"ok": False, "error": str(exc), "category": getattr(exc, "category", "patient_scope")}
+        if args.group == "live":
+            # Failed LIVE attempts are evidence too: keep a sanitised record (category and time only).
+            record = {"label": "LIVE", "command": args.command, "checked_at": workspace.utc_now(), **payload}
+            payload["report_file"] = _save_report(f"{args.command}-failed", record)
+        _emit(payload)
         return 3
 
 

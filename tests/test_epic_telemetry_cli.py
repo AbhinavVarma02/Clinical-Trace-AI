@@ -109,3 +109,23 @@ def test_workspace_commands_build_verify_and_review_a_mock_snapshot(ws_root, cap
 
     assert cli.main(["workspace", "review", snapshot_id, "--question", "Summarize the course", "--show-answer"]) == 0
     assert "answer" in json.loads(capsys.readouterr().out)
+
+
+def test_failed_live_attempt_is_recorded_without_detail_or_identifiers(ws_root, monkeypatch, capsys):
+    from pathlib import Path
+
+    key = keys.generate_private_key(2048)
+    rejected = httpx.MockTransport(
+        lambda _r: httpx.Response(400, json={"error": "invalid_client", "error_description": "server detail"})
+    )
+    client_id = "0000aaaa-test-client-id-not-real"
+    tokens = EpicTokenProvider(client_id, key, transport=rejected)
+    config = settings.EpicConfig(client_id=client_id, private_key_path=ws_root / "unused.pem")
+    monkeypatch.setattr(cli, "_live_session", lambda _args: (config, key, tokens))
+    assert cli.main(["live", "token-check"]) == 3
+    output = json.loads(capsys.readouterr().out)
+    report = json.loads(Path(output["report_file"]).read_text(encoding="utf-8"))
+    assert report["label"] == "LIVE" and report["command"] == "token-check"
+    assert report["category"] == "invalid_client" and report["ok"] is False
+    rendered = json.dumps(report)
+    assert "server detail" not in rendered and client_id not in rendered and TOKEN_VALUE not in rendered
