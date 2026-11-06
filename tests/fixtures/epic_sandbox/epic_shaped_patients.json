@@ -1,0 +1,221 @@
+{
+  "_note": "Hand-authored, invented test fixture shaped like Epic on FHIR R4 sandbox responses (relative references, Epic-style local codings listed before standard ones, Binary-backed HTML notes, missing meta). It is NOT a recorded Epic response and contains no real or sandbox patient data. Used only for offline (MOCK) tests.",
+  "patients": {
+    "alpha": {
+      "patient_id": "eFixtureAlpha0001-NotReal",
+      "resources": [
+        {
+          "resourceType": "Patient",
+          "id": "eFixtureAlpha0001-NotReal",
+          "extension": [{"url": "http://example.test/fixture-only", "valueString": "unsupported extension"}],
+          "identifier": [{"system": "urn:oid:0.0.0.fixture", "value": "FIXTURE-0001"}],
+          "name": [{"text": "Fixture Alpha", "family": "Alpha", "given": ["Fixture"]}],
+          "telecom": [{"system": "phone", "value": "000-000-0000"}],
+          "gender": "female",
+          "birthDate": "1961-04-02",
+          "address": [{"city": "Nowhere"}]
+        },
+        {
+          "resourceType": "Encounter",
+          "id": "eFixtureEncInpatient1",
+          "meta": {"versionId": "3", "lastUpdated": "2025-03-07T10:00:00Z"},
+          "status": "finished",
+          "class": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "IMP", "display": "inpatient encounter"},
+          "type": [{"text": "Hospital Encounter"}],
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal", "display": "Alpha, Fixture"},
+          "period": {"start": "2025-03-02T08:00:00Z", "end": "2025-03-06T15:00:00Z"},
+          "reasonCode": [{"text": "Community-acquired pneumonia"}],
+          "serviceProvider": {"reference": "Organization/eFixtureOrg1", "display": "Fixture Hospital"},
+          "location": [{"location": {"reference": "Location/eFixtureLoc1", "display": "Ward 4"}}]
+        },
+        {
+          "resourceType": "Encounter",
+          "id": "eFixtureEncFollowUp2",
+          "status": "finished",
+          "class": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB"},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "period": {"start": "2025-03-20T14:00:00Z", "end": "2025-03-20T14:30:00Z"},
+          "reasonCode": [{"text": "Post-discharge follow-up"}]
+        },
+        {
+          "resourceType": "Condition",
+          "id": "eFixtureCondProblem1",
+          "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}]},
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "problem-list-item"}]}],
+          "code": {"text": "Type 2 diabetes mellitus", "coding": [
+            {"system": "http://snomed.info/sct", "code": "44054006", "display": "Diabetes mellitus type 2"},
+            {"system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "E11.9", "display": "Type 2 diabetes mellitus without complications"}
+          ]},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "onsetDateTime": "2019",
+          "recordedDate": "2019-06-11"
+        },
+        {
+          "resourceType": "Condition",
+          "id": "eFixtureCondEncDx2",
+          "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "resolved"}]},
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "encounter-diagnosis"}]}],
+          "code": {"text": "Pneumonia", "coding": [{"system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "J18.9", "display": "Pneumonia, unspecified organism"}]},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "encounter": {"reference": "Encounter/eFixtureEncInpatient1"},
+          "onsetDateTime": "2025-03-02"
+        },
+        {
+          "resourceType": "Condition",
+          "id": "eFixtureCondSnomedOnly3",
+          "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}]},
+          "code": {"coding": [{"system": "http://snomed.info/sct", "code": "38341003", "display": "Hypertensive disorder"}]},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "onsetDateTime": "2016-09-01"
+        },
+        {
+          "resourceType": "Observation",
+          "id": "eFixtureObsCrp1",
+          "status": "final",
+          "category": [
+            {"coding": [{"system": "urn:oid:0.0.0.fixture.local", "code": "Lab"}]},
+            {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory"}]}
+          ],
+          "code": {"text": "C-reactive protein", "coding": [
+            {"system": "urn:oid:0.0.0.fixture.component", "code": "1234"},
+            {"system": "http://loinc.org", "code": "1988-5", "display": "C reactive protein [Mass/volume] in Serum or Plasma"}
+          ]},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "encounter": {"reference": "Encounter/eFixtureEncInpatient1"},
+          "effectiveDateTime": "2025-03-02T09:15:00Z",
+          "issued": "2025-03-02T11:40:00Z",
+          "valueQuantity": {"value": 84, "unit": "mg/L"}
+        },
+        {
+          "resourceType": "Observation",
+          "id": "eFixtureObsCrp2",
+          "status": "final",
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory"}]}],
+          "code": {"text": "C-reactive protein", "coding": [{"system": "http://loinc.org", "code": "1988-5"}]},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "encounter": {"reference": "Encounter/eFixtureEncInpatient1"},
+          "effectiveDateTime": "2025-03-05T09:00:00Z",
+          "valueQuantity": {"value": 12, "unit": "mg/L"}
+        },
+        {
+          "resourceType": "Observation",
+          "id": "eFixtureObsBp1",
+          "status": "final",
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs"}]}],
+          "code": {"text": "Blood pressure", "coding": [{"system": "http://loinc.org", "code": "85354-9"}]},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "effectiveDateTime": "2025-03-02T08:30:00Z",
+          "component": [
+            {"code": {"text": "Systolic blood pressure"}, "valueQuantity": {"value": 132, "unit": "mmHg"}},
+            {"code": {"text": "Diastolic blood pressure"}, "valueQuantity": {"value": 84, "unit": "mmHg"}}
+          ]
+        },
+        {
+          "resourceType": "Observation",
+          "id": "eFixtureObsPeriod4",
+          "status": "final",
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs"}]}],
+          "code": {"text": "Heart rate average"},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "effectivePeriod": {"start": "2025-03-03T00:00:00Z", "end": "2025-03-03T23:59:00Z"},
+          "valueQuantity": {"value": 81, "unit": "/min"}
+        },
+        {
+          "resourceType": "Observation",
+          "id": "eFixtureObsPending5",
+          "status": "registered",
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory"}]}],
+          "code": {"text": "Blood culture"},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "effectiveDateTime": "2025-03-02T09:20:00Z"
+        },
+        {
+          "resourceType": "DocumentReference",
+          "id": "eFixtureDocDischarge1",
+          "status": "current",
+          "docStatus": "final",
+          "type": {"text": "Discharge Summary", "coding": [{"system": "http://loinc.org", "code": "18842-5", "display": "Discharge summary"}]},
+          "category": [{"coding": [{"system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category", "code": "clinical-note"}]}],
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "date": "2025-03-06T16:00:00Z",
+          "author": [{"reference": "Practitioner/eFixturePract1", "display": "Fixture Clinician, MD"}],
+          "content": [
+            {"attachment": {"contentType": "text/html", "url": "Binary/eFixtureBinNote1"}},
+            {"attachment": {"contentType": "text/rtf", "url": "Binary/eFixtureBinNote1Rtf"}}
+          ],
+          "context": {"encounter": [{"reference": "Encounter/eFixtureEncInpatient1"}],
+                      "period": {"start": "2025-03-02T08:00:00Z", "end": "2025-03-06T15:00:00Z"}}
+        },
+        {
+          "resourceType": "DocumentReference",
+          "id": "eFixtureDocRtfOnly2",
+          "status": "current",
+          "type": {"text": "Progress Note"},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "date": "2025-03-04T10:00:00Z",
+          "content": [{"attachment": {"contentType": "text/rtf", "url": "Binary/eFixtureBinRtf2"}}]
+        },
+        {
+          "resourceType": "DiagnosticReport",
+          "id": "eFixtureDxrCrp1",
+          "status": "final",
+          "code": {"text": "C-reactive protein"},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "encounter": {"reference": "Encounter/eFixtureEncInpatient1"},
+          "effectiveDateTime": "2025-03-02T09:15:00Z",
+          "issued": "2025-03-02T11:40:00Z",
+          "result": [{"reference": "Observation/eFixtureObsCrp1", "display": "C-reactive protein"}]
+        },
+        {
+          "resourceType": "MedicationRequest",
+          "id": "eFixtureMedAmox1",
+          "status": "active",
+          "intent": "order",
+          "medicationReference": {"reference": "Medication/eFixtureMed1", "display": "amoxicillin 500 mg capsule"},
+          "subject": {"reference": "Patient/eFixtureAlpha0001-NotReal"},
+          "encounter": {"reference": "Encounter/eFixtureEncInpatient1"},
+          "authoredOn": "2025-03-06T15:00:00Z",
+          "dosageInstruction": [{"text": "500 mg by mouth three times daily for 5 days"}]
+        }
+      ],
+      "binaries": {
+        "Binary/eFixtureBinNote1": {
+          "contentType": "text/html",
+          "text": "<html><head><title>ignored title</title><style>p{}</style></head><body><p>Hospital course: Treated for community-acquired pneumonia with intravenous antibiotics.</p><p>Assessment: Improving. CRP fell from 84 mg/L to 12 mg/L.</p><p>Plan at discharge: Oral amoxicillin for 5 days. Follow-up visit in two weeks.</p><script>ignored()</script></body></html>"
+        }
+      }
+    },
+    "bravo": {
+      "patient_id": "eFixtureBravo0002-NotReal",
+      "resources": [
+        {
+          "resourceType": "Patient",
+          "id": "eFixtureBravo0002-NotReal",
+          "name": [{"text": "Fixture Bravo", "family": "Bravo", "given": ["Fixture"]}],
+          "gender": "male",
+          "birthDate": "1955-11-23"
+        },
+        {
+          "resourceType": "Encounter",
+          "id": "eFixtureEncBravo1",
+          "status": "finished",
+          "class": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "ambulatory"},
+          "subject": {"reference": "Patient/eFixtureBravo0002-NotReal"},
+          "period": {"start": "2025-01-10T09:00:00Z", "end": "2025-01-10T09:20:00Z"},
+          "reasonCode": [{"text": "Annual review"}]
+        },
+        {
+          "resourceType": "Observation",
+          "id": "eFixtureObsBravoA1c",
+          "status": "final",
+          "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory"}]}],
+          "code": {"text": "Hemoglobin A1c", "coding": [{"system": "http://loinc.org", "code": "4548-4"}]},
+          "subject": {"reference": "Patient/eFixtureBravo0002-NotReal"},
+          "effectiveDateTime": "2025-01-10T09:10:00Z",
+          "valueQuantity": {"value": 7.9, "unit": "%"}
+        }
+      ],
+      "binaries": {}
+    }
+  }
+}
