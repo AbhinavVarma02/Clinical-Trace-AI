@@ -422,13 +422,34 @@ def _write_manifest(directory: Path, manifest: dict[str, Any]) -> None:
     (directory / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def medication_coverage(manifest: Mapping[str, Any]) -> dict[str, str]:
+    """What the snapshot's own manifest says about structured medication orders.
+
+    "not_imported": medication import was off, or the search failed or was not recorded.
+    "returned_none": the search completed and Epic returned no MedicationRequest.
+    Empty: medication orders were imported.
+    """
+    if not manifest.get("include_medications"):
+        return {"MedicationRequest": "not_imported"}
+    operations = (manifest.get("fetch") or {}).get("operations") or []
+    searched = any(op.get("operation") == "MedicationRequest.Search" and op.get("status") == "ok"
+                   for op in operations)
+    if not searched:
+        return {"MedicationRequest": "not_imported"}
+    if not (manifest.get("resource_counts") or {}).get("MedicationRequest"):
+        return {"MedicationRequest": "returned_none"}
+    return {}
+
+
 def load_runtime(path: str | Path, *, provider: Any = None) -> Runtime:
     """Build the unchanged application runtime over one snapshot's own database (model disabled)."""
     from src.runtime import build_runtime
 
     snapshot = open_snapshot(path)
     database = require_workspace_path(snapshot.db_path)
-    return build_runtime(database, fixture=snapshot.bundle_path, provider=provider, enable_model=False)
+    runtime = build_runtime(database, fixture=snapshot.bundle_path, provider=provider, enable_model=False)
+    runtime.records.source_coverage = medication_coverage(snapshot.manifest)
+    return runtime
 
 
 def local_access(snapshot: Snapshot, role: str = "clinician") -> AccessContext:

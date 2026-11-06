@@ -304,6 +304,7 @@ Each run below was approved separately by the owner and run from the owner's ter
 - **A1 (needs approval):**
   - **What's wrong:** existing medication views use `meta.lastUpdated` as a medication date for version-1 orders (`src/retrieval/chunking.py`, `src/agent/tools.py`).
   - **Current handling:** MedicationRequest is not imported until this is fixed, so snapshots report "no medication orders", and the deterministic summary currently repeats that finding.
+  - **How answers disclose it:** the snapshot manifest says medication import was off, and answers add the note "Structured medication orders were not imported from the data source for this record…". Medication answers quote note mentions as note text, not verified orders. The Patient is never cited as proof that orders are absent.
 - **Discharge summary detection (P2 candidate):**
   - **What's wrong:** detection is an exact, case-sensitive match on "Discharge summary". An Epic-style "Discharge Summary" note is missed, producing a false "missing discharge summary" finding that the summary answer repeats.
   - **Current handling:** recorded as a strict expected failure in the compatibility tests.

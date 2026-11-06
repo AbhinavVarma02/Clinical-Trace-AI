@@ -51,6 +51,9 @@ class ClinicalRecords:
 
     def __init__(self, store: FHIRStore) -> None:
         self.store = store
+        # Import coverage a data source declares per resource type, e.g. {"MedicationRequest": "not_imported"}.
+        # Empty means not declared. It describes the import, never the patient, and is never cited as evidence.
+        self.source_coverage: dict[str, str] = {}
 
     # ---------------------------------------------------------------- profile
     def profile(self, patient_id: str) -> dict[str, Any] | None:
@@ -289,9 +292,12 @@ class ClinicalRecords:
                                  "message": f"{obs['name']} value {obs['value']} has no unit recorded.",
                                  "source": obs["source"]})
         if not self.medications(patient_id, include_history=False):
-            findings.append({"category": "medication_list_missing", "severity": "high",
-                             "message": "No medication orders are recorded for this patient.",
-                             "source": source_of(patient)})
+            finding: dict[str, Any] = {"category": "medication_list_missing", "severity": "high",
+                                       "message": "No medication orders are recorded for this patient.",
+                                       "source": source_of(patient)}
+            if self.source_coverage.get("MedicationRequest"):
+                finding["coverage"] = self.source_coverage["MedicationRequest"]
+            findings.append(finding)
         for doc in documents:
             text = (self.document_text(patient_id, doc["id"]) or {}).get("text", "").lower()
             for marker in ("[documentation incomplete]", "not documented", "not completed", "not listed"):

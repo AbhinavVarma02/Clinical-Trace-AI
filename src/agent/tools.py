@@ -54,6 +54,9 @@ class ToolResult:
     error: str | None = None
     error_type: str | None = None
     latency_ms: float = 0.0
+    # Facts about what the data source covers for this result (e.g. no medication orders, import coverage).
+    # They describe the record, not a resource: never evidence and never cited.
+    scope: dict[str, str] = field(default_factory=dict)
 
     def summary(self) -> dict[str, Any]:
         """Trace-safe summary: no record text."""
@@ -93,6 +96,7 @@ class ToolSpec:
     handler: Callable[[ToolContext, BaseModel], tuple[Any, list[EvidenceItem]]]
     timeout_s: float = 5.0
     planner_visible: bool = True
+    scope: Callable[[ToolContext, Any], dict[str, str]] | None = None
 
 
 # --------------------------------------------------------------- evidence
@@ -178,6 +182,14 @@ def _medications(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem
             evidence.append(_evidence(ctx, version["source"], text, "medication", version["medication"],
                                       version["source"]["last_updated"] or ""))
     return items, evidence
+
+
+def _medication_scope(ctx: ToolContext, items: Any) -> dict[str, str]:
+    """No orders: say so, with the import coverage the data source declared (never inferred, never cited)."""
+    if items:
+        return {}
+    return {"medication_orders": "none_recorded",
+            "coverage": ctx.records.source_coverage.get("MedicationRequest", "undeclared")}
 
 
 def _labs(ctx: ToolContext, args: BaseModel) -> tuple[Any, list[EvidenceItem]]:
@@ -299,7 +311,7 @@ TOOLS: dict[str, ToolSpec] = {
         ToolSpec("get_patient_conditions", "Recorded conditions / problem list with ICD-10 codes and onset.",
                  NoArgs, Action.PATIENT_READ, _conditions),
         ToolSpec("get_medication_history", "Medication orders including every recorded version and status "
-                 "change.", NoArgs, Action.PATIENT_READ, _medications),
+                 "change.", NoArgs, Action.PATIENT_READ, _medications, scope=_medication_scope),
         ToolSpec("get_lab_observations", "Numeric laboratory results grouped by test with trends.", LabQuery,
                  Action.PATIENT_READ, _labs),
         ToolSpec("get_clinical_timeline", "Chronological merged timeline of encounters, orders, results and "
@@ -358,7 +370,7 @@ def run_tool(ctx: ToolContext, name: str, raw_args: dict[str, Any] | None = None
     foreign = [e for e in evidence if e.patient_id != ctx.patient_id]
     if foreign:
         return done(ok=False, error="tool produced evidence for another patient", error_type="isolation")
-    return done(ok=True, data=data, evidence=evidence)
+    return done(ok=True, data=data, evidence=evidence, scope=spec.scope(ctx, data) if spec.scope else {})
 
 
 def tool_catalog() -> list[dict[str, Any]]:

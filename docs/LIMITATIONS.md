@@ -24,6 +24,12 @@
 - Verification checks citations, numbers, computations, and lexical overlap. It does not prove semantic entailment: a claim that reuses the evidence's words with a different meaning could pass.
 - The unreleased reliability update normalizes explicit dates, exact decimal formatting and a bounded set of unit spellings. Historical diagnosis/prescription exceptions require matching structured evidence and the correct event date. Other clinical paraphrases may still be rejected; thresholds have not been lowered. Development experiments and every retained candidate are documented in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md).
 - Contradiction detection covers smoking status, lab values quoted in notes, and labelled ISO admission/discharge dates in a note that differ by more than one day from the linked encounter's recorded start/end. If the encounter records no matching start/end, the stated date is reported as incomplete encounter documentation, not a contradiction. Both values are quoted as recorded and never corrected.
+- When a record has no medication orders, a medication question gets a note-only answer:
+  - Note passages that mention medications are quoted verbatim, labelled as note text rather than verified orders.
+  - An uncited note says that no orders are recorded and gives the import coverage the data source declared.
+  - A question about a specific drug is answered only from a note entry that documents the asked event; otherwise it abstains with an explanation.
+  - No reason, current status or dose is inferred.
+  - Drug names outside the planner's medication vocabulary (for example apixaban) are not recognised as medication questions.
 - Actual progress is streamed; clinical answer text is returned only after verification. Durable SQLite checkpoints support explicit compatible restart recovery. Cancellation is cooperative between nodes, not a forced interruption of running Python code.
 
 ## Retrieval
