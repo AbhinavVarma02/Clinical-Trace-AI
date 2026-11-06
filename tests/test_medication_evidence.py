@@ -14,6 +14,9 @@ entry does not give current use: both unanswered parts are stated. Records with 
 A status question ("Is the patient currently taking furosemide?") quotes the drug's documented status entry first,
 keeps the other mentions, labels a documented stop as note text rather than verified current status, and never
 chooses between conflicting statuses (L1).
+
+An entry documents an event only when it states it as done: a plan, condition, negation, proposal or instruction
+("hold furosemide if ...", "was not stopped", "Stop furosemide.") is never reported as a stop, start or change (L7).
 """
 
 from __future__ import annotations
@@ -408,3 +411,98 @@ def test_status_notes_invent_nothing(status_rt):
             notes = notes_of(result)
             assert not DOSE.search(notes)
             assert not re.search(r"\b(is|are|was) (not )?(taking|on)\b|\bno longer\b|\bbecause\b|\bdue to\b", notes)
+
+
+# ------------------------------------------------------------------------- documented events only (L7)
+# One invented note per patient. Only entries that state the event as done (past tense, not negated, conditional,
+# proposed or instructed) may answer a stop/start/change question or carry a "documented stop" note.
+EVENT_ENTRIES = {  # patient -> (note id, entry, documented event or None)
+    "synthetic_l7holdif": ("l7-hold-if", "Plan: hold furosemide if systolic pressure is below 90.", None),
+    "synthetic_l7donotstop": ("l7-do-not-stop", "Do not stop furosemide before the procedure.", None),
+    "synthetic_l7notstopped": ("l7-not-stopped", "Furosemide was not stopped during the admission.", None),
+    "synthetic_l7considerstop": ("l7-consider-stop", "Consider stopping furosemide if creatinine rises.", None),
+    "synthetic_l7ifstopped": ("l7-if-stopped", "If furosemide is stopped, recheck weight daily.", None),
+    "synthetic_l7shouldbeheld": ("l7-should-be-held", "Furosemide should be held on the morning of surgery.", None),
+    "synthetic_l7startif": ("l7-start-if", "Start furosemide 20 mg if weight rises by 2 kg.", None),
+    "synthetic_l7increaseif": ("l7-increase-if", "Increase furosemide to 80 mg if edema worsens.", None),
+    "synthetic_l7imperative": ("l7-imperative", "Discharge instructions: Stop furosemide.", None),
+    "synthetic_l7held": ("l7-held", "Furosemide was held for two days.", "stopped"),
+    "synthetic_l7stoppedlist": ("l7-stopped-list", "MEDICATION CHANGES - STOPPED: furosemide 40 mg daily", "stopped"),
+    "synthetic_l7discontinued": ("l7-discontinued", "Furosemide was discontinued on day three.", "stopped"),
+    "synthetic_l7nolonger": ("l7-no-longer", "STOPPED: furosemide 40 mg daily, no longer needed.", "stopped"),
+    "synthetic_l7started": ("l7-started", "Furosemide was started at 20 mg daily.", "started"),
+    "synthetic_l7increased": ("l7-increased", "Furosemide was increased to 80 mg daily.", "changed"),
+}
+EVENT_QUESTIONS = {"stopped": ("Was furosemide stopped?", "Why was furosemide stopped?", "Was furosemide held?"),
+                   "started": ("When was furosemide started?", "Why was furosemide started?"),
+                   "changed": ("How has the furosemide dose changed?",)}
+ALL_EVENT_QUESTIONS = tuple(q for questions in EVENT_QUESTIONS.values() for q in questions)
+UNDOCUMENTED = [pid for pid, (_, _, event) in EVENT_ENTRIES.items() if event is None]
+DOCUMENTED_STOPS = [pid for pid, (_, _, event) in EVENT_ENTRIES.items() if event == "stopped"]
+DOCUMENTED = [(pid, q) for pid, (_, _, event) in EVENT_ENTRIES.items() if event for q in EVENT_QUESTIONS[event]]
+NO_FUROSEMIDE_EVENT = f"The available records do not establish the requested information about furosemide. {TAIL[None]}"
+
+
+@pytest.fixture(scope="module")
+def events_rt(tmp_path_factory):
+    resources = []
+    for pid, (did, text, _) in EVENT_ENTRIES.items():
+        resources += [patient(pid), note(did, text, "Progress Notes", "2026-09-01T09:00:00Z", pid=pid)]
+    bundle = tmp_path_factory.mktemp("medication-events") / "bundle.json"
+    bundle.write_text(json.dumps({"resourceType": "Bundle", "type": "collection",
+                                  "entry": [{"resource": r} for r in resources]}), encoding="utf-8")
+    runtime = build_runtime(":memory:", fixture=bundle, provider=None, enable_model=False)
+    yield runtime
+    runtime.close()
+
+
+@pytest.mark.parametrize("pid", UNDOCUMENTED)
+def test_a_plan_condition_negation_or_instruction_is_not_a_documented_event(events_rt, pid):
+    # L7: these entries used to answer event questions, and a "why" question added "documents that ... was stopped".
+    for question in ALL_EVENT_QUESTIONS:
+        result = ask(events_rt, question, pid=pid)
+        assert result["outcome"] == "abstained" and result["answer"]["claims"] == [], question
+        assert result["answer"]["abstain_reason"] == NO_FUROSEMIDE_EVENT, question
+        assert "documents that furosemide was" not in notes_of(result), question
+
+
+@pytest.mark.parametrize("pid", UNDOCUMENTED)
+def test_a_status_question_never_reports_an_undocumented_stop(events_rt, pid):
+    # The entry is still quoted verbatim, with today's "only as of that date" note and no "documented stop" note.
+    result = ask(events_rt, "Is the patient currently taking furosemide?", pid=pid)
+    assert result["outcome"] == "answered"
+    assert [EVENT_ENTRIES[pid][1] in q["text"] for q in quotes(result)] == [True]
+    assert result["answer"]["uncertainty"] == [NONE, UNDECLARED, CAVEAT, AS_OF.format(date="2026-09-01")]
+
+
+@pytest.mark.parametrize("pid, question", DOCUMENTED)
+def test_a_documented_event_is_still_answered(events_rt, pid, question):
+    result = ask(events_rt, question, pid=pid)
+    assert result["outcome"] == "answered"
+    assert [EVENT_ENTRIES[pid][1] in q["text"] for q in quotes(result)] == [True]
+    reason_unknown = (f"The cited note documents that furosemide was {EVENT_ENTRIES[pid][2]} but does not state why; "
+                      "the reason is unknown.")
+    assert (reason_unknown in result["answer"]["uncertainty"]) == question.startswith("Why")
+
+
+@pytest.mark.parametrize("pid", DOCUMENTED_STOPS)
+def test_a_documented_stop_still_gets_the_stop_note(events_rt, pid):
+    result = ask(events_rt, "Is the patient currently taking furosemide?", pid=pid)
+    assert result["answer"]["uncertainty"] == [NONE, UNDECLARED, CAVEAT, STOP.format(date="2026-09-01")]
+
+
+def test_the_negation_and_condition_check_drops_no_documented_event(events_rt, monkeypatch):
+    cases = [(pid, q) for pid, (_, _, event) in EVENT_ENTRIES.items() if event
+             for q in ALL_EVENT_QUESTIONS + STATUS_QUESTIONS]
+
+    def answers():
+        out = {}
+        for pid, question in cases:
+            r = ask(events_rt, question, pid=pid)
+            out[(pid, question)] = (r["outcome"], r["answer"]["claims"], r["answer"]["uncertainty"],
+                                    r["answer"]["abstain_reason"])
+        return out
+
+    current = answers()
+    monkeypatch.setattr(composer, "_documented", lambda entry: True)
+    assert answers() == current

@@ -310,6 +310,16 @@ CONFLICT_NOTE = ("The cited notes record more than one status for {drug} (a stop
                  "record does not establish which is current. Current medication status is unverified.")
 CONTEXT_NOTE = ("Other cited passages mention {drug} without a documented status; each reflects only the time its "
                 "note was written and does not establish current use.")
+# A note entry documents an event only when it states it as done: a past-tense word from the asked family, not
+# negated, conditional, proposed or modal ("hold furosemide if ...", "was not stopped", "should be held"). Questions
+# are still read with MEDICATION_EVENTS.
+DOCUMENTED_EVENTS = {
+    "stopped": re.compile(r"\b(stopped|discontinued|held|ceased)\b", re.I),
+    "started": re.compile(r"\b(started|initiated|began|begun|commenced)\b", re.I),
+    "changed": re.compile(r"\b(changed|increased|decreased|reduced|adjusted|titrated|switched)\b", re.I),
+}
+NOT_DOCUMENTED = re.compile(r"\b(not|never|if|unless|consider\w*)\b|n't\b|"
+                            r"\b(should|may|might|could|would|will|can|must|to)\s+be\b", re.I)
 
 
 def _named_drugs(question: str) -> list[str]:
@@ -325,9 +335,15 @@ def _status_drugs(question: str) -> list[str]:
     return _named_drugs(question)
 
 
+def _documented(entry: str) -> bool:
+    """False for a negated, conditional, proposed or modal entry: it does not document that anything happened."""
+    return not NOT_DOCUMENTED.search(entry)
+
+
 def _status_entries(text: str, drug: str) -> list[str]:
-    """Entries of a quote that name the drug with a documented (past-tense) status."""
-    return [entry for entry in NOTE_ENTRY.split(text.lower()) if drug in entry and DOCUMENTED_STATUS.search(entry)]
+    """Entries of a quote that name the drug with a documented (past-tense, affirmative) status."""
+    return [entry for entry in NOTE_ENTRY.split(text.lower())
+            if drug in entry and DOCUMENTED_STATUS.search(entry) and _documented(entry)]
 
 
 def _status_sentences(sentences: list[str], drugs: tuple[str, ...]) -> list[str]:
@@ -347,7 +363,8 @@ def _note(draft: Draft, text: str) -> None:
 def _entries(text: str, drug: str, events: list[str], dose: bool = False) -> list[str]:
     """Entries of a quote that name the drug and document what was asked: an event, or a stated dose."""
     return [entry for entry in NOTE_ENTRY.split(text.lower())
-            if drug in entry and (not events or any(MEDICATION_EVENTS[e].search(entry) for e in events))
+            if drug in entry
+            and (not events or (any(DOCUMENTED_EVENTS[e].search(entry) for e in events) and _documented(entry)))
             and (not dose or DOSE_AMOUNT.search(entry))]
 
 

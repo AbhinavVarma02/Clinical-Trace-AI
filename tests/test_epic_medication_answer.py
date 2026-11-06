@@ -199,3 +199,43 @@ def test_a_status_question_quotes_the_stopped_entry_first_and_keeps_the_consult_
         "Other cited passages mention furosemide without a documented status; each reflects only the time its note "
         "was written and does not establish current use.",
     ]
+
+
+# L7 on the Epic pathway: a progress-note instruction not to stop a drug is not a documented stop.
+EVENT_DS_SOURCE = "DocumentReference/eEventDischarge2026"
+EVENT_DS_HTML = ("<html><body><p>HOSPITAL DISCHARGE SUMMARY</p><p>MEDICATION CHANGES THIS ADMISSION - STOPPED: "
+                 "furosemide 40 mg daily - CONTINUED: metformin 1000 mg twice daily</p></body></html>")
+EVENT_PLAN_HTML = "<html><body><p>Do not stop metformin before the procedure.</p></body></html>"
+
+
+@pytest.fixture(scope="module")
+def event_meds(tmp_path_factory):
+    patcher = pytest.MonkeyPatch()
+    patcher.setattr(settings, "REPO_ROOT", tmp_path_factory.mktemp("medication-events-repo"))
+    patcher.delenv("CLINICAL_TRACE_DB_PATH", raising=False)
+    pid, resources, binaries = fixture_patient()
+    resources += [_note(pid, "eEventDischarge2026", "18842-5", "Discharge Summary", "2026-11-02T05:03:06Z",
+                        "Binary/eEventDischargeBin"),
+                  _note(pid, "eEventProgress2026", "11506-3", "Progress Notes", "2026-11-04T16:11:02Z",
+                        "Binary/eEventProgressBin")]
+    for ref, html in (("Binary/eEventDischargeBin", EVENT_DS_HTML), ("Binary/eEventProgressBin", EVENT_PLAN_HTML)):
+        binaries[ref] = BinaryContent(reference=ref, content_type="text/html", data=html.encode())
+    snapshot = workspace.write_snapshot(pid, resources, binaries, retrieved_at=RETRIEVED_AT, mode="MOCK",
+                                       snapshot_id="medication-events-01")
+    runtime = workspace.load_runtime(snapshot.path)
+    yield snapshot, runtime, snapshot.patient_ids[0]
+    runtime.close()
+    patcher.undo()
+
+
+def test_an_instruction_not_to_stop_a_drug_is_not_a_documented_stop(event_meds):
+    result, _ = _run(event_meds, "Was metformin stopped?")
+    assert result["outcome"] == "abstained" and result["answer"]["claims"] == []
+    assert result["answer"]["abstain_reason"] == (
+        "The available records do not establish the requested information about metformin. Structured medication "
+        "orders were not imported, so this cannot be determined from the current evidence.")
+    stopped, evidence = _run(event_meds, "Why was furosemide stopped?")
+    assert any(src == EVENT_DS_SOURCE and "STOPPED: furosemide 40 mg daily" in text
+               for src, text in _quote_sources(event_meds, stopped, evidence))
+    assert ("The cited note documents that furosemide was stopped but does not state why; the reason is unknown."
+            in stopped["answer"]["uncertainty"])
