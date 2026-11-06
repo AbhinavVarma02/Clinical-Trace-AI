@@ -4,6 +4,17 @@
 .env.production
 .streamlit/secrets.toml
 
+# ===== Signing keys and local Epic sandbox configuration (never committed) =====
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+.env.epic
+epic.env
+epic-keys/
+secrets/
+
 # ===== Python =====
 __pycache__/
 *.pyc

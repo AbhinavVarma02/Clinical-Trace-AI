@@ -9,7 +9,7 @@
 
 - Four hand-designed synthetic patients (86 FHIR resources). They exercise specific behaviours (readmission, contradiction, incompleteness, versioned orders) and are not a representative population.
 - FHIR support covers a validated subset of seven resource types; it is not a full R4 implementation. Patient ids use an underscore (`synthetic_p001`), which FHIR's id grammar does not allow; kept for compatibility with the v1 synthetic-id rule.
-- The mock FHIR server and HTTP client have no SMART on FHIR or OAuth; no real EHR has been connected.
+- The mock FHIR server and HTTP client have no SMART on FHIR or OAuth. A separate, command-line-only adapter reads Epic's public FHIR sandbox (Epic test patients only) with SMART Backend Services authentication; the application does not use it ([EPIC_SANDBOX.md](EPIC_SANDBOX.md)). No production EHR has been connected.
 
 ## Readmission model
 
@@ -23,7 +23,14 @@
 - Guards are pattern-based and can be evaded by unanticipated phrasing.
 - Verification checks citations, numbers, computations, and lexical overlap. It does not prove semantic entailment: a claim that reuses the evidence's words with a different meaning could pass.
 - The unreleased reliability update normalizes explicit dates, exact decimal formatting and a bounded set of unit spellings. Historical diagnosis/prescription exceptions require matching structured evidence and the correct event date. Other clinical paraphrases may still be rejected; thresholds have not been lowered. Development experiments and every retained candidate are documented in [AGENT_RELIABILITY.md](AGENT_RELIABILITY.md).
-- Contradiction detection covers smoking status and lab values quoted in notes only.
+- Contradiction detection covers smoking status, lab values quoted in notes, and labelled ISO admission/discharge dates in a note that differ by more than one day from the linked encounter's recorded start/end. If the encounter records no matching start/end, the stated date is reported as incomplete encounter documentation, not a contradiction. Both values are quoted as recorded and never corrected.
+- When a record has no medication orders, a medication question gets a note-only answer:
+  - Note passages that mention medications are quoted verbatim, labelled as note text rather than verified orders.
+  - An uncited note says that no orders are recorded and gives the import coverage the data source declared.
+  - A question about a specific drug is answered only from a note entry that documents the asked event as done (past tense, not negated, conditional or planned, so "hold furosemide if …", "was not stopped" and "Stop furosemide." do not count); otherwise it abstains with an explanation.
+  - A question about whether a drug is taken quotes that drug's documented status entry first (for example "STOPPED: furosemide 40 mg daily") and keeps its other mentions. A documented stop is labelled as note text, not verified current status, and a stop next to a restart or continuation is reported without choosing one. Only past-tense status words count, and only the retrieved passages are searched.
+  - No reason, current status or dose is inferred.
+  - Drug names outside the planner's medication vocabulary (for example apixaban) are not recognised as medication questions. Such questions quote note text without the note-text caveat or the coverage note. "Anticoagulant" is matched only to warfarin, so a question about anticoagulants can abstain even when a note names apixaban.
 - Actual progress is streamed; clinical answer text is returned only after verification. Durable SQLite checkpoints support explicit compatible restart recovery. Cancellation is cooperative between nodes, not a forced interruption of running Python code.
 
 ## Retrieval

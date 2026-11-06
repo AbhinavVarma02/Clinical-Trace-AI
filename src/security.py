@@ -16,6 +16,10 @@ SECRET_PATTERNS = [
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
+    # PEM private keys: PKCS#8 (plain or encrypted), PKCS#1 RSA, SEC1 EC, DSA and OpenSSH. Public keys do not match.
+    re.compile(r"-----BEGIN (?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----"),
+    # Signed JWT-shaped tokens (base64url JSON header and claims, then a signature), e.g. bearer access tokens.
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}"),
 ]
 
 

@@ -1,21 +1,32 @@
 """Deterministic contradiction and numeric-consistency checks across a record.
 
-Two rule families, both citing every source involved:
+Three rule families, each citing every source involved:
 
 * attribute contradictions - the same attribute documented with incompatible
   values in different sources (currently: smoking status);
 * numeric mismatches - a lab value quoted in a note that matches no recorded
-  Observation of that test for the patient.
+  Observation of that test for the patient;
+* encounter date conflicts - an admission or discharge date stated in a note
+  (labelled, ISO format) that differs by more than one day from the start or
+  end recorded on the encounter the note is linked to.
 
-These are narrow, explainable rules, not general contradiction detection.
+A stated date whose counterpart the linked encounter does not record (for
+example a discharge date while the encounter has no end) is not a
+contradiction. ``encounter_documentation_gaps`` reports it as incomplete
+encounter documentation through the completeness checks.
+
+These are narrow, explainable rules, not general contradiction detection. They
+quote both values as recorded and never correct or infer a date.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from datetime import date
+from typing import TYPE_CHECKING, Any
 
-from src.clinical.records import ClinicalRecords
+if TYPE_CHECKING:  # records.py imports this module for the completeness checks
+    from src.clinical.records import ClinicalRecords
 
 SMOKING_STATES = {
     "current smoker": re.compile(r"\bcurrent (every day )?smoker\b", re.I),
@@ -35,6 +46,14 @@ LAB_MENTIONS = {
 }
 VALUE_AFTER = re.compile(r"^([^0-9\n]{0,20}?)(\d+(?:\.\d+)?)")
 COMPARATIVE = re.compile(r"\b(above|below|over|under|greater|less|than|target|range)\b", re.I)
+STATED_ENCOUNTER_DATE = re.compile(
+    r"\b(?:(?P<label>admission|admit|discharge)\s+date|date\s+of\s+(?P<label_of>admission|discharge))"
+    r"\s*[:\-]?\s*(?P<date>\d{4}-\d{2}-\d{2})\b",
+    re.I,
+)
+# Recorded encounter times are instants (often UTC); notes state local calendar dates.
+ENCOUNTER_DATE_TOLERANCE_DAYS = 1
+ENCOUNTER_FIELD = {"admission": "start", "discharge": "end"}
 
 
 def find_inconsistencies(records: ClinicalRecords, patient_id: str) -> list[dict[str, Any]]:
@@ -88,4 +107,93 @@ def find_inconsistencies(records: ClinicalRecords, patient_id: str) -> list[dict
                         "sources": [{**doc["source"], "excerpt": f"{match.group(0)}{tail.group(0)}",
                                      "title": doc["title"], "date": doc["date"]}],
                     })
+
+    # 3. Admission/discharge dates stated in a note that conflict with its linked encounter.
+    for check in _encounter_date_checks(records, patient_id):
+        if not check["conflicts"]:
+            continue
+        stated_text = " and ".join(f"{kind} date {value}" for kind, _, value, _ in check["conflicts"])
+        recorded_text = " and ".join(f"{ENCOUNTER_FIELD[kind]} {value}" for kind, _, _, value in check["conflicts"])
+        findings.append({
+            "category": "encounter_date_conflict",
+            "attribute": "encounter dates",
+            "message": f"'{check['note']['title']}' documents {stated_text}, but its linked encounter records "
+                       f"{recorded_text}. The two sources may conflict; both values are shown as recorded.",
+            "sources": _encounter_check_sources(check, [fragment for _, fragment, _, _ in check["conflicts"]]),
+        })
     return findings
+
+
+def encounter_documentation_gaps(records: ClinicalRecords, patient_id: str) -> list[dict[str, Any]]:
+    """Stated admission/discharge dates whose linked encounter records no start/end (completeness findings)."""
+    findings: list[dict[str, Any]] = []
+    for check in _encounter_date_checks(records, patient_id):
+        if not check["gaps"]:
+            continue
+        encounter = check["encounter"]
+        stated = " and ".join(f"{kind} date {value}" for kind, _, value in check["gaps"])
+        missing = " or ".join(ENCOUNTER_FIELD[kind] for kind, _, _ in check["gaps"])
+        findings.append({
+            "category": "encounter_documentation_incomplete",
+            "severity": "medium",
+            "message": f"'{check['note']['title']}' documents {stated}, but its linked encounter (status "
+                       f"{encounter['status']}) has no recorded {missing}. The encounter documentation may be "
+                       "incomplete; this is not a confirmed contradiction.",
+            "source": encounter["source"],
+            "sources": _encounter_check_sources(check, [fragment for _, fragment, _ in check["gaps"]]),
+        })
+    return findings
+
+
+def _calendar_date(value: str) -> date | None:
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _encounter_date_checks(records: ClinicalRecords, patient_id: str) -> list[dict[str, Any]]:
+    """Per note: labelled dates that conflict with, or have no counterpart on, the linked encounter.
+
+    Only the patient's own encounters are considered. Recorded values are read from the stored
+    resource as written (original offset kept) and are never modified.
+    """
+    encounters = {f"Encounter/{e['id']}": e for e in records.encounters(patient_id)}
+    checks: list[dict[str, Any]] = []
+    for meta in records.documents(patient_id):
+        encounter = encounters.get(meta["encounter"] or "")
+        doc = records.document_text(patient_id, meta["id"]) if encounter else None
+        if encounter is None or not doc:
+            continue
+        period = (records.store.get("Encounter", encounter["id"]) or {}).get("period") or {}
+        conflicts: list[tuple[str, str, str, str]] = []  # kind, stated fragment, stated date, recorded value
+        gaps: list[tuple[str, str, str]] = []  # kind, stated fragment, stated date
+        seen: set[str] = set()
+        for match in STATED_ENCOUNTER_DATE.finditer(doc["text"]):
+            label = (match.group("label") or match.group("label_of")).lower()
+            kind = "discharge" if label == "discharge" else "admission"
+            stated = _calendar_date(match.group("date"))
+            if stated is None or kind in seen:
+                continue
+            seen.add(kind)
+            recorded = period.get(ENCOUNTER_FIELD[kind])
+            if not recorded:
+                gaps.append((kind, match.group(0), match.group("date")))
+                continue
+            recorded_day = _calendar_date(str(recorded))
+            if recorded_day is not None and abs((stated - recorded_day).days) > ENCOUNTER_DATE_TOLERANCE_DAYS:
+                conflicts.append((kind, match.group(0), match.group("date"), str(recorded)))
+        if conflicts or gaps:
+            checks.append({"note": doc, "encounter": encounter, "period": period,
+                           "conflicts": conflicts, "gaps": gaps})
+    return checks
+
+
+def _encounter_check_sources(check: dict[str, Any], fragments: list[str]) -> list[dict[str, Any]]:
+    note, encounter, period = check["note"], check["encounter"], check["period"]
+    recorded = (f"period start {period.get('start') or 'not recorded'}, end {period.get('end') or 'not recorded'}, "
+                f"status {encounter['status'] or 'not recorded'}")
+    return [
+        {**note["source"], "excerpt": "; ".join(fragments), "title": note["title"], "date": note["date"]},
+        {**encounter["source"], "excerpt": recorded, "title": "Linked encounter", "date": period.get("start") or ""},
+    ]

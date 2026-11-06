@@ -1,6 +1,15 @@
 .env
 .env.local
 .env.production
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+.env.epic
+epic.env
+epic-keys/
+secrets/
 venv/
 .venv/
 __pycache__/

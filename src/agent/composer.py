@@ -16,7 +16,7 @@ from typing import Any
 
 from src.agent.llm import OpenAICompatibleProvider, ProviderUnavailable, extract_json
 from src.agent.evidence import interval_statement, summary_focus
-from src.agent.planner import detect_intents
+from src.agent.planner import INTENT_RULES, detect_intents
 from src.agent.tools import ToolResult
 from src.retrieval.lexical import tokenize
 from src.safety.guards import flag_content
@@ -148,8 +148,17 @@ def _lab_claims(result: ToolResult) -> list[dict[str, Any]]:
 
 
 def _missing_claims(result: ToolResult) -> list[dict[str, Any]]:
-    return [_claim(f"Documentation gap: {e.text}", [e.evidence_id], "missing_information")
-            for e in result.evidence]
+    checks = [e for e in result.evidence if e.evidence_id.startswith("check:")]
+    sources = [e for e in result.evidence if not e.evidence_id.startswith("check:")]
+    findings = result.data if isinstance(result.data, list) and len(result.data) == len(checks) else []
+    claims = []
+    for index, check in enumerate(checks):
+        finding = findings[index] if findings else {}
+        refs = {s["reference"] for s in finding.get("sources") or []}
+        cited = list(dict.fromkeys(s.evidence_id for s in sources if s.source_ref in refs))
+        claims.append(_claim(f"Documentation gap: {check.text}", [check.evidence_id] + cited,
+                             "missing_information"))
+    return claims
 
 
 def _inconsistency_claims(result: ToolResult) -> list[dict[str, Any]]:
@@ -193,43 +202,251 @@ def _risk_claims(prediction: ToolResult | None, explanation: ToolResult | None) 
     return claims, caveats, None
 
 
+def _quotable(item: EvidenceItem, require: frozenset[str]) -> list[str]:
+    """Sentences of a retrieved chunk that may be quoted: no instruction-like text, and a required token if any."""
+    body = item.text.split("): ", 1)[1] if "): " in item.text else item.text
+    sentences = [s.strip() for s in SENTENCE.split(body) if s.strip()]
+    if item.flags:
+        sentences = [s for s in sentences if not flag_content(s)]
+    if require:
+        sentences = [s for s in sentences if require & set(tokenize(s))]
+    return sentences
+
+
 def _extract_claims(
-    question: str, result: ToolResult | None, skip_sources: set[str], limit: int = 3
+    question: str, result: ToolResult | None, skip_sources: set[str], limit: int = 3,
+    ignore: frozenset[str] = frozenset(), require: frozenset[str] = frozenset(),
+    status_drugs: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, Any]], int]:
     """Quote the best-matching sentence from each lexically relevant retrieved chunk.
 
     Sentences with instruction-like text are dropped (the rest of a flagged chunk
     can still be quoted); chunks whose source is already cited by a structured
-    claim are skipped to avoid restating the same fact.
+    claim are skipped to avoid restating the same fact. ``ignore`` (opt-in) drops
+    generic question words and one-letter tokens from the match; ``require``
+    (opt-in) makes only sentences containing one of those tokens quotable.
+    ``status_drugs`` (opt-in) quotes every sentence holding a documented status
+    entry for those drugs instead of the best match, and quotes such chunks first.
     """
     if result is None or not result.ok:
         return [], 0
     query = set(tokenize(question))
+    if ignore:
+        query = {t for t in query if len(t) > 1 and t not in ignore}
+    items = [item for item in result.evidence
+             if item.source_ref not in skip_sources and item.scores and item.scores.get("bm25")]
+    if status_drugs:  # a stable sort: the quote limit can no longer drop a lower-ranked status entry
+        items.sort(key=lambda item: not _status_sentences(_quotable(item, require), status_drugs))
     claims = []
     flagged = 0
-    for item in result.evidence:
-        if item.source_ref in skip_sources:
-            continue
-        if not item.scores or not item.scores.get("bm25"):
-            continue
-        body = item.text.split("): ", 1)[1] if "): " in item.text else item.text
-        sentences = [s.strip() for s in SENTENCE.split(body) if s.strip()]
-        if item.flags:
-            flagged += 1
-            sentences = [s for s in sentences if not flag_content(s)]
-        scored = [(len(query & set(tokenize(s))), s) for s in sentences]
-        overlap, best = max(scored, key=lambda pair: pair[0], default=(0, ""))
-        if not best or overlap == 0:
-            continue
-        claims.append(_claim(f"{item.title} ({d(item.date)}): \"{best}\"", [item.evidence_id], "quote"))
-        if len(claims) >= limit:
-            break
+    for item in items:
+        flagged += bool(item.flags)
+        sentences = _quotable(item, require)
+        picked = _status_sentences(sentences, status_drugs)
+        if not picked:
+            scored = [(len(query & set(tokenize(s))), s) for s in sentences]
+            overlap, best = max(scored, key=lambda pair: pair[0], default=(0, ""))
+            if not best or overlap == 0:
+                continue
+            picked = [best]
+        for sentence in picked:
+            claims.append(_claim(f"{item.title} ({d(item.date)}): \"{sentence}\"", [item.evidence_id], "quote"))
+            if len(claims) >= limit:
+                return claims, flagged
     return claims, flagged
 
 
 def _sources_of(citations: list[str], results: dict[str, ToolResult]) -> set[str]:
     wanted = set(citations)
     return {e.source_ref for r in results.values() for e in r.evidence if e.evidence_id in wanted}
+
+
+# ------------------------------------------- medication answers when no medication orders are recorded
+# No resource can prove an absence, so these are uncited answer notes, never claims. Note quotes stay the only
+# cited content, and each is labelled as note text rather than a verified medication order.
+MEDICATION_ORDERS_NONE = "No medication orders are recorded in this record."
+MEDICATION_COVERAGE = {
+    "not_imported": ("Structured medication orders were not imported from the data source for this record, so the "
+                     "absence of orders here does not show that none exist at the source."),
+    "returned_none": "The data source returned no medication orders for this patient when this record was imported.",
+    "undeclared": "The absence of medication orders in this record does not show that the patient takes no medication.",
+}
+MEDICATION_ABSTAIN_TAIL = {
+    "not_imported": "Structured medication orders were not imported, so this cannot be determined from the current evidence.",
+    "returned_none": ("The data source returned no medication orders for this patient, so this cannot be determined "
+                      "from structured orders."),
+    "undeclared": "No medication orders are recorded in this record, so this cannot be determined from the current evidence.",
+}
+NOTE_TEXT_CAVEAT = ("Quoted note passages are clinical note text, not verified medication orders; any medication names, "
+                    "doses and dates in them are as written in the note, and their current status is not confirmed.")
+REASON_AS_WRITTEN = "The reason is reported only as written in the cited note; no reason is inferred."
+GENERIC_QUESTION_WORDS = frozenset(tokenize("document documents documented documentation recorded list listed noted "
+                                            "mentioned written"))
+GENERIC_MEDICATION_WORDS = frozenset({"medication", "medications", "med", "meds", "drug", "drugs", "dose", "dosage",
+                                      "order", "orders"})
+MEDICATION_NAMES = dict(INTENT_RULES)["medications"]
+MEDICATION_EVENTS = {
+    "stopped": re.compile(r"\b(stop\w*|discontinu\w*|held|hold\w*|ceased)\b", re.I),
+    "started": re.compile(r"\b(start\w*|initiat\w*|began|begun|commenced)\b", re.I),
+    "changed": re.compile(r"\b(chang\w*|increas\w*|decreas\w*|reduc\w*|adjust\w*|titrat\w*|switch\w*)\b", re.I),
+}
+# "Dose" without a change word asks what dose is documented: the drug's entry must state an amount.
+DOSE_QUESTION = re.compile(r"\b(dose|doses|dosage|dosing)\b", re.I)
+DOSE_AMOUNT = re.compile(r"\b\d+(?:[.,/]\d+)?\s*(?:mg|mcg|micrograms?|g|units?|ml|meq|mmol)\b", re.I)
+REASON_QUESTION = re.compile(r"\b(why|reasons?)\b", re.I)
+CURRENT_QUESTION = re.compile(r"\b(still|currently|current|now|presently|today|at present|ongoing)\b", re.I)
+REASON_MARKER = re.compile(r"\b(because|due to|owing to|secondary to|as a result of|in view of|in order to|"
+                           r"reasons?)\b", re.I)
+NOTE_ENTRY = re.compile(r"\s-\s|;|\n|\.\s")  # one list item or clause of a quoted note sentence
+# A status question (a named drug, no asked event or dose) is answered first from the drug's documented status
+# entries. Only past-tense words document a status, so a plan or a condition ("hold furosemide if ...") does not.
+DOCUMENTED_STATUS = re.compile(r"\b(stopped|discontinued|ceased|held|started|restarted|resumed|initiated|continued|"
+                               r"changed|increased|decreased|reduced|switched|titrated|adjusted)\b", re.I)
+DOCUMENTED_STOP = re.compile(r"\b(stopped|discontinued|ceased|held)\b", re.I)
+DOCUMENTED_ONGOING = re.compile(r"\b(started|restarted|resumed|initiated|continued)\b", re.I)
+# A shown date is the note's own date, which can be later than the care it describes (a note dated in November can
+# list August discharge medications), so it is labelled as such and never presented as the time a status held.
+STOP_NOTE = ("The cited note (note date {date}) documents that {drug} was stopped. A documented stop is note text, "
+             "not a verified current medication status; current medication status is unverified.")
+CONFLICT_NOTE = ("The cited notes record more than one status for {drug} (a stop and a start or continuation); the "
+                 "record does not establish which is current. Current medication status is unverified.")
+CONTEXT_NOTE = "Other cited passages mention {drug} without a documented status; none of them establishes current use."
+NOTE_DATED = ("The cited note (note date {date}) documents {drug}; a note date can be later than the care it "
+              "describes, and the note does not establish current use. Current medication status is unverified.")
+# A "why" note speaks only for the quoted entry: the same note may state a reason in another sentence.
+REASON_UNSTATED = ("The quoted entry documents that {drug} was {event} but does not itself state why. No reason is "
+                   "inferred; the full note may state one.")
+REASON_UNSTATED_MENTION = ("The quoted passage mentions {drug} but does not itself state why. No reason is inferred; "
+                           "the full note may state one.")
+# A note entry documents an event only when it states it as done: a past-tense word from the asked family, not
+# negated, conditional, proposed or modal ("hold furosemide if ...", "was not stopped", "should be held"). Questions
+# are still read with MEDICATION_EVENTS.
+DOCUMENTED_EVENTS = {
+    "stopped": re.compile(r"\b(stopped|discontinued|held|ceased)\b", re.I),
+    "started": re.compile(r"\b(started|initiated|began|begun|commenced)\b", re.I),
+    "changed": re.compile(r"\b(changed|increased|decreased|reduced|adjusted|titrated|switched)\b", re.I),
+}
+NOT_DOCUMENTED = re.compile(r"\b(not|never|if|unless|consider\w*)\b|n't\b|"
+                            r"\b(should|may|might|could|would|will|can|must|to)\s+be\b", re.I)
+
+
+def _named_drugs(question: str) -> list[str]:
+    """Specific medications the question names (the planner's medication vocabulary, generic words excluded)."""
+    return list(dict.fromkeys(m.lower() for m in MEDICATION_NAMES.findall(question)
+                              if m.lower() not in GENERIC_MEDICATION_WORDS))
+
+
+def _status_drugs(question: str) -> list[str]:
+    """Drugs a status question names: a named drug, with no asked event (stop/start/change) and no asked dose."""
+    if any(pattern.search(question) for pattern in MEDICATION_EVENTS.values()) or DOSE_QUESTION.search(question):
+        return []
+    return _named_drugs(question)
+
+
+def _documented(entry: str) -> bool:
+    """False for a negated, conditional, proposed or modal entry: it does not document that anything happened."""
+    return not NOT_DOCUMENTED.search(entry)
+
+
+def _status_entries(text: str, drug: str) -> list[str]:
+    """Entries of a quote that name the drug with a documented (past-tense, affirmative) status."""
+    return [entry for entry in NOTE_ENTRY.split(text.lower())
+            if drug in entry and DOCUMENTED_STATUS.search(entry) and _documented(entry)]
+
+
+def _status_sentences(sentences: list[str], drugs: tuple[str, ...]) -> list[str]:
+    return [s for s in sentences if any(_status_entries(s, drug) for drug in drugs)]
+
+
+def _no_medication_orders(results: dict[str, ToolResult]) -> bool:
+    meds = results.get("get_medication_history")
+    return bool(meds and meds.ok and meds.scope.get("medication_orders") == "none_recorded")
+
+
+def _note(draft: Draft, text: str) -> None:
+    if text not in draft.uncertainty:
+        draft.uncertainty.append(text)
+
+
+def _entries(text: str, drug: str, events: list[str], dose: bool = False) -> list[str]:
+    """Entries of a quote that name the drug and document what was asked: an event, or a stated dose."""
+    return [entry for entry in NOTE_ENTRY.split(text.lower())
+            if drug in entry
+            and (not events or (any(DOCUMENTED_EVENTS[e].search(entry) for e in events) and _documented(entry)))
+            and (not dose or DOSE_AMOUNT.search(entry))]
+
+
+def _gap_coverage_notes(draft: Draft, results: dict[str, ToolResult]) -> None:
+    """A cited 'no medication orders' gap carries the import coverage its data source declared."""
+    missing = results.get("detect_missing_information")
+    if missing is None or not missing.ok:
+        return
+    cited = {c for claim in draft.claims for c in claim["citations"]}
+    for index, finding in enumerate(missing.data or [], start=1):
+        coverage = finding.get("coverage")
+        if (finding.get("category") == "medication_list_missing" and coverage in MEDICATION_COVERAGE
+                and f"check:medication_list_missing:{index}" in cited):
+            _note(draft, MEDICATION_COVERAGE[coverage])
+
+
+def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str, ToolResult]) -> None:
+    """Medication question, no orders: quote only supporting note entries and state what stays unanswered."""
+    coverage = results["get_medication_history"].scope.get("coverage", "undeclared")
+    coverage = coverage if coverage in MEDICATION_COVERAGE else "undeclared"
+    gap = any(c.startswith("check:medication_list_missing:") for claim in draft.claims for c in claim["citations"])
+    drugs = _named_drugs(question)
+    events = [name for name, pattern in MEDICATION_EVENTS.items() if pattern.search(question)]
+    dose = bool(DOSE_QUESTION.search(question)) and not events
+    if drugs:
+        draft.claims = [c for c in draft.claims
+                        if c["kind"] != "quote" or any(_entries(c["text"], drug, events, dose) for drug in drugs)]
+    quotes = [c for c in draft.claims if c["kind"] == "quote"]
+    if not quotes:
+        drug_explanation = (f"The available records do not establish the requested information about "
+                            f"{' and '.join(drugs)}. {MEDICATION_ABSTAIN_TAIL[coverage]}")
+        if not draft.claims:  # nothing answers the question: abstain, explaining why
+            draft.abstain_reason = (drug_explanation if drugs
+                                    else f"{MEDICATION_ORDERS_NONE} {MEDICATION_COVERAGE[coverage]}")
+        elif drugs:  # other parts were answered; the medication part stays unanswered
+            _note(draft, drug_explanation)
+        else:
+            if not gap:
+                _note(draft, MEDICATION_ORDERS_NONE)
+            _note(draft, MEDICATION_COVERAGE[coverage])
+        return
+    if not gap:
+        _note(draft, MEDICATION_ORDERS_NONE)
+    _note(draft, MEDICATION_COVERAGE[coverage])
+    _note(draft, NOTE_TEXT_CAVEAT)
+    dates = {e.evidence_id: e.date for r in results.values() for e in r.evidence}
+    status = _status_drugs(question)
+    for drug in drugs:
+        supporting = [(c, _entries(c["text"], drug, events, dose)) for c in quotes]
+        supporting = [(c, entries) for c, entries in supporting if entries]
+        if not supporting:
+            continue
+        if REASON_QUESTION.search(question):
+            if any(REASON_MARKER.search(entry) for _, entries in supporting for entry in entries):
+                _note(draft, REASON_AS_WRITTEN)
+            elif events:
+                _note(draft, REASON_UNSTATED.format(drug=drug, event=events[0]))
+            else:
+                _note(draft, REASON_UNSTATED_MENTION.format(drug=drug))
+        # A status question: a documented stop is reported as note text, never as verified current status, and
+        # a stop next to a start or continuation is reported without choosing between them.
+        mentions = [c for c, _ in supporting] if drug in status else []
+        entries = [(c, entry) for c in mentions for entry in _status_entries(c["text"], drug)]
+        stopped = [c for c, entry in entries if DOCUMENTED_STOP.search(entry)]
+        ongoing = [c for c, entry in entries if DOCUMENTED_ONGOING.search(entry) and not DOCUMENTED_STOP.search(entry)]
+        if stopped and ongoing:
+            _note(draft, CONFLICT_NOTE.format(drug=drug))
+        elif stopped:
+            _note(draft, STOP_NOTE.format(date=max(d(dates.get(c["citations"][0])) for c in stopped), drug=drug))
+        elif CURRENT_QUESTION.search(question):
+            latest = max(d(dates.get(c["citations"][0])) for c, _ in supporting)
+            _note(draft, NOTE_DATED.format(date=latest, drug=drug))
+        if entries and any(not _status_entries(c["text"], drug) for c in mentions):
+            _note(draft, CONTEXT_NOTE.format(drug=drug))
 
 
 # ------------------------------------------------------------- deterministic
@@ -257,10 +474,20 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
             draft.uncertainty.append(unavailable)
             if intents == ["risk"]:
                 draft.abstain_reason = unavailable
+    # Only a documentation gap's own check marks a source as covered. Its supporting citations (for example
+    # the note that states a date) must not stop other sections of that note from being quoted.
     structured_sources = {
-        ref for claim in draft.claims for ref in _sources_of(claim["citations"], results)
+        ref for claim in draft.claims
+        for ref in _sources_of(claim["citations"][:1] if claim["kind"] == "missing_information"
+                               else claim["citations"], results)
     }
-    quotes, flagged = _extract_claims(question, ok.get("retrieve_clinical_notes"), structured_sources)
+    zero_orders = "medications" in intents and _no_medication_orders(results)
+    # No orders and a named drug: only sentences naming that drug can be quoted, so an earlier sentence that
+    # merely shares another question word (e.g. "doses") cannot displace the drug's own note entry.
+    named = frozenset(t for drug in _named_drugs(question) for t in tokenize(drug)) if zero_orders else frozenset()
+    quotes, flagged = _extract_claims(question, ok.get("retrieve_clinical_notes"), structured_sources,
+                                      ignore=GENERIC_QUESTION_WORDS if zero_orders else frozenset(), require=named,
+                                      status_drugs=tuple(_status_drugs(question)) if zero_orders else ())
     draft.claims.extend(quotes)
     if flagged:
         draft.uncertainty.append(
@@ -270,6 +497,9 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     if failed:
         draft.uncertainty.append("Some tools failed and their data is missing from this answer: "
                                  + ", ".join(failed) + ".")
+    _gap_coverage_notes(draft, results)
+    if zero_orders:
+        _zero_order_medication_answer(question, draft, results)
     if not draft.claims and not draft.abstain_reason:
         draft.abstain_reason = ("No information answering this question was found in the synthetic record. "
                                 "The assistant does not answer beyond the record.")
