@@ -9,12 +9,12 @@ Design decision: [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md).
 | Gate | What it proves | Status |
 |---|---|---|
 | Offline (MOCK) suite | Keys and JWKS tooling, token client, hardened client, mapping and provenance, isolated snapshots, unchanged agent/retrieval/verifier/review on an Epic-shaped fixture, API readiness | **Passing** (mocked transports and a hand-authored fixture only) |
-| JWKS published and verified | Public key reachable over HTTPS, public members only, matches the local key | Not started: needs the owner's approval to generate the key and publish |
-| G1 token (LIVE) | `private_key_jwt` accepted for the existing non-production client; granted scopes | Not run |
-| G2 smoke (LIVE) | Patient.Read plus one search per registered API on one test patient | Not run |
-| G3 import (LIVE) | One test patient mapped, validated, stored and verified in an isolated snapshot | Not run |
+| JWKS published and verified | Public key reachable over HTTPS, public members only, matches the local key | **Passed** 2026-11-06 |
+| G1 token (LIVE) | `private_key_jwt` accepted for the existing non-production client; granted scopes | **Passed** 2026-11-06 (attempt 2) |
+| G2 smoke (LIVE) | Patient.Read plus one search per registered API on one test patient | **Passed** 2026-11-06 |
+| G3 import (LIVE) | One test patient mapped, validated, stored and verified in an isolated snapshot | **Passed** 2026-11-06 |
 
-**Mock vs live.** A passing MOCK test is never reported as Epic access. LIVE results are recorded below only after the corresponding approved run, as sanitised counts, statuses and scopes.
+**Mock vs live.** A passing MOCK test is never reported as Epic access. LIVE results are recorded in [Evidence (LIVE)](#evidence-live) only after the corresponding approved run, as sanitised counts, statuses and scopes.
 
 ## Architecture and boundaries
 
@@ -145,7 +145,7 @@ Searches mirror the registered Incoming APIs. All are patient-scoped and read-on
 | DiagnosticReport | none | yes |
 | MedicationRequest | none | **no**, until A1 is approved (see Limitations) |
 
-Which operations the sandbox actually accepts, and with which parameters, is unverified until G2.
+G2 confirmed that the sandbox accepts every operation above with these parameters, for one test patient (see [Evidence (LIVE)](#evidence-live)).
 
 Client behaviour:
 - **Pages:** follows `next` links only on the sandbox base, up to 10 pages and 500 resources.
@@ -207,6 +207,49 @@ Offline tests use `httpx.MockTransport` and a hand-authored fixture (`tests/fixt
 | `tests/test_epic_m2_readiness.py` | existing `/api/v2` routes over a snapshot (test-only patching) |
 | `tests/test_epic_telemetry_cli.py` | spans, counters and reports contain no tokens, identifiers or text; LIVE commands refuse without opt-in |
 
+## Evidence (LIVE)
+
+Each run below was approved separately by the owner and run from the owner's terminal; the owner typed the key passphrase. Sanitised reports are kept locally under `var/epic_sandbox/` (git-ignored). Scope: the Epic on FHIR **public sandbox** and one Epic-provided test patient. This is not production connectivity, an Epic certification or a clinical validation.
+
+**JWKS (2026-11-06).** `jwks check` passed on the GitHub Pages JWK Set (`epic-jwks` branch): HTTP 200, `application/json`, `Cache-Control: max-age=600`, the expected kid present, public members only, lint clean, and the published key matches the local key.
+
+**G1 token check (2026-11-06).**
+- **Attempt 1:** refused with `invalid_client`. The app configuration had not yet been saved with *Save & Ready for Sandbox*. The JWKS preflight passed, and the local clock matched Epic's.
+- **Attempt 2:** passed after the owner saved the configuration and Epic synced it. 1 token request, `expires_in` 3600 s.
+- **Granted scopes:** `system/Patient.read`, `system/Encounter.read`, `system/Condition.read`, `system/Observation.read`, `system/MedicationRequest.read`, `system/DocumentReference.read`, `system/DiagnosticReport.read`, `system/Binary.read`.
+- **Requests used:** 2 of the 3 G1 token requests budgeted.
+
+**G2 smoke (2026-11-06).**
+- **Test patient:** Warren McGinnis, FHIR ID `e0w0LEDCYtfckT6N.CkJKCw3`, from Epic's official *Sandbox Test Data* page.
+- **Requests:** 10 (1 token, Patient.Read, 8 searches, one page each). Every operation returned `ok`.
+
+| Operation | Count | Notes |
+|---|---|---|
+| Patient.Read | 1 | |
+| Encounter | 1 | `class.system` is not HL7 v3-ActCode |
+| Condition `problem-list-item` | 2 | |
+| Condition `encounter-diagnosis` | 0 | OperationOutcome `warning:4101` (no results) |
+| Observation `laboratory` | 1 | `effectiveDateTime`, `valueQuantity` |
+| Observation `vital-signs` | 73 | all `effectiveDateTime`; 59 `valueQuantity`, 14 `component` |
+| MedicationRequest | 0 | OperationOutcome `warning:4101` (no results) |
+| DocumentReference `clinical-note` | 53 | 2 attachments each, all by URL (`Binary`) |
+| DiagnosticReport | 2 | `effectiveDateTime` |
+
+**Observed resource shapes:**
+- `meta.versionId` was absent on every resource.
+- `meta.lastUpdated` was present on Encounter, Condition, the laboratory Observation and DiagnosticReport. It was absent on Patient, the vital-sign Observations and DocumentReference.
+- The smoke report reduces attachment content types to `other`, because its label filter rejects `/`. G3 recorded the actual note formats.
+
+**G3 import (2026-11-06).**
+- **Command:** `live import --max-notes 10` on the same test patient.
+- **Requests:** 19 (1 token, Patient.Read, 7 searches, 10 `Binary` reads). MedicationRequest was skipped (A1). The fetch was complete.
+- **Notes:** all 10 note bodies fetched were `text/html`, with 0 failures. All 53 notes offered an HTML or plain-text attachment.
+- **Mapped:** Patient 1, Encounter 1, Condition 2, Observation 74, DiagnosticReport 2, DocumentReference 10.
+- **Rejected:** `DocumentReference:note-content-unavailable` 43. These are the notes beyond the 10-note cap, whose bodies were not fetched.
+- **Field status:** transformed 464, unsupported 222, substituted 84, unavailable 84.
+- **Dangling references:** 1. A `DiagnosticReport.result` points to an Observation that the `laboratory` search did not return.
+- **`workspace verify`:** passed. It checked 90 resources: the bundle matches a fresh re-map, there are 0 provenance, binary or store mismatches, and the patient is isolated.
+
 ## Limitations and pending decisions
 
 - **A1 (needs approval):**
@@ -219,7 +262,7 @@ Offline tests use `httpx.MockTransport` and a hand-authored fixture (`tests/fixt
   - RTF-only notes and `effectivePeriod` observations are rejected with issue codes.
   - Conditions without an ICD-10-CM code keep their text but carry no code, because existing views label the first code as ICD-10.
 - **Readmission model:** disabled for this source. It was trained on a different population (ADR 0005).
-- **What the tests show:** MOCK results show contract compatibility only, not Epic's actual resource shapes. G2 records the real shapes.
+- **What the tests show:** MOCK results show contract compatibility only, not Epic's actual resource shapes. G2 and G3 recorded the real shapes for one test patient (see [Evidence (LIVE)](#evidence-live)). Other test patients may differ.
 
 ## Future work (each needs separate approval)
 
