@@ -31,10 +31,44 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-from src.clinical.fhir_client import PatientScopeViolation
-from src.interop.epic import keys, settings, workspace
-from src.interop.epic.auth import EpicAuthError, EpicTokenProvider
-from src.interop.epic.client import BinaryContent, EpicFHIRError, EpicSandboxClient
+# Offline guard. It must run before the application imports below: ``src.config`` loads the
+# repository ``.env`` when first imported, and that file may enable LangSmith tracing, which would
+# upload agent runs (including Epic test-patient content) to a third party. This CLI reads its own
+# settings from epic.env only. Tracing stays off even when the shell exports tracing variables.
+OFFLINE_ENV = {
+    "CLINICAL_TRACE_SKIP_DOTENV": "1",
+    "LANGSMITH_TRACING": "false",
+    "LANGSMITH_TRACING_V2": "false",
+    "LANGCHAIN_TRACING": "false",
+    "LANGCHAIN_TRACING_V2": "false",
+}
+TRACING_KEYS = ("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY")
+os.environ.update(OFFLINE_ENV)
+for _name in TRACING_KEYS:
+    os.environ.pop(_name, None)
+
+from src.clinical.fhir_client import PatientScopeViolation  # noqa: E402
+from src.interop.epic import keys, settings, workspace  # noqa: E402
+from src.interop.epic.auth import EpicAuthError, EpicTokenProvider  # noqa: E402
+from src.interop.epic.client import BinaryContent, EpicFHIRError, EpicSandboxClient  # noqa: E402
+
+
+class OfflineGuardError(RuntimeError):
+    """Offline execution cannot be guaranteed, so the command refuses to run."""
+
+
+def _require_offline(runtime: Any = None) -> None:
+    """Refuse to run the agent unless LangSmith tracing is off and no language-model provider is set."""
+    try:
+        from langsmith import utils as ls_utils
+    except ImportError:  # no LangSmith client installed, so nothing can upload traces
+        tracing = False
+    else:
+        tracing = bool(ls_utils.tracing_is_enabled())
+    if tracing:
+        raise OfflineGuardError("LangSmith tracing is enabled in this process; refusing to run offline")
+    if runtime is not None and getattr(runtime, "provider", None) is not None:
+        raise OfflineGuardError("a language-model provider is configured; refusing to run offline")
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -265,8 +299,10 @@ def _cmd_workspace_verify(args: argparse.Namespace) -> int:
 def _cmd_workspace_review(args: argparse.Namespace) -> int:
     snapshot = workspace.open_snapshot(args.snapshot)
     patient_id = args.patient or snapshot.patient_ids[0]
+    _require_offline()
     runtime = workspace.load_runtime(snapshot.path)
     try:
+        _require_offline(runtime)
         result = runtime.agent.run(workspace.local_access(snapshot), patient_id, args.question)
         payload: dict[str, Any] = {
             "label": snapshot.manifest["mode"],
@@ -362,6 +398,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings.ConfigError,
         settings.SandboxDisabled,
         workspace.WorkspaceError,
+        OfflineGuardError,
         ValueError,
     ) as exc:
         _emit({"ok": False, "error": str(exc)})
