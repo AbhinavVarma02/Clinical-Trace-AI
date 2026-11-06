@@ -235,8 +235,17 @@ def _cmd_live_import(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- offline workspace
+def _scope_notes(snapshot: workspace.Snapshot, coverage: dict[str, Any]) -> list[str]:
+    """Manifest notes, plus the note-coverage sentence for snapshots written before it was recorded."""
+    notes = list(snapshot.manifest["notes"])
+    if not any(note.startswith("Clinical notes:") for note in notes):
+        notes.append(workspace.note_coverage_sentence(coverage))
+    return notes
+
+
 def _snapshot_view(snapshot: workspace.Snapshot) -> dict[str, Any]:
     manifest = snapshot.manifest
+    coverage = workspace.note_coverage(snapshot)
     return {
         "snapshot_id": manifest["snapshot_id"],
         "mode": manifest["mode"],
@@ -245,7 +254,8 @@ def _snapshot_view(snapshot: workspace.Snapshot) -> dict[str, Any]:
         "resource_counts": manifest["resource_counts"],
         "mapping": manifest["mapping"],
         "fetch_complete": (manifest.get("fetch") or {}).get("complete"),
-        "notes": manifest["notes"],
+        "note_coverage": coverage,
+        "notes": _scope_notes(snapshot, coverage),
     }
 
 
@@ -300,6 +310,7 @@ def _cmd_workspace_review(args: argparse.Namespace) -> int:
     snapshot = workspace.open_snapshot(args.snapshot)
     patient_id = args.patient or snapshot.patient_ids[0]
     _require_offline()
+    coverage = workspace.note_coverage(snapshot)
     runtime = workspace.load_runtime(snapshot.path)
     try:
         _require_offline(runtime)
@@ -310,7 +321,8 @@ def _cmd_workspace_review(args: argparse.Namespace) -> int:
             "patient_id": patient_id,
             **workspace.review_summary(result),
             "citation_provenance": workspace.citation_provenance(runtime, result),
-            "scope_notes": snapshot.manifest["notes"],
+            "note_coverage": coverage,
+            "scope_notes": _scope_notes(snapshot, coverage),
         }
         if args.show_answer:
             payload["answer"] = result["answer"]

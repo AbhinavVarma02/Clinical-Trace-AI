@@ -141,7 +141,7 @@ Searches mirror the registered Incoming APIs. All are patient-scoped and read-on
 | Encounter | none | yes |
 | Condition | `problem-list-item`, `encounter-diagnosis` | yes |
 | Observation | `laboratory`, `vital-signs` | yes |
-| DocumentReference | `clinical-note` | yes; note text comes from `Binary` cited by the note |
+| DocumentReference | `clinical-note` | yes; note text comes from `Binary` cited by the note, for at most `--max-notes` notes (default 10) chosen as described in [Note selection and coverage](#note-selection-and-coverage) |
 | DiagnosticReport | none | yes |
 | MedicationRequest | none | **no**, until A1 is approved (see Limitations) |
 
@@ -152,6 +152,53 @@ Client behaviour:
 - **Retries:** 429/502/503/504 and timeouts are retried at most twice; `Retry-After` is honoured up to 10 s.
 - **Token expiry:** a 401 triggers one token refresh.
 - **OperationOutcome entries:** recorded by severity and code only.
+
+## Note selection and coverage
+
+`live import` fetches at most `--max-notes` note bodies (default 10, maximum 25), one `Binary` read each. Which notes are fetched follows policy `epic-note-select/1` in `importer.select_notes`:
+
+1. **Eligible notes:**
+   - not `entered-in-error`;
+   - an HTML or plain-text attachment by URL;
+   - a full clinical `date`.
+
+   No request is spent on other notes; mapping would reject them anyway.
+2. **Note type:** the LOINC code decides the type: Discharge summary 18842-5, History and physical 34117-2, Consult 11488-4, Progress note 11506-3, Procedure note 28570-0. If there is no LOINC code, the type text decides, ignoring case and punctuation. On a conflict LOINC wins, and the conflict is counted.
+3. **Key notes first:** the best Discharge summary, History and physical and Consult note are reserved first, in that order. "Best" means `current` and `final`/`amended` first, then newest, then lowest Epic id.
+4. **Remaining slots:** the newest other eligible notes fill the rest. Dates are compared as UTC instants. Equal times go to the higher-priority type, then the lower Epic id.
+5. **Stable result:** input order never changes the result.
+6. **Bounded requests:**
+   - A failed fetch still uses its slot, so requests stay bounded.
+   - A `Binary` cited by two selected notes is read once.
+
+The policy only chooses notes. It never changes a note's clinical `date` or its encounter reference.
+
+**Why.** The public sandbox is shared, so recent test notes from other developers outnumber a patient's original notes. The first LIVE import (G3) kept only the newest 10 notes by date. It therefore left out the patient's Discharge Summary, Consult and H&P.
+
+**Coverage report.** `workspace show` and `workspace review` print `note_coverage`. It is computed offline from the snapshot's raw records, `Binary` index and bundle, so it also works for snapshots written before this policy. It counts notes by type and status:
+
+| Status | Meaning |
+|---|---|
+| `imported` | mapped into the snapshot |
+| `excluded_by_cap` | eligible, but beyond the note cap |
+| `body_unavailable` | no HTML/plain-text body, the fetch failed, or the fetched body was empty, too large or unreadable |
+| `not_eligible` | `entered-in-error`, or no full clinical date |
+| `not_fetched_unattributed` | an older snapshot that did not record its selection and had failed fetches |
+
+The report also includes:
+- the key note types present in Epic but not imported;
+- each imported note's type, date and period:
+  - **historical:** more than 365 days before the newest clinical note date in the record (retrieval time is never used);
+  - **recent:** otherwise;
+- whether each imported note kept its original date and encounter link.
+
+A one-line summary is added to the snapshot's scope notes, for example:
+
+> Clinical notes: 10 of 53 imported (selection policy not recorded); 43 excluded by the import cap (Discharge summary 1, History and physical 1, Consult 1, Progress note 37, Procedure note 3). Key note types present in Epic but not imported: Discharge summary, History and physical, Consult. Answers cover imported notes only; each note keeps its original clinical date.
+
+**Limits.**
+- Answers cover imported notes only. The agent's answer text does not repeat the coverage report; changing that would mean an agent change, which needs separate approval.
+- The snapshot imported at G3 (`20261106t140916-09358b35`) is immutable and keeps its original 10 notes. Only a new, separately approved LIVE import would apply this policy to Epic data.
 
 ## Provenance and field status
 
@@ -206,6 +253,8 @@ Offline tests use `httpx.MockTransport` and a hand-authored fixture (`tests/fixt
 | `tests/test_epic_agent_compat.py` | all 11 tools and 6 questions on the unchanged agent; citations resolve to Epic sources; hash-bound review |
 | `tests/test_epic_m2_readiness.py` | existing `/api/v2` routes over a snapshot (test-only patching) |
 | `tests/test_epic_telemetry_cli.py` | spans, counters and reports contain no tokens, identifiers or text; LIVE commands refuse without opt-in |
+| `tests/test_epic_cli_offline.py` | the CLI loads no repository `.env`, keeps LangSmith tracing off (no outbound requests), and refuses to review if it cannot stay offline |
+| `tests/test_epic_note_selection.py` | note selection policy: key types first, determinism, ties, LOINC/text, ineligible notes, preliminary notes, UTC ordering, small caps. Also: bounded `Binary` reads; original dates and encounters kept; the coverage statuses; historical notes; the discharge question citing the Discharge summary; the 2019 H&P cited with its 2019 date |
 
 ## Evidence (LIVE)
 

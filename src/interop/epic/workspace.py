@@ -36,6 +36,8 @@ from src.interop.epic.mapping import (
     EpicMapper,
     MappingReport,
     content_sha256,
+    preferred_note_attachment,
+    relative_reference,
 )
 from src.persistence.db import DEFAULT_DB_PATH, Database
 from src.safety.policy import AccessContext, Persona
@@ -178,6 +180,161 @@ def _bundle_bytes(resources: list[dict[str, Any]]) -> bytes:
     return (json.dumps(bundle, indent=1, sort_keys=True) + "\n").encode("utf-8")
 
 
+# --------------------------------------------------------------------------- note coverage
+def _source_reference(resource: dict[str, Any]) -> str | None:
+    for extension in resource.get("extension") or []:
+        if extension.get("url") == PROVENANCE_URL:
+            for part in extension.get("extension") or []:
+                if part.get("url") == "sourceReference":
+                    return part.get("valueString")
+    return None
+
+
+def _encounter_reference(document: dict[str, Any]) -> str | None:
+    encounters = (document.get("context") or {}).get("encounter") or []
+    reference = (encounters[0] or {}).get("reference") if encounters else None
+    return reference if isinstance(reference, str) else None
+
+
+def summarize_note_coverage(
+    raw_resources: list[dict[str, Any]],
+    accepted: list[dict[str, Any]],
+    fetched_references: set[str],
+    fetch: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Which Epic notes a snapshot holds, why the others are missing, and which are historical.
+
+    Statuses: ``imported``; ``excluded_by_cap`` (eligible but beyond the note cap); ``body_unavailable``
+    (no HTML/plain-text body, the fetch failed, or the fetched body was unusable); ``not_eligible``
+    (entered in error, or no full clinical date); ``not_fetched_unattributed`` (an older snapshot that did
+    not record its selection and had failed fetches). Counts, note types and clinical dates only.
+    """
+    from src.interop.epic import importer  # local import: importer imports this module
+
+    documents = [r for r in raw_resources if r.get("resourceType") == "DocumentReference"]
+    mapped = {ref: r for r in accepted if r.get("resourceType") == "DocumentReference" and (ref := _source_reference(r))}
+    present = {f"{r['resourceType']}/{r['id']}" for r in accepted}
+    selection = fetch.get("note_selection") or {}
+    recorded = selection.get("policy") == importer.NOTE_SELECTION_POLICY and isinstance(selection.get("cap"), int)
+    selected = {d["id"] for d in importer.select_notes(documents, selection["cap"]).selected} if recorded else None
+    failed_fetches = int((fetch.get("notes") or {}).get("failed", 0))
+    reference_date, periods = importer.note_periods(documents)
+
+    statuses: Counter[str] = Counter()
+    by_type: dict[str, Counter[str]] = {}
+    reasons: dict[str, Counter[str]] = {}
+    imported_rows: list[dict[str, Any]] = []
+    missing_key_rows: list[dict[str, Any]] = []
+    dates_preserved = encounters_preserved = True
+    for document in documents:
+        kind = importer.note_type(document)[0]
+        source = f"DocumentReference/{document['id']}"
+        attachment = preferred_note_attachment(document)
+        binary = relative_reference(attachment["url"]) if attachment and isinstance(attachment.get("url"), str) else None
+        ineligible = importer.note_ineligibility(document)
+        reason = None
+        if source in mapped:
+            status = "imported"
+        elif ineligible == "no_fetchable_attachment":
+            status, reason = "body_unavailable", "no_html_or_plain_text_body"
+        elif ineligible:
+            status, reason = "not_eligible", ineligible
+        elif binary in fetched_references:
+            status, reason = "body_unavailable", "fetched_body_unusable"
+        elif selected is not None:
+            status, reason = ("body_unavailable", "fetch_failed") if document["id"] in selected else ("excluded_by_cap", None)
+        elif failed_fetches == 0:
+            status = "excluded_by_cap"
+        else:
+            status, reason = "not_fetched_unattributed", "cap_or_fetch_failure"
+        statuses[status] += 1
+        by_type.setdefault(status, Counter())[kind] += 1
+        if reason:
+            reasons.setdefault(status, Counter())[reason] += 1
+        when = importer.note_clinical_time(document)
+        row: dict[str, Any] = {
+            "type": kind,
+            "date": when.date().isoformat() if when else None,
+            "period": periods.get(document["id"]),
+        }
+        if status == "imported":
+            target = mapped[source]
+            source_time, mapped_time = when, importer.note_clinical_time(target)
+            row["date_preserved"] = source_time is not None and source_time == mapped_time
+            source_encounter, mapped_encounter = _encounter_reference(document), _encounter_reference(target)
+            row["encounter_linked"] = mapped_encounter is not None and mapped_encounter in present
+            dates_preserved &= row["date_preserved"]
+            if source_encounter is not None:
+                encounters_preserved &= row["encounter_linked"]
+            imported_rows.append(row)
+        elif kind in importer.KEY_NOTE_TYPES:
+            missing_key_rows.append({**row, "status": status})
+    imported_types = {row["type"] for row in imported_rows}
+    available_keys = [k for k in importer.KEY_NOTE_TYPES if any(importer.note_type(d)[0] == k for d in documents)]
+    imported_rows.sort(key=lambda r: (r["date"] or "", r["type"]))
+    return {
+        "policy": selection.get("policy") if recorded else None,
+        "cap": selection.get("cap") if recorded else None,
+        "available": len(documents),
+        "by_status": dict(sorted(statuses.items())),
+        "by_status_and_type": {s: importer.ordered_note_counts(c) for s, c in sorted(by_type.items())},
+        "reasons": {s: dict(sorted(c.items())) for s, c in sorted(reasons.items())},
+        "key_types_not_imported": [k for k in available_keys if k not in imported_types],
+        "historical_reference_date": reference_date,
+        "historical_after_days": importer.HISTORICAL_AFTER_DAYS,
+        "imported_notes": imported_rows,
+        "key_notes_not_imported": missing_key_rows,
+        "original_dates_preserved": dates_preserved,
+        "encounter_links_preserved": encounters_preserved,
+    }
+
+
+def note_coverage(snapshot: Snapshot | str | Path) -> dict[str, Any]:
+    """Note coverage of a stored snapshot, computed offline from its raw records, Binary index and bundle."""
+    snap = snapshot if isinstance(snapshot, Snapshot) else open_snapshot(snapshot)
+    raw = json.loads((snap.path / "raw" / "resources.json").read_text(encoding="utf-8"))
+    index = json.loads((snap.path / "raw" / "binaries.json").read_text(encoding="utf-8"))
+    bundle = json.loads(snap.bundle_path.read_text(encoding="utf-8"))
+    accepted = [entry["resource"] for entry in bundle.get("entry") or []]
+    return summarize_note_coverage(raw, accepted, set(index), snap.manifest.get("fetch") or {})
+
+
+def note_coverage_sentence(coverage: Mapping[str, Any]) -> str:
+    """One plain sentence for scope notes: imported, excluded by the cap, unavailable bodies, historical notes."""
+    from src.interop.epic.importer import NOTE_TYPE_LABELS
+
+    def by_type(status: str) -> str:
+        counts = coverage["by_status_and_type"].get(status) or {}
+        return ", ".join(f"{NOTE_TYPE_LABELS.get(k, k)} {n}" for k, n in counts.items())
+
+    available, statuses = coverage["available"], coverage["by_status"]
+    if not available:
+        return "Clinical notes: none were returned by Epic for this patient."
+    imported = statuses.get("imported", 0)
+    policy = f"policy {coverage['policy']}, cap {coverage['cap']}" if coverage.get("policy") else "selection policy not recorded"
+    parts = [f"Clinical notes: {imported} of {available} imported ({policy})"]
+    for status, text in (
+        ("excluded_by_cap", "excluded by the import cap"),
+        ("body_unavailable", "no usable note body"),
+        ("not_eligible", "not eligible"),
+        ("not_fetched_unattributed", "not fetched (cap or fetch failure)"),
+    ):
+        if statuses.get(status):
+            parts.append(f"{statuses[status]} {text} ({by_type(status)})")
+    sentence = "; ".join(parts) + "."
+    historical = [r for r in coverage["imported_notes"] if r.get("period") == "historical"]
+    if historical:
+        listed = ", ".join(f"{NOTE_TYPE_LABELS.get(r['type'], r['type'])} {r['date']}" for r in historical)
+        sentence += (
+            f" Historical notes (dated more than {coverage['historical_after_days']} days before the newest note,"
+            f" {coverage['historical_reference_date']}): {listed}."
+        )
+    if coverage["key_types_not_imported"]:
+        missing = ", ".join(NOTE_TYPE_LABELS.get(k, k) for k in coverage["key_types_not_imported"])
+        sentence += f" Key note types present in Epic but not imported: {missing}."
+    return sentence + " Answers cover imported notes only; each note keeps its original clinical date."
+
+
 def write_snapshot(
     source_patient_id: str,
     raw_resources: list[dict[str, Any]],
@@ -242,6 +399,9 @@ def write_snapshot(
         "notes": [
             "Readmission model disabled for this source (enable_model=False).",
             *([f"MedicationRequest {MEDICATION_SKIP_REASON}."] if not include_medications else []),
+            note_coverage_sentence(
+                summarize_note_coverage(raw_resources, accepted, set(binaries), fetch_summary or {})
+            ),
         ],
     }
     _write_manifest(directory, manifest)
