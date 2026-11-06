@@ -1,6 +1,6 @@
 # ADR 0008: Epic sandbox records enter through an isolated, provenance-preserving adapter
 
-**Status:** accepted for the internal milestone M1 (2026-11-05). Using the adapter from the application (M2) or publicly (M3) needs a separate decision.
+**Status:** accepted for the internal milestone M1 (2026-11-05); amended 2026-11-06 (see the end). Using the adapter from the application (M2) or publicly (M3) needs a separate decision.
 
 **Context.** The platform reads a generated synthetic FHIR fixture. The owner has registered a read-only Backend Systems app on the Epic on FHIR public R4 sandbox, which holds only test patients. Raw Epic resources do not meet the platform's FHIR contract:
 
@@ -43,3 +43,15 @@ Several existing views also assume the fixture's shapes. One example is that med
   - `effectivePeriod` observations;
   - conditions without an ICD-10-CM code.
 - Offline tests prove contract compatibility only. Live access is claimed only from recorded LIVE gate results.
+
+**Amendment (2026-11-06).** Offline reviews of the LIVE snapshots led to owner-approved changes outside the adapter, in `src/agent/` (composer, tools) and `src/clinical/` (consistency, records):
+
+- A note's labelled admission and discharge dates are compared with its linked encounter. A conflict is reported as a possible inconsistency; a missing encounter end is reported as incomplete documentation.
+- When a record has no medication orders, a medication answer states the absence and the source's import coverage as uncited notes and quotes note entries as note text. A drug question is answered only from an entry that documents the asked event as done, with the drug's documented status first. No reason, current status or dose is inferred, and shown dates are labelled as note dates.
+
+Consequences of the amendment:
+
+- The statements above that the agent runs unchanged and that the synthetic demo is unaffected now describe the adapter alone. The code of retrieval, the verifier, the planner, the API, the user interface and deployment is still unchanged.
+- The agent's execution revision changes, so checkpointed runs from before the change cannot be resumed after it.
+- For one synthetic demo patient without medication orders (`synthetic_p003`), medication answers change once this work is merged and deployed (a separate decision). The other measured synthetic answers and the offline evaluation gate (41/42) are unchanged.
+- Current limitations are listed in [EPIC_SANDBOX.md](../EPIC_SANDBOX.md#limitations-and-pending-decisions).

@@ -13,6 +13,8 @@ Design decision: [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md).
 | G1 token (LIVE) | `private_key_jwt` accepted for the existing non-production client; granted scopes | **Passed** 2026-11-06 (attempt 2) |
 | G2 smoke (LIVE) | Patient.Read plus one search per registered API on one test patient | **Passed** 2026-11-06 |
 | G3 import (LIVE) | One test patient mapped, validated, stored and verified in an isolated snapshot | **Passed** 2026-11-06 |
+| G3b re-import (LIVE) | The same test patient re-imported under note selection policy `epic-note-select/1` | **Passed** 2026-11-06 |
+| Offline agent review | The deterministic agent on the imported patient: verified claims, citations traced to Epic, no retrieval-time dates, isolation, human review | **Passed** 2026-11-06 (G3b snapshot) |
 
 **Mock vs live.** A passing MOCK test is never reported as Epic access. LIVE results are recorded in [Evidence (LIVE)](#evidence-live) only after the corresponding approved run, as sanitised counts, statuses and scopes.
 
@@ -61,6 +63,7 @@ python -m src.interop.epic.cli keys generate
 - Set a passphrase in the session first (`EPIC_SANDBOX_KEY_PASSPHRASE`), or answer the prompt. Never put the passphrase in a file.
 - `kid` is the RFC 7638 thumbprint, and the algorithm is RS384.
 - Restrict the file to your account. On Windows: `icacls "<path>" /inheritance:r /grant:r "<your account>:F"`. The tool prints this with your account name filled in. Full control lets you delete the key during rotation.
+- The CI secret scan of tracked files also flags PEM private keys and signed JWT-shaped tokens, so a pasted key or token fails the build.
 
 **Publish only the public file:**
 - Use a dedicated orphan branch `epic-jwks` containing `.nojekyll`, `jwks.json` and a short README.
@@ -198,7 +201,7 @@ A one-line summary is added to the snapshot's scope notes, for example:
 
 **Limits.**
 - Answers cover imported notes only. The agent's answer text does not repeat the coverage report; changing that would mean an agent change, which needs separate approval.
-- The snapshot imported at G3 (`20261106t140916-09358b35`) is immutable and keeps its original 10 notes. Only a new, separately approved LIVE import would apply this policy to Epic data.
+- The snapshot imported at G3 (`20261106t140916-09358b35`) is immutable and keeps its original 10 notes. The approved re-import G3b applied this policy to Epic data in a new snapshot (see [Evidence (LIVE)](#evidence-live)).
 
 ## Provenance and field status
 
@@ -255,6 +258,11 @@ Offline tests use `httpx.MockTransport` and a hand-authored fixture (`tests/fixt
 | `tests/test_epic_telemetry_cli.py` | spans, counters and reports contain no tokens, identifiers or text; LIVE commands refuse without opt-in |
 | `tests/test_epic_cli_offline.py` | the CLI loads no repository `.env`, keeps LangSmith tracing off (no outbound requests), and refuses to review if it cannot stay offline |
 | `tests/test_epic_note_selection.py` | note selection policy: key types first, determinism, ties, LOINC/text, ineligible notes, preliminary notes, UTC ordering, small caps. Also: bounded `Binary` reads; original dates and encounters kept; the coverage statuses; historical notes; the discharge question citing the Discharge summary; the 2019 H&P cited with its 2019 date |
+| `tests/test_encounter_date_consistency.py` | labelled admission and discharge dates in a note against the linked encounter: a difference of more than one day is a possible inconsistency, a missing encounter end is incomplete documentation, both values are quoted as recorded, and a cited note's other sections can still be quoted |
+| `tests/test_epic_encounter_mismatch.py` | the same on the Epic pathway (mock import, snapshot, agent): the finding cites the note and the encounter and requires human review |
+| `tests/test_medication_evidence.py` | answers for records without medication orders: the absence and the import coverage as uncited notes; note passages quoted and labelled as note text; a drug question answered only from an entry that documents the asked event as done; a drug's documented status quoted first; no reason, current status or dose inferred; shown dates labelled as note dates |
+| `tests/test_epic_medication_answer.py` | the same on the Epic pathway, where the snapshot manifest says medication orders were not imported |
+| `tests/test_security.py` | the tracked-file secret scan, including PEM private keys and signed JWT-shaped tokens (generated at run time); public keys and JWK Sets are not flagged |
 
 ## Evidence (LIVE)
 
@@ -298,21 +306,59 @@ Each run below was approved separately by the owner and run from the owner's ter
 - **Field status:** transformed 464, unsupported 222, substituted 84, unavailable 84.
 - **Dangling references:** 1. A `DiagnosticReport.result` points to an Observation that the `laboratory` search did not return.
 - **`workspace verify`:** passed. It checked 90 resources: the bundle matches a fresh re-map, there are 0 provenance, binary or store mismatches, and the patient is isolated.
+- **Note coverage:** the newest-first cap left out the patient's Discharge Summary, Consult and History and physical (the shared sandbox holds many recent test notes from other developers). This led to the note selection policy and G3b.
+
+**G3b re-import (2026-11-06).**
+- **Command:** `live import --max-notes 10` on the same test patient, with note selection policy `epic-note-select/1`. It wrote a new snapshot; the G3 snapshot is unchanged.
+- **Requests:** 19 (1 token, Patient.Read, 7 searches with one page each, 10 `Binary` reads), with 0 errors or retries. MedicationRequest was skipped (A1).
+- **Selection:** all 53 notes were eligible.
+  - Imported: Discharge summary 1, History and physical 1, Consult 1, Progress note 6, Procedure note 1.
+  - Excluded by the cap: Progress note 40, Procedure note 3. No key note type was left out.
+  - One selected progress note was preliminary. All 10 bodies were `text/html`.
+- **Dates:** every imported note kept its source date and encounter link. The History and physical (2019-05-28) is marked historical; the other 9 notes are recent.
+- **Mapped:** the same counts as G3. Rejected: `DocumentReference:note-content-unavailable` 43, which is the cap. Dangling references: 1, the same `DiagnosticReport.result`.
+- **`workspace verify`:** passed on 90 resources, with 0 mismatches and the patient isolated.
+- **Source data:** all 53 notes link to the patient's only encounter (2019-05-28, in progress, no end). That includes a 2026 Discharge Summary that states an admission from 2026-08-05 to 2026-08-07.
+
+**Offline agent review of the G3b snapshot (2026-11-06).**
+- **How it was run:** `workspace review` and the agent on a byte-identical copy of the snapshot. The run was deterministic (0 language-model calls), with LangSmith tracing off and outbound network blocked (0 attempts). The snapshot was unchanged afterwards, and `workspace verify` passed before and after.
+- **Six compatibility questions** (summary, labs, discharge and follow-up, missing documentation, inconsistencies, medications):
+  - All 6 were answered, with 20 claims citing 24 distinct evidence items.
+  - Every claim was verified, 0 were rejected, and there were 0 isolation violations.
+  - Every cited item resolves to a resource with Epic provenance; 0 are unresolved. The CLI exited 0.
+- **Notable answers:**
+  - The discharge and follow-up answer quotes the Discharge Summary's follow-up plan.
+  - The inconsistencies answer flags the Discharge Summary's admission date against the encounter start, and requires human review.
+  - The medications answer quotes the Discharge Summary's medication-change list as note text and says that orders were not imported.
+  - "Prepare this record for review" gives 8 verified claims and requires human review.
+- **Dates:** none of the 40 dated evidence items carries the snapshot's retrieval time.
+- **Isolation:** the snapshot holds one patient, and a run for another patient is refused.
+- **Human review:** a submitted run is pending review. Self-approval is refused, a stale artifact hash is refused, and a rejection without a comment is refused. A reviewer's approval with the current hash is valid.
+- **Check citations:** a documentation-gap claim cites its check, and the check points at the resource it ran on. For "No medication orders are recorded", that resource is the Patient. It is counted above as resolved to Epic, but it is not evidence that orders are absent (see A1 below).
 
 ## Limitations and pending decisions
 
 - **A1 (needs approval):**
   - **What's wrong:** existing medication views use `meta.lastUpdated` as a medication date for version-1 orders (`src/retrieval/chunking.py`, `src/agent/tools.py`).
   - **Current handling:** MedicationRequest is not imported until this is fixed, so snapshots report "no medication orders", and the deterministic summary currently repeats that finding.
-  - **How answers disclose it:** the snapshot manifest says medication import was off, and answers add the note "Structured medication orders were not imported from the data source for this record…". Medication answers quote note mentions as note text, not verified orders. A question about whether a drug is taken quotes the drug's documented status entry first, such as a Discharge Summary's "STOPPED" line, and labels it as note text, not verified current status. The Patient is never cited as proof that orders are absent.
+  - **How answers disclose it:** the snapshot manifest says medication import was off, and answers add the note "Structured medication orders were not imported from the data source for this record…". Medication answers quote note mentions as note text, not verified orders. A question about whether a drug is taken quotes the drug's documented status entry first, such as a Discharge Summary's "STOPPED" line, and labels it as note text, not verified current status. Where an answer note shows a date, it is labelled as the clinical note's date, which can be later than the care that note describes. Medication answers never cite the Patient as proof that orders are absent.
+  - **Remaining gap:** summary and missing-documentation answers keep the existing claim "Documentation gap: No medication orders are recorded for this patient." It cites its check, and the check points at the Patient. For this source the absence reflects the import scope, not a gap in Epic's documentation; the not-imported note is added. Changing it needs a separate decision.
 - **Discharge summary detection (P2 candidate):**
-  - **What's wrong:** detection is an exact, case-sensitive match on "Discharge summary". An Epic-style "Discharge Summary" note is missed, producing a false "missing discharge summary" finding that the summary answer repeats.
+  - **What's wrong:** detection is an exact, case-sensitive match on "Discharge summary", so an Epic-style "Discharge Summary" note is missed. On the MOCK fixture, whose encounter class is `IMP`, this produces a false "missing discharge summary" finding that the summary answer repeats. It cannot fire on the LIVE snapshots (next item).
   - **Current handling:** recorded as a strict expected failure in the compatibility tests.
+- **Inpatient checks on Epic encounters:** the inpatient completeness checks ("no encounter end", "no discharge summary") run only for encounter class `IMP`. The sandbox encounter's class is Epic's own code `3` ("Admission"), so these checks never run on Epic data. The class is not re-mapped, because the material reviewed does not document Epic's code system.
+- **Unresolved result reference:** a DiagnosticReport ("Stress test") points to a result Observation that the `laboratory` search did not return. It is counted in the mapping report, not repaired. No agent tool reads DiagnosticReports, so answers neither cite nor mention it. A question about the stress test gets unrelated note quotes instead of an answer saying the result is unavailable.
+- **Sandbox source data:** all notes link to the single 2019 encounter, including the 2026 Discharge Summary. Answers flag its admission date as a possible inconsistency and its discharge date as incomplete encounter documentation. Summary answers do not mention the conflict. A note's date can differ from the care it describes: the Discharge Summary is dated 2026-11-02 but describes an August 2026 admission.
+- **Medication vocabulary:**
+  - Questions naming drugs outside the planner's medication vocabulary, such as apixaban or torsemide, are answered as general record questions. They quote note text without the note-text caveat or the import-coverage note.
+  - "Anticoagulant" is matched only to warfarin, so "Is the patient on an anticoagulant?" abstains even though the notes mention apixaban.
+- **Language-model mode:** `workspace review` refuses to run when LangSmith tracing or a language-model provider is configured. The language-model composer does not add the medication-coverage notes, so Epic data stays in deterministic mode.
+- **Note coverage in answers:** coverage is reported by `workspace show` and `workspace review`, not in the answer text.
 - **Not mapped:**
   - RTF-only notes and `effectivePeriod` observations are rejected with issue codes.
   - Conditions without an ICD-10-CM code keep their text but carry no code, because existing views label the first code as ICD-10.
 - **Readmission model:** disabled for this source. It was trained on a different population (ADR 0005).
-- **What the tests show:** MOCK results show contract compatibility only, not Epic's actual resource shapes. G2 and G3 recorded the real shapes for one test patient (see [Evidence (LIVE)](#evidence-live)). Other test patients may differ.
+- **What the tests show:** MOCK results show contract compatibility only, not Epic's actual resource shapes. G2, G3 and G3b recorded the real shapes for one test patient (see [Evidence (LIVE)](#evidence-live)). Only that patient has been imported, and Epic returned no medication orders for it at G2, so other test patients may differ.
 
 ## Future work (each needs separate approval)
 
