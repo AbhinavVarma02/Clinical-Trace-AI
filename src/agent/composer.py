@@ -304,12 +304,20 @@ DOCUMENTED_STATUS = re.compile(r"\b(stopped|discontinued|ceased|held|started|res
                                r"changed|increased|decreased|reduced|switched|titrated|adjusted)\b", re.I)
 DOCUMENTED_STOP = re.compile(r"\b(stopped|discontinued|ceased|held)\b", re.I)
 DOCUMENTED_ONGOING = re.compile(r"\b(started|restarted|resumed|initiated|continued)\b", re.I)
-STOP_NOTE = ("The cited note ({date}) documents that {drug} was stopped. A documented stop is note text, not a "
-             "verified current medication status; current medication status is unverified.")
+# A shown date is the note's own date, which can be later than the care it describes (a note dated in November can
+# list August discharge medications), so it is labelled as such and never presented as the time a status held.
+STOP_NOTE = ("The cited note (note date {date}) documents that {drug} was stopped. A documented stop is note text, "
+             "not a verified current medication status; current medication status is unverified.")
 CONFLICT_NOTE = ("The cited notes record more than one status for {drug} (a stop and a start or continuation); the "
                  "record does not establish which is current. Current medication status is unverified.")
-CONTEXT_NOTE = ("Other cited passages mention {drug} without a documented status; each reflects only the time its "
-                "note was written and does not establish current use.")
+CONTEXT_NOTE = "Other cited passages mention {drug} without a documented status; none of them establishes current use."
+NOTE_DATED = ("The cited note (note date {date}) documents {drug}; a note date can be later than the care it "
+              "describes, and the note does not establish current use. Current medication status is unverified.")
+# A "why" note speaks only for the quoted entry: the same note may state a reason in another sentence.
+REASON_UNSTATED = ("The quoted entry documents that {drug} was {event} but does not itself state why. No reason is "
+                   "inferred; the full note may state one.")
+REASON_UNSTATED_MENTION = ("The quoted passage mentions {drug} but does not itself state why. No reason is inferred; "
+                           "the full note may state one.")
 # A note entry documents an event only when it states it as done: a past-tense word from the asked family, not
 # negated, conditional, proposed or modal ("hold furosemide if ...", "was not stopped", "should be held"). Questions
 # are still read with MEDICATION_EVENTS.
@@ -421,10 +429,9 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
             if any(REASON_MARKER.search(entry) for _, entries in supporting for entry in entries):
                 _note(draft, REASON_AS_WRITTEN)
             elif events:
-                _note(draft, f"The cited note documents that {drug} was {events[0]} but does not state why; "
-                             "the reason is unknown.")
+                _note(draft, REASON_UNSTATED.format(drug=drug, event=events[0]))
             else:
-                _note(draft, f"The cited note mentions {drug} but does not state why; the reason is unknown.")
+                _note(draft, REASON_UNSTATED_MENTION.format(drug=drug))
         # A status question: a documented stop is reported as note text, never as verified current status, and
         # a stop next to a start or continuation is reported without choosing between them.
         mentions = [c for c, _ in supporting] if drug in status else []
@@ -437,8 +444,7 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
             _note(draft, STOP_NOTE.format(date=max(d(dates.get(c["citations"][0])) for c in stopped), drug=drug))
         elif CURRENT_QUESTION.search(question):
             latest = max(d(dates.get(c["citations"][0])) for c, _ in supporting)
-            _note(draft, f"The cited note ({latest}) documents {drug} only as of that date; it does not establish "
-                         "current use. Current medication status is unverified.")
+            _note(draft, NOTE_DATED.format(date=latest, drug=drug))
         if entries and any(not _status_entries(c["text"], drug) for c in mentions):
             _note(draft, CONTEXT_NOTE.format(drug=drug))
 

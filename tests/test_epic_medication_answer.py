@@ -27,6 +27,8 @@ NOT_IMPORTED = ("Structured medication orders were not imported from the data so
                 "absence of orders here does not show that none exist at the source.")
 CAVEAT = ("Quoted note passages are clinical note text, not verified medication orders; any medication names, doses "
           "and dates in them are as written in the note, and their current status is not confirmed.")
+REASON_UNSTATED = ("The quoted entry documents that furosemide was stopped but does not itself state why. No reason is "
+                   "inferred; the full note may state one.")
 
 
 def _note(pid, doc_id, loinc, display, date, binary):
@@ -118,13 +120,12 @@ def test_the_medication_answer_quotes_the_discharge_summary_and_states_the_impor
     assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT]
 
 
-def test_a_stopped_entry_reports_the_stop_and_leaves_the_reason_unknown(meds):
+def test_a_stopped_entry_reports_the_stop_and_infers_no_reason(meds):
     result, evidence = _run(meds, "Why was furosemide stopped?")
     assert result["outcome"] == "answered"
     assert any(src == DS_SOURCE and "STOPPED: furosemide 40 mg daily" in text
                for src, text in _quote_sources(meds, result, evidence))
-    assert ("The cited note documents that furosemide was stopped but does not state why; the reason is unknown."
-            in result["answer"]["uncertainty"])
+    assert REASON_UNSTATED in result["answer"]["uncertainty"]
 
 
 def test_a_continued_entry_answers_neither_a_stop_nor_current_use(meds):
@@ -136,8 +137,9 @@ def test_a_continued_entry_answers_neither_a_stop_nor_current_use(meds):
     current, evidence = _run(meds, "Is the patient still taking metformin?")
     assert current["outcome"] == "answered"
     assert any("CONTINUED: metformin 1000 mg twice daily" in text for _, text in _quote_sources(meds, current, evidence))
-    assert ("The cited note (2026-11-02) documents metformin only as of that date; it does not establish current "
-            "use. Current medication status is unverified.") in current["answer"]["uncertainty"]
+    assert ("The cited note (note date 2026-11-02) documents metformin; a note date can be later than the care it "
+            "describes, and the note does not establish current use. Current medication status is unverified."
+            ) in current["answer"]["uncertainty"]
 
 
 def test_a_documented_dose_is_quoted_from_the_discharge_summary(meds):
@@ -194,10 +196,9 @@ def test_a_status_question_quotes_the_stopped_entry_first_and_keeps_the_consult_
     assert any(src == STATUS_CONSULT_SOURCE and "his current furosemide 40 mg daily" in text for src, text in sources)
     assert result["answer"]["uncertainty"] == [
         NONE, NOT_IMPORTED, CAVEAT,
-        "The cited note (2026-11-02) documents that furosemide was stopped. A documented stop is note text, not a "
-        "verified current medication status; current medication status is unverified.",
-        "Other cited passages mention furosemide without a documented status; each reflects only the time its note "
-        "was written and does not establish current use.",
+        "The cited note (note date 2026-11-02) documents that furosemide was stopped. A documented stop is note text, "
+        "not a verified current medication status; current medication status is unverified.",
+        "Other cited passages mention furosemide without a documented status; none of them establishes current use.",
     ]
 
 
@@ -237,5 +238,4 @@ def test_an_instruction_not_to_stop_a_drug_is_not_a_documented_stop(event_meds):
     stopped, evidence = _run(event_meds, "Why was furosemide stopped?")
     assert any(src == EVENT_DS_SOURCE and "STOPPED: furosemide 40 mg daily" in text
                for src, text in _quote_sources(event_meds, stopped, evidence))
-    assert ("The cited note documents that furosemide was stopped but does not state why; the reason is unknown."
-            in stopped["answer"]["uncertainty"])
+    assert REASON_UNSTATED in stopped["answer"]["uncertainty"]

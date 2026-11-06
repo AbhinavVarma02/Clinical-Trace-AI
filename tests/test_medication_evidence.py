@@ -61,6 +61,14 @@ TAIL = {
 }
 COVERAGE = {"not_imported": NOT_IMPORTED, "returned_none": RETURNED_NONE, None: UNDECLARED}
 DOSE = re.compile(r"\d+(?:\.\d+)?\s*(?:mg|mcg|units)\b", re.I)
+# The "why" note speaks only for the quoted entry (the same note may state a reason elsewhere), and a shown date is
+# labelled as the note's date, which can be later than the care it describes.
+REASON_UNSTATED = ("The quoted entry documents that {drug} was {event} but does not itself state why. No reason is "
+                   "inferred; the full note may state one.")
+REASON_UNSTATED_MENTION = ("The quoted passage mentions {drug} but does not itself state why. No reason is inferred; "
+                           "the full note may state one.")
+NOTE_DATED = ("The cited note (note date {date}) documents {drug}; a note date can be later than the care it "
+              "describes, and the note does not establish current use. Current medication status is unverified.")
 
 
 def patient(pid: str) -> dict:
@@ -148,13 +156,12 @@ def test_a_general_question_without_note_mentions_abstains_with_an_explanation(r
 
 
 # ------------------------------------------------------------------------- questions naming a drug
-def test_a_documented_stop_is_reported_but_its_unstated_reason_is_unknown(rt):
+def test_a_documented_stop_is_reported_but_no_reason_is_inferred(rt):
     result = ask(rt, "Why was furosemide stopped?", coverage="not_imported")
     assert result["outcome"] == "answered"
     assert any("STOPPED: furosemide 40 mg daily" in q["text"] for q in quotes(result))
     assert result["answer"]["uncertainty"] == [
-        NONE, NOT_IMPORTED, CAVEAT,
-        "The cited note documents that furosemide was stopped but does not state why; the reason is unknown.",
+        NONE, NOT_IMPORTED, CAVEAT, REASON_UNSTATED.format(drug="furosemide", event="stopped"),
     ]
     assert not re.search(r"\b(because|due to|reason (is|was) (that|to))\b", " ".join(c["text"] for c in result["answer"]["claims"]))
 
@@ -164,15 +171,14 @@ def test_a_stated_reason_is_quoted_as_written_and_not_inferred(rt):
     assert result["outcome"] == "answered"
     assert any("STOPPED: lisinopril because of a rise in potassium." in q["text"] for q in quotes(result))
     assert "The reason is reported only as written in the cited note; no reason is inferred." in result["answer"]["uncertainty"]
-    assert "the reason is unknown" not in notes_of(result)
+    assert "does not itself state why" not in notes_of(result)
 
 
 def test_a_historical_continued_entry_does_not_establish_current_use(rt):
     result = ask(rt, "Is the patient still taking metformin?", coverage="not_imported")
     assert result["outcome"] == "answered"
     assert any("CONTINUED: metformin 1000 mg twice daily" in q["text"] for q in quotes(result))
-    assert ("The cited note (2026-08-07) documents metformin only as of that date; it does not establish current "
-            "use. Current medication status is unverified.") in result["answer"]["uncertainty"]
+    assert NOTE_DATED.format(date="2026-08-07", drug="metformin") in result["answer"]["uncertainty"]
     claims = " ".join(c["text"] for c in result["answer"]["claims"] if c["kind"] != "quote")
     assert not re.search(r"\b(is|currently|still) (taking|on)\b", claims)
 
@@ -302,14 +308,13 @@ STATUS_QUESTIONS = ("Is the patient currently taking furosemide?", "Is the patie
                     "Is the patient taking furosemide?")
 OTHER_DRUG_QUESTIONS = ("Was furosemide stopped?", "Why was furosemide stopped?", "When was furosemide started?",
                         "What dose of furosemide is documented?", "What medications are documented?")
-STOP = ("The cited note ({date}) documents that furosemide was stopped. A documented stop is note text, not a verified "
-        "current medication status; current medication status is unverified.")
+STOP = ("The cited note (note date {date}) documents that furosemide was stopped. A documented stop is note text, not "
+        "a verified current medication status; current medication status is unverified.")
 CONFLICT = ("The cited notes record more than one status for furosemide (a stop and a start or continuation); the "
             "record does not establish which is current. Current medication status is unverified.")
-CONTEXT = ("Other cited passages mention furosemide without a documented status; each reflects only the time its note "
-           "was written and does not establish current use.")
-AS_OF = ("The cited note ({date}) documents furosemide only as of that date; it does not establish current use. "
-         "Current medication status is unverified.")
+CONTEXT = ("Other cited passages mention furosemide without a documented status; none of them establishes current "
+           "use.")
+AS_OF = NOTE_DATED.replace("{drug}", "furosemide")
 
 
 @pytest.fixture()
@@ -468,7 +473,7 @@ def test_a_plan_condition_negation_or_instruction_is_not_a_documented_event(even
 
 @pytest.mark.parametrize("pid", UNDOCUMENTED)
 def test_a_status_question_never_reports_an_undocumented_stop(events_rt, pid):
-    # The entry is still quoted verbatim, with today's "only as of that date" note and no "documented stop" note.
+    # The entry is still quoted verbatim, with the note-date note and no "documented stop" note.
     result = ask(events_rt, "Is the patient currently taking furosemide?", pid=pid)
     assert result["outcome"] == "answered"
     assert [EVENT_ENTRIES[pid][1] in q["text"] for q in quotes(result)] == [True]
@@ -480,9 +485,8 @@ def test_a_documented_event_is_still_answered(events_rt, pid, question):
     result = ask(events_rt, question, pid=pid)
     assert result["outcome"] == "answered"
     assert [EVENT_ENTRIES[pid][1] in q["text"] for q in quotes(result)] == [True]
-    reason_unknown = (f"The cited note documents that furosemide was {EVENT_ENTRIES[pid][2]} but does not state why; "
-                      "the reason is unknown.")
-    assert (reason_unknown in result["answer"]["uncertainty"]) == question.startswith("Why")
+    reason_unstated = REASON_UNSTATED.format(drug="furosemide", event=EVENT_ENTRIES[pid][2])
+    assert (reason_unstated in result["answer"]["uncertainty"]) == question.startswith("Why")
 
 
 @pytest.mark.parametrize("pid", DOCUMENTED_STOPS)
@@ -506,3 +510,51 @@ def test_the_negation_and_condition_check_drops_no_documented_event(events_rt, m
     current = answers()
     monkeypatch.setattr(composer, "_documented", lambda entry: True)
     assert answers() == current
+
+
+# ------------------------------------------------------------------------- note wording (L3, L5)
+# As in the LIVE G3b Discharge Summary: the note states why furosemide was changed in a different sentence from its
+# STOPPED entry, and its note date is months after the discharge it describes.
+WORDING_PID = "synthetic_wording01"
+WORDING_TEXT = ("Discharge date: 2026-08-07. His loop diuretic was transitioned from furosemide to torsemide for more "
+                "reliable absorption. MEDICATION CHANGES - STOPPED: furosemide 40 mg daily - STARTED: torsemide 40 mg "
+                "daily - CONTINUED: metformin 1000 mg twice daily")
+
+
+@pytest.fixture(scope="module")
+def wording_rt(tmp_path_factory):
+    resources = [patient(WORDING_PID),
+                 note("wording-ds", WORDING_TEXT, "Discharge Summary", "2026-11-02T05:03:06Z", pid=WORDING_PID)]
+    bundle = tmp_path_factory.mktemp("medication-wording") / "bundle.json"
+    bundle.write_text(json.dumps({"resourceType": "Bundle", "type": "collection",
+                                  "entry": [{"resource": r} for r in resources]}), encoding="utf-8")
+    runtime = build_runtime(":memory:", fixture=bundle, provider=None, enable_model=False)
+    yield runtime
+    runtime.close()
+
+
+@pytest.mark.parametrize("question, expected", [
+    ("Why was furosemide stopped?", REASON_UNSTATED.format(drug="furosemide", event="stopped")),
+    ("Why is the patient on metformin?", REASON_UNSTATED_MENTION.format(drug="metformin")),
+])
+def test_an_unstated_reason_is_described_for_the_quoted_entry_only(wording_rt, question, expected):
+    # L3: the note does give a reason, in another sentence, so the answer must not say the note states none.
+    result = ask(wording_rt, question, pid=WORDING_PID, coverage="not_imported")
+    assert result["outcome"] == "answered"
+    assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT, expected]
+    notes = notes_of(result)
+    assert "the reason is unknown" not in notes and "The cited note documents that" not in notes
+    assert "absorption" not in notes  # the stated reason is never restated outside a quote
+
+
+def test_a_shown_date_is_labelled_as_the_note_date(wording_rt):
+    # L5: the note is dated 2026-11-02 but describes a 2026-08-07 discharge; the answer must not imply that the
+    # medication list held "as of" the note date.
+    result = ask(wording_rt, "Is the patient still on metformin?", pid=WORDING_PID, coverage="not_imported")
+    assert result["outcome"] == "answered"
+    assert any("CONTINUED: metformin 1000 mg twice daily" in q["text"] for q in quotes(result))
+    assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT,
+                                               NOTE_DATED.format(date="2026-11-02", drug="metformin")]
+    assert "as of" not in notes_of(result)
+    stopped = ask(wording_rt, "Is the patient currently taking furosemide?", pid=WORDING_PID, coverage="not_imported")
+    assert STOP.format(date="2026-11-02") in stopped["answer"]["uncertainty"]
