@@ -147,6 +147,32 @@ def _is_full_time(value: Any) -> bool:
     return True
 
 
+NOTE_FORMATS = ("text/html", "text/plain")
+
+
+def attachment_kind(attachment: dict[str, Any]) -> str:
+    return str(attachment.get("contentType", "")).split(";")[0].strip().lower()
+
+
+def preferred_note_attachment(document: dict[str, Any]) -> dict[str, Any] | None:
+    """The attachment used for note text: HTML first, then plain text; other formats are not converted."""
+    attachments = [
+        c["attachment"]
+        for c in document.get("content") or []
+        if isinstance(c, dict) and isinstance(c.get("attachment"), dict)
+    ]
+    for kind in NOTE_FORMATS:
+        chosen = next((a for a in attachments if attachment_kind(a) == kind), None)
+        if chosen is not None:
+            return chosen
+    return None
+
+
+def relative_reference(reference: str) -> str:
+    prefix = settings.FHIR_BASE + "/"
+    return reference[len(prefix) :] if reference.startswith(prefix) else reference
+
+
 # --------------------------------------------------------------------------- note text
 class _HTMLText(HTMLParser):
     BLOCK = frozenset(
@@ -486,24 +512,12 @@ class EpicMapper:
         if not _is_full_time(source.get("date")):
             statuses.setdefault("unavailable", []).append("date")
             issues.append("missing-clinical-time" if not source.get("date") else "partial-clinical-time")
-        attachments: list[dict[str, Any]] = [
-            c["attachment"]
-            for c in source.get("content") or []
-            if isinstance(c, dict) and isinstance(c.get("attachment"), dict)
-        ]
-        chosen: dict[str, Any] | None = None
-        for preferred in ("text/html", "text/plain"):
-            chosen = next(
-                (a for a in attachments if str(a.get("contentType", "")).split(";")[0].strip().lower() == preferred),
-                None,
-            )
-            if chosen:
-                break
+        chosen = preferred_note_attachment(source)
         if chosen is None:
             statuses.setdefault("unavailable", []).append("content (no HTML or plain-text attachment)")
             issues.append("note-format-unsupported")
             return
-        kind = str(chosen.get("contentType", "")).split(";")[0].strip().lower()
+        kind = attachment_kind(chosen)
         raw: bytes | None = None
         origin = "inline"
         if isinstance(chosen.get("data"), str):
@@ -512,8 +526,7 @@ class EpicMapper:
             except ValueError:
                 raw = None
         elif isinstance(chosen.get("url"), str):
-            ref = chosen["url"]
-            ref = ref[len(settings.FHIR_BASE) + 1 :] if ref.startswith(settings.FHIR_BASE + "/") else ref
+            ref = relative_reference(chosen["url"])
             binary = binaries.get(ref)
             raw, origin = (binary.data if binary else None), ref
         decoded = _decode_text(raw) if raw is not None else None
