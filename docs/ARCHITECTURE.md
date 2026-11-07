@@ -55,6 +55,43 @@ Clinical-Trace AI 2.0 is a **modular monolith**: one FastAPI process serves the 
 
 See [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) for request flows and data models, and [SAFETY_AND_PRIVACY.md](SAFETY_AND_PRIVACY.md) for controls.
 
+## Beta M2.3 target: owner-only live sandbox refresh
+
+Approved product requirement, 2026-11-06 (America/New_York); **not implemented or deployed**. The Stable architecture above remains the deployed reference. [ADR 0009](ADR/0009-beta-channel-and-data-sources.md) records the Beta amendment.
+
+**Beta UI → Approved synthetic patient selection → Owner-authorized Epic refresh → Secure backend OAuth → Live Epic FHIR sandbox API → Atomic validated import → Existing Clinical-Trace evidence engine → Verified answers, citations and human review.**
+
+The backend must authenticate the owner, map a selection to an owner-approved sandbox-patient allowlist and authorise the refresh before any outbound call. Browser inputs cannot select arbitrary Epic hosts, paths, patients, scopes or keys. M1's OAuth authenticates the application to Epic; it does not authenticate a UI user. Demo personas, public workspace identifiers and the Stable edge secret are insufficient for owner identity. The owner authentication/session design remains a prerequisite decision, including expiry, revocation and CSRF protection if cookies are used.
+
+### Existing capabilities verified against code
+
+| Capability | Reusable implementation | Current boundary |
+|---|---|---|
+| Sandbox OAuth | `src/interop/epic/auth.py`, `keys.py`, `settings.py`: RS384 `private_key_jwt`, short-lived assertions, locked in-memory token cache, refresh on expiry; encrypted local key/JWKS tooling | CLI configuration and owner passphrase flow; hosted secret custody and owner login are missing |
+| Read-only Epic client | `src/interop/epic/client.py`: pinned sandbox URLs, no redirects/environment proxies, patient checks, bounded pagination/body sizes/timeouts/retries, one token refresh after 401 | No authenticated refresh API, approved-patient registry or per-owner refresh budget |
+| Fetch and map | `importer.py`, `mapping.py`: bounded note selection/Binary reads, operation outcomes, existing `validate_resource` gate, counted mapping rejections | Some failed operations can produce a partial fetch; MedicationRequest remains disabled pending A1 |
+| Immutable snapshots | `workspace.py`: unique snapshot IDs, separate storage, bundle hash, mapping/manifest versions, isolated runtime, patient checks | Writes occur directly in a new directory with multiple manifest writes; no atomic promotion, active-version pointer or rollback coordinator |
+| Source isolation/provenance | `src/sources.py`, `api/v2.py`: per-source runtime, source status, coverage and field lineage, retrieval-time caveat, deterministic/tracing guards | Registry is configured at startup; no hot swap. Duplicate patient IDs across sources are refused; medication coverage collapses skipped/failed/unrecorded searches |
+| Evidence and review | `src/agent/`, `src/clinical/`, `src/retrieval/`, `src/safety/`, `src/governance/`: scoped tools, verifier, citations and human review | Refresh must preserve snapshot binding through sessions, runs, caches and reviews; Epic-source application state is currently in memory |
+| Operational controls | `api/middleware.py`, `src/interop/epic/telemetry.py`: generic API rate/size limits, content-free Epic counters/latencies and categorical errors | Generic limits are not a complete authenticated refresh budget or durable refresh audit |
+
+### Required refresh and promotion boundary
+
+1. Create a bounded refresh operation bound to the authenticated owner, approved patient, requested resource scope and current snapshot generation. Apply per-owner/per-patient and global budgets, a concurrent-refresh limit, deadline and duplicate-request control. Acquire tokens only on the backend; never pass a token, assertion, key or passphrase to the browser, logs or build artifacts.
+2. Fetch into a staging location that cannot be served. Record request start/end, outcome, source/mode, requested categories and mapping/import counts. Track the last attempted refresh separately from the last successfully promoted retrieval. A successful API response can contain unchanged sandbox data.
+3. Validate patient/source isolation, resource contracts, integrity, query completion, counted exclusions and the owner-approved completeness policy; construct and verify the new evidence runtime before promotion. Failed required queries block promotion by default. Any policy allowing incomplete imports needs explicit approval and visible coverage. Unresolved references remain explicit availability limitations; they never trigger guessed upstream lookups.
+4. Atomically publish the validated snapshot and its runtime generation, with crash recovery and a check that an older concurrent attempt cannot replace a newer result. This requires new coordination around M1, not an assumption that directory creation is atomic publication. Each answer uses one pinned snapshot throughout. Snapshot generations are distinct from Epic source versions and the existing per-snapshot internal resource version `1`.
+5. Preserve prior snapshots, provenance, runs and review bindings for an explicit, audited rollback. In-flight answers/reviews must retain their original generation. Do not register successive snapshots of the same patient as ordinary parallel sources: M2-S1 rejects that configuration. Generation handling, retention and storage durability need design before implementation.
+6. On refresh failure, expose the categorical error and last attempt time. An owner may explicitly continue with an available snapshot labelled cached, with its original retrieval time/version. No silent fallback, fake timestamp update or automatic switch to synthetic data. An agent answer reads the selected snapshot and never calls Epic directly.
+
+Coverage must distinguish query execution from import outcome: **not requested** (outside this request), **not imported** (excluded/unsupported/rejected), **returned none** (successful completed query returned zero), **failed** (request did not complete successfully), and **unresolved reference** (an imported resource points to unavailable evidence). Mapping rejects, note caps and partially returned results require counts/reasons alongside these states. Failure must never be relabelled returned none; zero accepted resources alone does not establish returned none. Unknown legacy coverage remains unknown. Neither coverage nor retrieval metadata proves clinical absence.
+
+Minimal refresh audit events should contain an opaque operation/owner reference, timestamps, action/outcome code, snapshot generation, scope category and counts. Exclude credentials, raw URLs/query strings, upstream identifiers, note text and FHIR payloads. Define retention and access separately from clinical evidence storage; existing content-free Epic telemetry is the starting point.
+
+All Beta compute, edge routes/bindings, databases/volumes, secrets/signing-key custody, logs and release/rollback controls must be isolated from Stable. No Stable co-host reuse or inherited public route exposure is approved. Hosting and Cloudflare account placement remain owner decisions. Security/red-team verification uses local MOCK token/FHIR services and synthetic fixtures only; a separately approved bounded live smoke is functional verification, never an attack against Epic.
+
+Acceptance, unresolved risks and required decisions are in [EPIC_SANDBOX.md](EPIC_SANDBOX.md#m23-mandatory-controlled-real-time-retrieval); sequencing is in [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md#beta-roadmap-mandatory-real-time-epic-sandbox-retrieval).
+
 ## Tradeoffs
 
 | Choice | Benefit | Cost |

@@ -1,10 +1,10 @@
 # Project Status
 
-**Updated:** 2026-11-07 · **Stable:** `main` (2.0 public demo; last recorded release 2026-10-18) · **Beta development:** branch `feature/beta` (local and test-only; not deployed) · **Epic M1:** Draft PR #2, unmerged.
+**Updated:** 2026-11-07 (America/New_York) · **Stable:** `main` (2.0 public demo; last recorded release 2026-10-18) · **Beta development:** branch `feature/beta` (local and test-only; not deployed) · **Epic M1:** Draft PR #2, unmerged.
 
 This page is the portable, version-controlled handoff. It contains no credentials, private Epic snapshot content or machine-specific evidence. Detailed private checkpoints stay in the git-ignored `.project-state/` folder of the working copy that produced them; a fresh clone does not have them. The Stable section further down is kept unchanged as the record of 2026-10-18.
 
-## Current status (Beta channel, as of 2026-11-07)
+## Current status (Beta channel, as of 2026-11-07 America/New_York)
 
 | Stream | State |
 |---|---|
@@ -13,16 +13,21 @@ This page is the portable, version-controlled handoff. It contains no credential
 | M2-S1 data-source registry | Committed and pushed on `feature/beta`; hosted CI green. Off by default; an Epic snapshot can be served locally as an isolated, deterministic-only extra source ([ADR 0009](ADR/0009-beta-channel-and-data-sources.md)). |
 | M2.2-a discharge-summary match (P2) | Committed and pushed; hosted CI green. A note counts as a discharge summary by LOINC 18842-5 or its label in any letter case. |
 | M2.2-b medication coverage provenance | Committed and pushed on `feature/beta`; hosted CI [42336192381](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42336192381) passed all five jobs at `94b9c5e`. |
-| M2.2-c diagnostic result availability (ISSUE-3) | Implemented and verified locally on `feature/beta`; **not pushed or deployed**. Completeness, summary and review answers disclose unresolved report result references; direct diagnostic-question routing remains ISSUE-6. |
+| M2.2-c diagnostic result availability (ISSUE-3) | Committed and pushed on `feature/beta` at `9402eec`; [hosted CI 42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) passed all five jobs. Not deployed. Completeness, summary and review answers disclose unresolved report result references; direct diagnostic-question routing remains ISSUE-6. |
+| M2.3 controlled real-time Epic sandbox retrieval | **Mandatory approved target; not implemented.** Owner-only, read-only refresh of approved synthetic patients directly from Epic FHIR R4 through secure backend OAuth, followed by atomic validated snapshot promotion. Implementation, live calls, infrastructure and deployment each require separate owner approval. |
 | ISSUE-7 | **Open, unresolved.** Records that declare no medication import coverage (the synthetic fixture) still cite the Patient for "no medication orders"; see [LIMITATIONS.md](LIMITATIONS.md). Changing it would alter approved synthetic answers and needs an explicit decision. |
 
-### Git state when this page was written
+The M2.2-c push/CI documentation was refreshed after commit `9402eec`; that commit itself records the earlier local verification state.
+
+The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Beta roadmap. Cached snapshots remain supported with explicit cache labels; public Epic data publication and public live refresh each require independent approval.
+
+### Git baseline for this roadmap
 
 | Ref | Commit |
 |---|---|
 | `main` (remote) | `72ae8c8`: Stable 2.0 (PR #1, merged) and dependency security fixes (PR #3, merged) |
 | `feature/epic-sandbox-readonly` | `028e609`: Epic M1, Draft PR #2 into `main`, unmerged |
-| `feature/beta` | Remote `feature/beta` is at `94b9c5e`, following `83abb78` M2-S1 · `0fd3c75` CI lists · `183dad1` M2.2-a · `ee76a58` M2.2-b. M2.2-c is the local follow-up to this base and has not been pushed. |
+| `feature/beta` | M2.2-c implementation baseline: `9402eec`, parent `94b9c5e`; exactly the reviewed six-file commit was pushed as a normal fast-forward. Subsequent documentation commits do not change that implementation baseline. |
 
 There is no pull request from `feature/beta`.
 
@@ -51,6 +56,8 @@ Production changes are confined to `src/clinical/records.py`. The existing tools
 
 Local runs are offline and deterministic (no network, no language model, tracing off).
 
+The regression counts and protected-file hashes below are retained M2.2-c evidence; they are not new measurements for the M2.3 roadmap.
+
 | Check | Result |
 |---|---|
 | Tests first at M2.2-c | 17 expected failures / 143 passes on unchanged production code; 160 focused tests passed after the correction |
@@ -61,26 +68,47 @@ Local runs are offline and deterministic (no network, no language model, tracing
 | Default-mode API | 0 differences across 97 responses / 16,479 paths against both the unchanged tree and the Epic M1 baseline (`028e609`), using existing volatile-field exclusions |
 | Lint, types, formatting, secret scan (local) | Clean |
 | Protected-file integrity / evidence | All 99 hashes match, including 33 private files checked by hash only under restricted approval; source/test tree unchanged throughout the gate; zero recorded external attempts |
-| Hosted CI on `feature/beta` | Latest verified run [42336192381](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42336192381) passed all five jobs at `94b9c5e`, covering M2.2-b and the prior status page. **M2.2-c has no hosted CI:** a push and hosted verification require separate approval. Earlier M2-S1 and M2.2-a runs remain historical evidence. |
+| Hosted CI on `feature/beta` | Latest verified push run [42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) at `9402eec`: success, all five jobs; 53 completed steps (52 success, one by-design skip of failure-artifact upload). No failed jobs or steps. Job/step conclusions were read; raw logs were not read, so local test counts above are not claimed as hosted counts. Prior run 42336192381 at `94b9c5e` covers M2.2-b. |
 
 ### Remaining Beta milestones
 
 Each step needs its own approval and lands as its own commit with its own CI.
 
-1. **M2.2-c:** local implementation, offline gate and independent diff review complete; one local commit approved. Push and hosted CI require separate approval.
+1. **M2.2-c:** implementation, offline gate, independent review, local commit, approved push and hosted CI verification complete. Direct diagnostic routing remains ISSUE-6; no deployment is authorised.
 2. **M2.2-d:** medication vocabulary (L4), including an owner-approved anticoagulant class list, without changing retrieval.
 3. **M2.2-e:** show the note-versus-encounter admission-date conflict (ISSUE-5) in encounter and summary answers.
 4. **M2.2-f:** answer relevance (ISSUE-6), measured against the evaluation and synthetic goldens before any change.
 5. **ISSUE-7:** owner decision on the synthetic Patient-cited gap.
-6. **Before a Beta deployment (provisional roadmap):** medication-date handling and medication import with a live test gate (A1); Epic encounter-class mapping (only with documentation); more than one Epic test patient; coverage shown in answers and the UI; then the deferred hosting, account, public-content and UI decisions. Public exposure, if ever, would ship only a static pre-imported snapshot.
+6. **M2.3 (mandatory target):** controlled real-time, read-only Epic FHIR R4 developer-sandbox retrieval in a restricted owner-only Beta environment. Reuse M1 OAuth, client, mapping and provenance; add owner authentication/authorisation, approved-patient selection, refresh budgets, complete coverage states, atomic promotion/versioning and rollback. Implementation and each bounded live verification need separate approval.
+7. **M2.4:** integrate owner refresh controls, source/cache status, retrieval times, resource counts, coverage and loading/error states into the Beta UI. D7 (UI approach) remains an owner decision.
+8. **M2.5:** approve isolated Beta hosting/account placement and verify security using local MOCK services and synthetic fixtures. **M2.6:** separately approved restricted deployment, bounded owner-authorised live smoke and rollback verification. **M2.7:** release acceptance against the reliability, freshness, isolation and review gates. None is started or deployment authority.
+
+Before release: A1 medication-date handling, medication import and a separately approved live gate with orders; documented Epic encounter-class mapping; multiple approved synthetic test patients; answer/UI coverage. These remain prerequisites, with no clinical dates or mappings invented. The incremental plan and approval dependencies are in [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md#beta-roadmap-mandatory-real-time-epic-sandbox-retrieval).
+
+### M2.3 target architecture and acceptance
+
+**Beta UI → Approved synthetic patient selection → Owner-authorized Epic refresh → Secure backend OAuth → Live Epic FHIR sandbox API → Atomic validated import → Existing Clinical-Trace evidence engine → Verified answers, citations and human review.**
+
+"Real-time" means a fresh, bounded sandbox API retrieval requested by the owner. It does not mean continuously changing real-world clinical data, continuous polling or production hospital connectivity. The agent reads the promoted snapshot; it does not initiate Epic requests while answering.
+
+- Authenticate the owner on the backend and authorise each refresh and patient selection. Demo persona headers, anonymous workspaces and an edge secret do not establish owner identity. No unrestricted public queries, arbitrary FHIR URLs or real patient identifiers.
+- Keep OAuth signing keys and tokens on the protected backend; apply request, concurrency and rate budgets. Show source, MOCK/LIVE mode, snapshot version, last attempt outcome, last successful retrieval time, resource counts and import coverage. Retrieval time is never a clinical event time.
+- Promote only a staged, validated, integrity-checked snapshot that satisfies the approved completeness policy. Pin answers, citations and reviews to its version; retain the prior version for explicit rollback. Failure leaves the prior snapshot intact and visibly cached; never silently substitute it or report it as a successful fresh response.
+- Preserve distinct **not requested**, **not imported**, **returned none**, **failed** and **unresolved reference** states. None is proof of clinical absence. M1's medication coverage helper currently combines several states; the full M2.3 contract is missing.
+- Keep minimal operational audit events without credentials or unnecessary clinical content. Separate all Beta compute, edge routes, storage, secrets, logs and release/rollback controls from Stable. Security/red-team tests target local MOCK services and synthetic fixtures only, never Epic infrastructure.
+- No real hospital data, unrestricted public access or production Epic integration. Public live refresh, hosting, Cloudflare account selection and Epic data publication retain independent approval gates. Beta/Epic answers remain deterministic-only with external tracing off.
+
+Reusable code and missing functionality are documented in [ARCHITECTURE.md](ARCHITECTURE.md#beta-m23-target-owner-only-live-sandbox-refresh); prerequisites, acceptance checks, risks and owner decisions are in [EPIC_SANDBOX.md](EPIC_SANDBOX.md#m23-mandatory-controlled-real-time-retrieval).
 
 ### Approval boundaries
 
-- Approved: Beta work on `feature/beta` (task branches allowed); Beta and Epic sources deterministic-only; data sources tested locally with synthetic and MOCK Epic fixtures only; ADR 0009. The phased roadmap is provisional and is not deployment authority.
-- Approved for M2.2-c: local implementation, offline verification, existing documentation updates and one focused local commit. Private snapshot integrity checks are hash-only, with aggregate pass/fail/counts; no content inspection, processing, copying, replay, upload or disclosure of private paths or identifiers is authorised.
+- Approved product scope: the mandatory M2.3 requirement on `feature/beta`; prior M2-S1/M2.2-a/b/c work is complete. Beta/Epic sources remain deterministic-only. M2.3 implementation, live calls, infrastructure and deployment each require separate owner approval ([ADR 0009](ADR/0009-beta-channel-and-data-sources.md)).
+- Completed under separate approvals for M2.2-c: local implementation, offline verification, existing documentation updates, one focused commit, its normal push and hosted CI verification. Private snapshot integrity checks are hash-only, with aggregate pass/fail/counts; no content inspection, processing, copying, replay, upload or disclosure of private paths or identifiers is authorised.
 - Deferred, not authorised: Beta backend host, Cloudflare account placement, public Epic content, Beta UI.
 - Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
 - `main`, the Stable demo, production and Draft PR #2 stay unchanged.
+
+**Development sequence:** M2.2-d (L4), followed by M2.2-e and M2.2-f, remain the next clinical development candidates. Each requires separate scope approval before work starts. M2.3 is mandatory but not yet implemented; implementation, live calls, infrastructure and deployment require separate approvals.
 
 ### Development workflow
 

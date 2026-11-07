@@ -1,6 +1,6 @@
 # ADR 0008: Epic sandbox records enter through an isolated, provenance-preserving adapter
 
-**Status:** accepted for the internal milestone M1 (2026-11-05); amended 2026-11-06 (see the end). Using the adapter from the application (M2) or publicly (M3) needs a separate decision. The local data-source registry (M2-S1) is recorded in [ADR 0009](0009-beta-channel-and-data-sources.md).
+**Status:** accepted for internal M1 (2026-11-05); amended 2026-11-06 (see the end). Application snapshot serving (M2-S1) and the mandatory owner-only live retrieval target (M2.3, not implemented) are recorded in [ADR 0009](0009-beta-channel-and-data-sources.md). Public exposure still needs an independent decision.
 
 **Context.** The platform reads a generated synthetic FHIR fixture. The owner has registered a read-only Backend Systems app on the Epic on FHIR public R4 sandbox, which holds only test patients. Raw Epic resources do not meet the platform's FHIR contract:
 
@@ -55,3 +55,5 @@ Consequences of the amendment:
 - The agent's execution revision changes, so checkpointed runs from before the change cannot be resumed after it.
 - For one synthetic demo patient without medication orders (`synthetic_p003`), medication answers change once this work is merged and deployed (a separate decision). The other measured synthetic answers and the offline evaluation gate (41/42) are unchanged.
 - Current limitations are listed in [EPIC_SANDBOX.md](../EPIC_SANDBOX.md#limitations-and-pending-decisions).
+
+**M2.3 scope amendment (2026-11-06 America/New_York).** The original local-command-line-only boundaries above describe M1. M2-S1 already permits explicitly configured local snapshot serving. The approved M2.3 target must additionally reuse M1 OAuth, the read-only sandbox client, mapping/validation and provenance behind an owner-authenticated backend refresh service. It must add approved synthetic patient selection, refresh budgets, truthful freshness/coverage, atomic validated snapshot promotion/versioning and rollback before the evidence engine reads the new version. M1's direct directory/manifest writes do not provide that atomic publication boundary. The agent still never calls Epic while answering; Epic data stays deterministic-only with external tracing off. This is a documentation amendment, not implementation/live-call/deployment authority. [ADR 0009](0009-beta-channel-and-data-sources.md) and [ARCHITECTURE.md](../ARCHITECTURE.md#beta-m23-target-owner-only-live-sandbox-refresh) define the target without changing the historical M1 evidence.

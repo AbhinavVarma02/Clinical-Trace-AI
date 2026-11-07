@@ -1,7 +1,33 @@
 # Implementation Roadmap
 
 Status values: `NOT_STARTED`, `IN_PROGRESS`, `IMPLEMENTED` (code exists), `TESTED` (automated tests pass), `VERIFIED` (tests plus manual/browser or measured evidence), `BLOCKED`.
-Evidence references point to files, tests, or result artifacts. Branch: `feature/clinical-trace-2.0`.
+Evidence references point to files, tests, or result artifacts. The original P0-P13 tables below are the historical Stable 2.0 roadmap on `feature/clinical-trace-2.0`. Current Beta work uses `feature/beta`; its mandatory target and approval gates follow.
+
+## Beta roadmap: mandatory real-time Epic sandbox retrieval
+
+Owner requirement recorded 2026-11-06 (America/New_York). M2.2-a/b/c are completed and pushed, latest `9402eec` with [CI 42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) green in all five jobs. **M2.3 must deliver controlled real-time, read-only retrieval directly from the Epic FHIR R4 developer sandbox for approved synthetic patients in a restricted owner-only Beta environment.** A static snapshot alone does not meet this target. Implementation, live calls, infrastructure and deployment each require separate owner approval.
+
+| Milestone | Incremental deliverable and acceptance | Status / approval dependency |
+|---|---|---|
+| M2.2-d | L4 medication vocabulary with owner-approved drug/class list; tests first, retrieval unchanged and synthetic goldens/default API preserved | NOT_STARTED; next clinical development candidate, separate scope/list approval required |
+| M2.2-e | ISSUE-5 note/encounter admission-date conflict surfaced in encounter and summary answers | NOT_STARTED; separate approval and regression gate |
+| M2.2-f | ISSUE-6 answer relevance/direct diagnostic routing; measure proposed rules before changing answers | NOT_STARTED; separate approval; any new diagnostic tool separately scoped |
+| M2.3-1 | Approve owner authentication, patient/resource allowlist, read/search scope, refresh budgets, storage/retention and completeness policy; specify refresh/status/coverage contracts | NOT_STARTED; implementation approval required; local synthetic/MOCK only initially |
+| M2.3-2 | Backend owner authentication/authorisation, allowlisted patient selection and bounded refresh orchestration around M1 OAuth/client; keys backend-only | NOT_STARTED; reject unauthorised or out-of-scope calls before any outbound request; design/key-custody approval |
+| M2.3-3 | Staged validated import, full coverage states, atomic active-generation promotion, version-bound answers/reviews and explicit rollback | NOT_STARTED; pass crash/concurrency/integrity and no-silent-fallback tests on local MOCK services |
+| M2.3-4 | Restricted owner-only end-to-end backend retrieval with provenance, timestamps, counts, audit and unchanged evidence/review gates | NOT_STARTED; local MOCK gate first, then separately approved bounded functional live gate for named synthetic sandbox patients; no UI/deploy authority |
+| M2.4 | Beta UI approved-patient selector and owner refresh controls; source/mode/version, loading/error/cached status, last attempt vs success, retrieval time, counts and coverage | NOT_STARTED; D7 UI approach/implementation approval; browser tests use local MOCK services |
+| M2.5 | Select and prepare completely isolated Beta hosting, account placement, storage and secret custody; verify access, operational limits and security | NOT_STARTED; D2 host/D3 account approval before infrastructure creation; all red-team/security tests local MOCK/synthetic only |
+| M2.6 | Deploy only to approved restricted Beta infrastructure; owner-authorised bounded live smoke, observability and rollback drill | NOT_STARTED; independent deployment/live-call approvals; Stable remains separate |
+| M2.7 | Release acceptance: reliability, multi-patient functional coverage, truthful freshness/coverage, isolation, citations/review and rollback evidence | NOT_STARTED; explicit owner acceptance; public access/publication is not implied |
+
+M2.3 backend acceptance can be demonstrated locally through the owner-authenticated API before M2.4 UI integration and M2.6 hosted deployment. No schedule or continuously running polling service is implied. Fresh requests may return unchanged shared sandbox records.
+
+**Clinical prerequisites before release:** A1 separates medication clinical dates from metadata/retrieval dates before enabling MedicationRequest import, followed by a separately approved live gate with orders; Epic encounter-class mapping requires authoritative documentation; multiple approved synthetic patients must exercise the agreed resource scope. ISSUE-7 remains unresolved and needs an independent decision before changing synthetic absence claims. These dependencies do not reorder M2.2-d/e/f or authorise their implementation.
+
+**Decisions still required:** owner identity/session controls; exact approved patient/resource allowlist and least read/search scope; refresh frequency/concurrency/time/resource budgets; incomplete-import/rejection thresholds; stale-cache policy; snapshot/version pinning, durable runs/reviews, retention and recovery; backend signing-key custody/rotation; D7 UI, D2 hosting and D3 Cloudflare account placement. Public live refresh and D5 Epic data publication each need independent approval. No real hospital data, unrestricted public access or production Epic integration.
+
+Detailed architecture/reuse: [ARCHITECTURE.md](ARCHITECTURE.md#beta-m23-target-owner-only-live-sandbox-refresh). Prerequisites, measurable acceptance and risks: [EPIC_SANDBOX.md](EPIC_SANDBOX.md#m23-mandatory-controlled-real-time-retrieval). Portable resume state: [PROJECT_STATUS.md](PROJECT_STATUS.md). Each implementation increment requires scope approval, focused tests and the applicable offline regression/diff review before separately approved commit and push/CI.
 
 | Phase | ID | Task | Status | Evidence |
 | --- | --- | --- | --- | --- |
