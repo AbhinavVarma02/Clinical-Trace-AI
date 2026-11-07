@@ -16,7 +16,7 @@ from typing import Any
 
 from src.agent.llm import OpenAICompatibleProvider, ProviderUnavailable, extract_json
 from src.agent.evidence import interval_statement, summary_focus
-from src.agent.planner import INTENT_RULES, detect_intents
+from src.agent.planner import MEDICATION_CLASSES, MEDICATION_NAMES, detect_intents
 from src.agent.tools import ToolResult
 from src.retrieval.lexical import tokenize
 from src.safety.guards import flag_content
@@ -217,6 +217,7 @@ def _extract_claims(
     question: str, result: ToolResult | None, skip_sources: set[str], limit: int = 3,
     ignore: frozenset[str] = frozenset(), require: frozenset[str] = frozenset(),
     status_drugs: tuple[str, ...] = (),
+    class_drugs: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, Any]], int]:
     """Quote the best-matching sentence from each lexically relevant retrieved chunk.
 
@@ -234,7 +235,14 @@ def _extract_claims(
     if ignore:
         query = {t for t in query if len(t) > 1 and t not in ignore}
     items = [item for item in result.evidence
-             if item.source_ref not in skip_sources and item.scores and item.scores.get("bm25")]
+             if item.source_ref not in skip_sources and
+             ((item.source_ref.startswith("DocumentReference/") and any(_mentions(item.text, drug) for drug in class_drugs))
+              if class_drugs else (item.scores and item.scores.get("bm25")))]
+    if class_drugs:
+        # Composition only: the query, returned passages, ranks and scores are unchanged.
+        # A class word tokenizes as warfarin in the legacy tokenizer; require an actual
+        # candidate name in each quoted sentence, never an administrative class word.
+        query.update(t for drug in class_drugs for t in tokenize(drug))
     if status_drugs:  # a stable sort: the quote limit can no longer drop a lower-ranked status entry
         items.sort(key=lambda item: not _status_sentences(_quotable(item, require), status_drugs))
     claims = []
@@ -242,6 +250,8 @@ def _extract_claims(
     for item in items:
         flagged += bool(item.flags)
         sentences = _quotable(item, require)
+        if class_drugs:
+            sentences = [s for s in sentences if _patient_class_sentence(s, item.title, class_drugs)]
         picked = _status_sentences(sentences, status_drugs)
         if not picked:
             scored = [(len(query & set(tokenize(s))), s) for s in sentences]
@@ -284,9 +294,24 @@ NOTE_TEXT_CAVEAT = ("Quoted note passages are clinical note text, not verified m
 REASON_AS_WRITTEN = "The reason is reported only as written in the cited note; no reason is inferred."
 GENERIC_QUESTION_WORDS = frozenset(tokenize("document documents documented documentation recorded list listed noted "
                                             "mentioned written"))
-GENERIC_MEDICATION_WORDS = frozenset({"medication", "medications", "med", "meds", "drug", "drugs", "dose", "dosage",
-                                      "order", "orders"})
-MEDICATION_NAMES = dict(INTENT_RULES)["medications"]
+ANTICOAGULANT_CANDIDATES = ("warfarin", "apixaban")
+CLASS_SCOPE_NOTE = (
+    "Class matching is limited to warfarin and apixaban in structured medication evidence and the passages returned "
+    "for this question. This vocabulary and retrieval are not exhaustive; an unreturned medication mention may "
+    "exist in the source. Class membership does not establish prescription or current use.")
+BLOOD_THINNER_NOTE = (
+    "Blood-thinner terminology is ambiguous and may refer to medicines outside this bounded anticoagulant "
+    "vocabulary; the terms are not treated as equivalent.")
+# A patient-bound document can still describe someone else, an allergy or a
+# discussion. Those contexts cannot turn a class candidate into patient use.
+NON_USE_CLASS_CONTEXT = re.compile(
+    r"\b(family|mother|father|parents?|sisters?|brothers?|siblings?|daughters?|sons?|children|child|"
+    r"wife|husband|spouse|grandmother|grandfather|aunts?|uncles?|relatives?|"
+    r"allerg(?:y|ies|ic)|hypersensitiv(?:ity|e)|intoleran(?:ce|t)|"
+    r"denies|denied|declined|refused|discuss\w*|hypothetic\w*|potential\w*|possible|"
+    r"plans?|planned|planning|would|could|might|should)\b|"
+    r"\bmay\s+(start|prescribe|take|use|continue)\b|"
+    r"\bno\s+(prescriptions?|orders?|current\s+use|longer\s+(taking|using))\b", re.I)
 MEDICATION_EVENTS = {
     "stopped": re.compile(r"\b(stop\w*|discontinu\w*|held|hold\w*|ceased)\b", re.I),
     "started": re.compile(r"\b(start\w*|initiat\w*|began|begun|commenced)\b", re.I),
@@ -328,14 +353,56 @@ DOCUMENTED_EVENTS = {
     "started": re.compile(r"\b(started|initiated|began|begun|commenced)\b", re.I),
     "changed": re.compile(r"\b(changed|increased|decreased|reduced|adjusted|titrated|switched)\b", re.I),
 }
-NOT_DOCUMENTED = re.compile(r"\b(not|never|if|unless|consider\w*)\b|n't\b|"
-                            r"\b(should|may|might|could|would|will|can|must|to)\s+be\b", re.I)
+NOT_DOCUMENTED = re.compile(r"\b(not|never|if|unless|consider\w*|possibly|probably|perhaps|uncertain|unclear|planned|proposed)\b|n't\b|"
+                            r"\b(should|may|might|could|would|will|can|must|to)\s+(?:have\s+been|be)\b", re.I)
 
 
 def _named_drugs(question: str) -> list[str]:
-    """Specific medications the question names (the planner's medication vocabulary, generic words excluded)."""
-    return list(dict.fromkeys(m.lower() for m in MEDICATION_NAMES.findall(question)
-                              if m.lower() not in GENERIC_MEDICATION_WORDS))
+    """Exact named medications only; generic intent and class terms are not identities."""
+    return list(dict.fromkeys(m.lower() for m in MEDICATION_NAMES.findall(question)))
+
+
+def _mentions(text: str, drug: str) -> bool:
+    return bool(re.search(rf"\b{re.escape(drug)}\b", text, re.I))
+
+
+def _class_drugs(question: str) -> tuple[str, ...]:
+    """An approved, nonexhaustive selection vocabulary, never patient-use evidence."""
+    if not MEDICATION_CLASSES.search(question):
+        return ()
+    named = _named_drugs(question)
+    return tuple(drug for drug in ANTICOAGULANT_CANDIDATES if not named or drug in named)
+
+
+def _patient_class_sentence(sentence: str, title: str, drugs: tuple[str, ...]) -> bool:
+    """Reject non-use contexts before a returned note is offered as a class answer.
+
+    Keep the section/title context as well as the complete sentence: extracting
+    just a drug-bearing clause could erase its experiencer, negation or purpose.
+    A separate affirmative sentence remains eligible with the note-only caveat.
+    """
+    return (any(_mentions(sentence, drug) for drug in drugs)
+            and not NON_USE_CLASS_CONTEXT.search(title + " " + sentence)
+            and _documented(sentence) and "?" not in sentence)
+
+
+def _attributed_entries(text: str, drug: str, documented: bool = False) -> list[str]:
+    """Keep each drug's local clause; reject unresolved multi-drug attribution.
+
+    Do not inherit a status or amount across comma/conjunction boundaries. A whole
+    entry's negation/uncertainty remains a veto even after splitting its clauses.
+    Unseparated clauses naming multiple drugs are conservatively unsupported.
+    """
+    # Generated quote metadata is not part of the clinical entry being attributed.
+    text = re.sub(r'^.*? \((?:\d{4}-\d{2}-\d{2})?\): "', '', text, count=1)
+    entries = []
+    for entry in NOTE_ENTRY.split(text.lower()):
+        if documented and not _documented(entry):
+            continue
+        for part in re.split(r",\s+|\s+(?:and|with|while|whereas|but)\s+", entry):
+            if _mentions(part, drug) and set(_named_drugs(part)) == {drug}:
+                entries.append(part)
+    return entries
 
 
 def _status_drugs(question: str) -> list[str]:
@@ -352,8 +419,30 @@ def _documented(entry: str) -> bool:
 
 def _status_entries(text: str, drug: str) -> list[str]:
     """Entries of a quote that name the drug with a documented (past-tense, affirmative) status."""
-    return [entry for entry in NOTE_ENTRY.split(text.lower())
-            if drug in entry and DOCUMENTED_STATUS.search(entry) and _documented(entry)]
+    return [span for entry in _attributed_entries(text, drug, documented=True)
+            for span in _event_spans(entry, drug, DOCUMENTED_STATUS)]
+
+
+def _event_spans(entry: str, drug: str, pattern: re.Pattern[str]) -> list[str]:
+    """Bind a status to its drug, not to another unrecognised word in the clause.
+
+    Accept an explicit STATUS: drug label or bounded words between drug and
+    event. Return only the bound span so another status in the clause cannot
+    become this drug's status. Unsupported word order remains unanswered.
+    """
+    links = {"was", "were", "is", "has", "had", "been", "dose", "dosage", "use", "daily", "twice", "once",
+             "three", "times", "per", "day", "oral", "iv", "po", "temporarily"}
+    spans = []
+    for named in re.finditer(rf"\b{re.escape(drug)}\b", entry, re.I):
+        for event in pattern.finditer(entry):
+            if event.start() >= named.end():
+                gap = DOSE_AMOUNT.sub("", entry[named.end():event.start()])
+                if all(word in links for word in re.findall(r"[a-z]+", gap.lower())):
+                    spans.append(entry[named.start():event.end()])
+            elif event.end() <= named.start():
+                if re.fullmatch(rf"\s*{re.escape(event.group())}\s*:\s*", entry[:named.start()], re.I):
+                    spans.append(entry[event.start():named.end()])
+    return spans
 
 
 def _status_sentences(sentences: list[str], drugs: tuple[str, ...]) -> list[str]:
@@ -372,10 +461,25 @@ def _note(draft: Draft, text: str) -> None:
 
 def _entries(text: str, drug: str, events: list[str], dose: bool = False) -> list[str]:
     """Entries of a quote that name the drug and document what was asked: an event, or a stated dose."""
-    return [entry for entry in NOTE_ENTRY.split(text.lower())
-            if drug in entry
-            and (not events or (any(DOCUMENTED_EVENTS[e].search(entry) for e in events) and _documented(entry)))
-            and (not dose or DOSE_AMOUNT.search(entry))]
+    if not events and not dose:  # a mention is quotable, without attributing any status to it
+        return [entry for entry in NOTE_ENTRY.split(text.lower()) if _mentions(entry, drug)]
+    return [entry for entry in _attributed_entries(text, drug, documented=bool(events))
+            if (not events or any(_event_spans(entry, drug, DOCUMENTED_EVENTS[e]) for e in events))
+            and (not dose or _dose_for_drug(entry, drug))]
+
+
+def _dose_for_drug(entry: str, drug: str) -> bool:
+    """An amount must follow this drug through explicit dose/status words only.
+
+    An unrecognised drug between the asked drug and an amount must not lend its
+    dose to the asked drug. Unsupported word order is conservatively unanswered.
+    """
+    match = re.search(rf"\b{re.escape(drug)}\b", entry, re.I)
+    if match is None:
+        return False
+    link = (r"\s*(?:(?:was|is|at|a|dose|dosage|dosing|of|continued|started|stopped|held|"
+            r"increased|decreased|reduced|changed|adjusted|initiated|restarted|resumed|to)\s+){0,8}")
+    return bool(re.match(link + DOSE_AMOUNT.pattern, entry[match.end():], re.I))
 
 
 def _completeness_coverage_notes(coverage: str) -> list[str]:
@@ -404,15 +508,23 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
     coverage = coverage if coverage in MEDICATION_COVERAGE else "undeclared"
     gap = any(c.startswith("check:medication_list_missing:") for claim in draft.claims for c in claim["citations"])
     drugs = _named_drugs(question)
+    if MEDICATION_CLASSES.search(question):
+        drugs = [drug for drug in _class_drugs(question)
+                 if any(c["kind"] == "quote" and _mentions(c["text"], drug) for c in draft.claims)]
     events = [name for name, pattern in MEDICATION_EVENTS.items() if pattern.search(question)]
     dose = bool(DOSE_QUESTION.search(question)) and not events
+    compound_events = len(_named_drugs(question)) > 1 and bool(events)
     if drugs:
         draft.claims = [c for c in draft.claims
-                        if c["kind"] != "quote" or any(_entries(c["text"], drug, events, dose) for drug in drugs)]
+                        if c["kind"] != "quote" or
+                        (not compound_events and any(_entries(c["text"], drug, events, dose) for drug in drugs))]
     quotes = [c for c in draft.claims if c["kind"] == "quote"]
     if not quotes:
         drug_explanation = (f"The available records do not establish the requested information about "
                             f"{' and '.join(drugs)}. {MEDICATION_ABSTAIN_TAIL[coverage]}")
+        if compound_events:
+            drug_explanation = ("This answer cannot safely associate the requested events with each named medication. "
+                                "Ask about one medication and event at a time. " + MEDICATION_ABSTAIN_TAIL[coverage])
         if not draft.claims:  # nothing answers the question: abstain, explaining why
             draft.abstain_reason = (drug_explanation if drugs
                                     else f"{MEDICATION_ORDERS_NONE} {MEDICATION_COVERAGE[coverage]}")
@@ -428,7 +540,8 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
     _note(draft, MEDICATION_COVERAGE[coverage])
     _note(draft, NOTE_TEXT_CAVEAT)
     dates = {e.evidence_id: e.date for r in results.values() for e in r.evidence}
-    status = _status_drugs(question)
+    status = (drugs if not events and not DOSE_QUESTION.search(question) else []) if MEDICATION_CLASSES.search(question) \
+        else _status_drugs(question)
     for drug in drugs:
         supporting = [(c, _entries(c["text"], drug, events, dose)) for c in quotes]
         supporting = [(c, entries) for c, entries in supporting if entries]
@@ -459,9 +572,26 @@ def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str
 
 
 # ------------------------------------------------------------- deterministic
+def _class_answer_notes(question: str, draft: Draft) -> None:
+    """Disclose bounded matching and abstain rather than using administrative text."""
+    _note(draft, CLASS_SCOPE_NOTE)
+    if re.search(r"\bblood(?:\s+|-)thinners?\b", question, re.I):
+        _note(draft, BLOOD_THINNER_NOTE)
+    if any(c["kind"] == "quote" for c in draft.claims):
+        _note(draft, NOTE_TEXT_CAVEAT)
+    if not any(c["kind"] in {"quote", "medications", "medication_history", "medication_status"} for c in draft.claims):
+        explanation = "The returned evidence does not establish a supported answer to the medication-class question."
+        if draft.claims:
+            _note(draft, explanation)
+        elif not draft.abstain_reason:
+            draft.abstain_reason = explanation
+
+
 def compose_deterministic(question: str, intents: list[str], results: dict[str, ToolResult]) -> Draft:
     draft = Draft(composer="deterministic-template")
     ok = {name: r for name, r in results.items() if r.ok}
+    class_question = bool(MEDICATION_CLASSES.search(question))
+    class_drugs = _class_drugs(question)
     builders = [
         ("get_patient_profile", _profile_claims, {"summary", "review_preparation"}),
         ("get_patient_conditions", _condition_claims, {"summary", "review_preparation", "conditions"}),
@@ -473,7 +603,13 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     ]
     for tool, builder, wanted in builders:
         if tool in ok and (wanted & set(intents) or not intents):
-            draft.claims.extend(builder(ok[tool]))
+            result = ok[tool]
+            if tool == "get_medication_history" and class_question:
+                # Select only actual matching orders from the existing tool result.
+                # Names/class membership never manufacture an order or current use.
+                items = [m for m in result.data or [] if any(_mentions(m["medication"], drug) for drug in class_drugs)]
+                result = ToolResult(tool=tool, ok=True, data=items, evidence=result.evidence)
+            draft.claims.extend(builder(result))
     if "risk" in intents or "review_preparation" in intents:
         claims, caveats, unavailable = _risk_claims(ok.get("get_readmission_prediction"),
                                                     ok.get("get_model_explanations"))
@@ -494,9 +630,14 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     # No orders and a named drug: only sentences naming that drug can be quoted, so an earlier sentence that
     # merely shares another question word (e.g. "doses") cannot displace the drug's own note entry.
     named = frozenset(t for drug in _named_drugs(question) for t in tokenize(drug)) if zero_orders else frozenset()
+    status_drugs = tuple(_status_drugs(question)) if zero_orders else ()
+    if class_question and zero_orders and not DOSE_QUESTION.search(question) \
+            and not any(pattern.search(question) for pattern in MEDICATION_EVENTS.values()):
+        status_drugs = class_drugs
     quotes, flagged = _extract_claims(question, ok.get("retrieve_clinical_notes"), structured_sources,
                                       ignore=GENERIC_QUESTION_WORDS if zero_orders else frozenset(), require=named,
-                                      status_drugs=tuple(_status_drugs(question)) if zero_orders else ())
+                                      status_drugs=status_drugs,
+                                      class_drugs=class_drugs) if not class_question or class_drugs else ([], 0)
     draft.claims.extend(quotes)
     if flagged:
         draft.uncertainty.append(
@@ -509,6 +650,8 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     _gap_coverage_notes(draft, results)
     if zero_orders:
         _zero_order_medication_answer(question, draft, results)
+    if class_question:
+        _class_answer_notes(question, draft)
     missing = ok.get("detect_missing_information")
     coverage = missing.scope.get("coverage") if missing else None
     if (not draft.claims and not draft.abstain_reason and "missing_information" in intents and missing

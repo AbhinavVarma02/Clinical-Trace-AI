@@ -24,6 +24,14 @@ LAB_TERMS = {
     "oxygen": "Oxygen saturation", "saturation": "Oxygen saturation",
 }
 
+# Intent terms and drug identities are deliberately separate. Class terminology
+# selects evidence tools; it never identifies a medication prescribed to a patient.
+MEDICATION_NAMES = re.compile(
+    r"\b(insulin|metformin|warfarin|lisinopril|furosemide|tiotropium|albuterol|prednisone|"
+    r"amlodipine|metoprolol|glargine|apixaban|torsemide)\b", re.I)
+MEDICATION_CLASSES = re.compile(
+    r"\b(?:anticoagulants?|anticoagulation|anticoagulated|blood(?:\s+|-)thinners?)\b", re.I)
+
 INTENT_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("risk", re.compile(r"\b(risk|predict\w*|shap|model|likelihood|probability)\b", re.I)),
     ("missing_information", re.compile(r"\b(missing|incomplete|gaps?|undocumented|completeness)\b", re.I)),
@@ -31,9 +39,8 @@ INTENT_RULES: list[tuple[str, re.Pattern[str]]] = [
                                  r"disagree\w*)\b", re.I)),
     ("review_preparation", re.compile(r"\b(prepare|handoff|hand-off|review packet|for (human )?review)\b", re.I)),
     ("summary", re.compile(r"\b(summar\w*|overview|journey|course|tell me about|background)\b", re.I)),
-    ("medications", re.compile(r"\b(medications?|meds?|drugs?|insulin|metformin|warfarin|lisinopril|furosemide|"
-                               r"tiotropium|albuterol|prednisone|amlodipine|metoprolol|glargine|dose|dosage|"
-                               r"orders?)\b", re.I)),
+    ("medications", re.compile(r"\b(?:medications?|meds?|drugs?|dose|dosage|orders?)\b|"
+                               + MEDICATION_NAMES.pattern + "|" + MEDICATION_CLASSES.pattern, re.I)),
     ("labs", re.compile(r"\b(labs?|hba1c|a1c|egfr|inr|glucose|bnp|potassium|hemoglobin|fev1|oxygen|saturation|"
                         r"trend\w*|results?|kidney function)\b", re.I)),
     ("encounters", re.compile(r"\b(admission\w*|admitted|encounters?|visits?|readmi\w*|hospital\w*|stay|"
@@ -148,7 +155,7 @@ def llm_plan(question: str, provider: OpenAICompatibleProvider) -> Plan:
         fallback.source = "deterministic-fallback"
         fallback.notes.append(f"LLM planner unavailable ({type(exc).__name__}); used rule-based plan.")
         return fallback
-    calls = []
+    calls: list[dict[str, Any]] = []
     notes = []
     for call in payload["tool_calls"]:
         if not isinstance(call, dict):

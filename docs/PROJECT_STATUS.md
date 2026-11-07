@@ -14,6 +14,7 @@ This page is the portable, version-controlled handoff. It contains no credential
 | M2.2-a discharge-summary match (P2) | Committed and pushed; hosted CI green. A note counts as a discharge summary by LOINC 18842-5 or its label in any letter case. |
 | M2.2-b medication coverage provenance | Committed and pushed on `feature/beta`; hosted CI [42336192381](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42336192381) passed all five jobs at `94b9c5e`. |
 | M2.2-c diagnostic result availability (ISSUE-3) | Committed and pushed on `feature/beta` at `9402eec`; [hosted CI 42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) passed all five jobs. Not deployed. Completeness, summary and review answers disclose unresolved report result references; direct diagnostic-question routing remains ISSUE-6. |
+| M2.2-d medication vocabulary (L4) | Implemented and verified locally, **uncommitted; owner review pending**. Production limited to planner/composer. Exact apixaban/torsemide names, separate bounded class vocabulary, safe abstention and drug-specific attribution. 951 offline tests pass; evaluation/goldens/default API unchanged. Retrieval omission remains ISSUE-6 and a Beta release prerequisite. |
 | M2.3 controlled real-time Epic sandbox retrieval | **Mandatory approved target; not implemented.** Owner-only, read-only refresh of approved synthetic patients directly from Epic FHIR R4 through secure backend OAuth, followed by atomic validated snapshot promotion. Implementation, live calls, infrastructure and deployment each require separate owner approval. |
 | ISSUE-7 | **Open, unresolved.** Records that declare no medication import coverage (the synthetic fixture) still cite the Patient for "no medication orders"; see [LIMITATIONS.md](LIMITATIONS.md). Changing it would alter approved synthetic answers and needs an explicit decision. |
 
@@ -52,6 +53,26 @@ Only canonical Observation references in the same patient's source store resolve
 
 Production changes are confined to `src/clinical/records.py`. The existing tools and composer carry the new finding without changes. Tests use invented records and MOCK fixtures only. M2.2-a, M2.2-b and unresolved ISSUE-7 retain their existing behaviour. Direct questions such as "What did the stress test show?" still need the separately deferred ISSUE-6 routing/relevance work. Changing clinical code changes the execution revision, so older interrupted checkpointed runs cannot resume.
 
+### M2.2-d behaviour and local evidence (uncommitted, not deployed)
+
+Apixaban and torsemide now select medication tools by exact name. Class terms are separate from drug identity; the initial anticoagulant candidate list `{warfarin, apixaban}` is explicitly nonexhaustive. Blood-thinner phrases carry an ambiguity caveat. Class answers inspect only actual structured medication results and existing returned notes, including exact-name passages with BM25 zero. Administrative class terminology alone cannot establish medication use. Without supporting evidence the medication question abstains, preserving declared coverage and explaining the bounded vocabulary/retrieval limitation; an unreturned note is never evidence of source absence.
+
+Mixed-drug events and doses require local drug-specific support. Negation, uncertainty, conditions, plans and imperatives do not become completed events. Conflicting statuses remain unresolved, and notes remain verbatim note text rather than verified orders/current use. Ambiguous multi-drug event questions and unsupported event or dose wording conservatively abstain. Structured order status/provenance and existing review/citation safeguards remain intact.
+
+Class-note selection also retains sentence and section/title context: family-member medication history, allergies, explicit non-prescription/non-use and hypothetical or planned discussions cannot serve as patient-use confirmation. The three negative pre-commit examples abstain with zero claims; the CONTINUED apixaban control retains its verbatim quote, source/version and note-only caveats. Separate patient-medication sentences and actual stop/restart conflicts are preserved. The filter is deliberately conservative for ambiguous contexts.
+
+| Local check | Verified result |
+|---|---|
+| Tests first, unchanged production | 85 failed / 21 passed; original 85 cases archived and preserved, with omission expectations revised under the owner's scope decision |
+| Final focused / full offline tests | 344 / **951 passed** (796 existing + 155 new), no skips or expected failures; zero external attempts |
+| Evaluation | **41/42**, known `ho-013`; all quality/retrieval metrics identical to fresh before and prior M2.2-c, latency measured separately |
+| Synthetic / medication / original MOCK goldens and coverage matrix | Byte-identical before/final; no approved answer changes |
+| Context safety before commit | Valid reviewed-source red: 18 failed / 5 passed; 37 additional synthetic/MOCK cases pass in the full gate; family/non-prescription/allergy abstain, CONTINUED quote preserved |
+| Default API comparison | **0 differences**, 97 responses / 16,479 paths, versus fresh before and Epic M1 baseline; existing volatile exclusions only |
+| Ruff, types and formatting | Pass: CI checks plus planner/composer/new-test mypy and new-test formatting; legacy formatting preserved |
+
+**ISSUE-6 remains open and blocks Beta release acceptance until its impact is resolved.** With six administrative anticoagulation notes competing against an apixaban-only note, unchanged hybrid top-five retrieval omits the medication note. The corrected answer abstains with no administrative medication claim. Sparse returned apixaban evidence is quoted safely. The same omission occurs in a larger MOCK fixture; a sparse MOCK fixture verifies positive note provenance. See the exact [reproducer and boundary](LIMITATIONS.md). No retrieval query, `k=5`, ranking, tokenizer, index or tool architecture changed. No private snapshot or live service was accessed.
+
 ### Test evidence
 
 Local runs are offline and deterministic (no network, no language model, tracing off).
@@ -75,9 +96,9 @@ The regression counts and protected-file hashes below are retained M2.2-c eviden
 Each step needs its own approval and lands as its own commit with its own CI.
 
 1. **M2.2-c:** implementation, offline gate, independent review, local commit, approved push and hosted CI verification complete. Direct diagnostic routing remains ISSUE-6; no deployment is authorised.
-2. **M2.2-d:** medication vocabulary (L4), including an owner-approved anticoagulant class list, without changing retrieval.
+2. **M2.2-d:** local implementation and offline verification complete; uncommitted, stopped for owner review. Initial bounded anticoagulant candidates are `{warfarin, apixaban}`; blood-thinner terminology is ambiguous and matching is nonexhaustive. The owner accepted the demonstrated top-five omission for this milestone only. Safe abstention is required; this is not approval to release Beta with the limitation unresolved.
 3. **M2.2-e:** show the note-versus-encounter admission-date conflict (ISSUE-5) in encounter and summary answers.
-4. **M2.2-f:** answer relevance (ISSUE-6), measured against the evaluation and synthetic goldens before any change.
+4. **M2.2-f:** answer relevance and medication-class retrieval omission (ISSUE-6), measured against evaluation and existing goldens before any change. Retrieval expansion, additional candidate queries, ranking and index changes are deferred here, not started. Resolve the omission's impact before Beta release acceptance; exact reproducer in [LIMITATIONS.md](LIMITATIONS.md).
 5. **ISSUE-7:** owner decision on the synthetic Patient-cited gap.
 6. **M2.3 (mandatory target):** controlled real-time, read-only Epic FHIR R4 developer-sandbox retrieval in a restricted owner-only Beta environment. Reuse M1 OAuth, client, mapping and provenance; add owner authentication/authorisation, approved-patient selection, refresh budgets, complete coverage states, atomic promotion/versioning and rollback. Implementation and each bounded live verification need separate approval.
 7. **M2.4:** integrate owner refresh controls, source/cache status, retrieval times, resource counts, coverage and loading/error states into the Beta UI. D7 (UI approach) remains an owner decision.
@@ -108,7 +129,9 @@ Reusable code and missing functionality are documented in [ARCHITECTURE.md](ARCH
 - Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
 - `main`, the Stable demo, production and Draft PR #2 stay unchanged.
 
-**Development sequence:** M2.2-d (L4), followed by M2.2-e and M2.2-f, remain the next clinical development candidates. Each requires separate scope approval before work starts. M2.3 is mandatory but not yet implemented; implementation, live calls, infrastructure and deployment require separate approvals.
+**Development sequence:** M2.2-d (L4) is implemented locally and awaits owner review before commit. M2.2-e, followed by M2.2-f, remain the next clinical development candidates; each requires separate scope approval before work starts.
+
+M2.3 is mandatory but not yet implemented; implementation, live calls, infrastructure and deployment require separate approvals.
 
 ### Development workflow
 
