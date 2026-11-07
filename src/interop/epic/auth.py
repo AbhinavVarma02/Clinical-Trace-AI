@@ -171,7 +171,7 @@ class EpicTokenProvider:
             if category:
                 op.error_type = category
                 raise EpicAuthError(category)
-            token = self._parse(response)
+            token = parse_access_token(response, self._clock())
             if token is None:
                 op.error_type = "malformed"
                 raise EpicAuthError("malformed")
@@ -195,20 +195,22 @@ class EpicTokenProvider:
             code = None
         return code if code in OAUTH_ERROR_CODES else "http_4xx"
 
-    def _parse(self, response: httpx.Response) -> AccessToken | None:
-        if len(response.content) > MAX_TOKEN_RESPONSE_BYTES:
-            return None
-        try:
-            body = response.json()
-        except ValueError:
-            return None
-        if not isinstance(body, dict):
-            return None
-        value, token_type, expires_in = body.get("access_token"), body.get("token_type"), body.get("expires_in")
-        if not isinstance(value, str) or not value.strip() or str(token_type).lower() != "bearer":
-            return None
-        if isinstance(expires_in, bool) or not isinstance(expires_in, (int, float)) or expires_in <= 0:
-            return None
-        scope = body.get("scope")
-        scopes = tuple(sorted(scope.split())) if isinstance(scope, str) else ()
-        return AccessToken(value=value, expires_at=self._clock() + float(expires_in), scopes=scopes)
+
+def parse_access_token(response: httpx.Response, now: float) -> AccessToken | None:
+    """Parse a bounded SMART backend token response without exposing its contents."""
+    if len(response.content) > MAX_TOKEN_RESPONSE_BYTES:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    value, token_type, expires_in = body.get("access_token"), body.get("token_type"), body.get("expires_in")
+    if not isinstance(value, str) or not value.strip() or str(token_type).lower() != "bearer":
+        return None
+    if isinstance(expires_in, bool) or not isinstance(expires_in, (int, float)) or expires_in <= 0:
+        return None
+    scope = body.get("scope")
+    scopes = tuple(sorted(scope.split())) if isinstance(scope, str) else ()
+    return AccessToken(value=value, expires_at=now + float(expires_in), scopes=scopes)
