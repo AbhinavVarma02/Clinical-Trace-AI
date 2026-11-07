@@ -270,10 +270,15 @@ def test_the_synthetic_summary_states_the_absence_once_and_adds_no_note(runtime)
 
 
 def test_the_gap_answer_carries_a_declared_coverage_note_only(rt):
+    # M2.2-b: a declared coverage is provenance, stated as an uncited note; no Patient-cited gap claim is made.
     declared = ask(rt, "Is any documentation missing?", coverage="not_imported")
     gap = [c["text"] for c in declared["answer"]["claims"] if c["kind"] == "missing_information"]
-    assert "Documentation gap: No medication orders are recorded for this patient." in gap  # wording unchanged
+    assert "Documentation gap: No medication orders are recorded for this patient." not in gap
     assert NOT_IMPORTED in declared["answer"]["uncertainty"]
+    returned = ask(rt, "Is any documentation missing?", coverage="returned_none")
+    gap = [c["text"] for c in returned["answer"]["claims"] if c["kind"] == "missing_information"]
+    assert "Documentation gap: No medication orders are recorded for this patient." not in gap
+    assert RETURNED_NONE in returned["answer"]["uncertainty"]
     undeclared = ask(rt, "Is any documentation missing?")
     assert not any(s in notes_of(undeclared) for s in (NOT_IMPORTED, RETURNED_NONE, UNDECLARED))
 

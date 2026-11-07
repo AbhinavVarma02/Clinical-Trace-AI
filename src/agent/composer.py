@@ -271,6 +271,8 @@ MEDICATION_COVERAGE = {
     "returned_none": "The data source returned no medication orders for this patient when this record was imported.",
     "undeclared": "The absence of medication orders in this record does not show that the patient takes no medication.",
 }
+COMPLETENESS_NONE = "The completeness checks reported no documentation gaps for the imported record."
+COMPLETENESS_NONE_OTHER = "The completeness checks reported no other documentation gaps for the imported record."
 MEDICATION_ABSTAIN_TAIL = {
     "not_imported": "Structured medication orders were not imported, so this cannot be determined from the current evidence.",
     "returned_none": ("The data source returned no medication orders for this patient, so this cannot be determined "
@@ -376,17 +378,24 @@ def _entries(text: str, drug: str, events: list[str], dose: bool = False) -> lis
             and (not dose or DOSE_AMOUNT.search(entry))]
 
 
+def _completeness_coverage_notes(coverage: str) -> list[str]:
+    """Uncited notes stating a declared medication import coverage (query/import provenance, not evidence)."""
+    if coverage in ("not_imported", "returned_none"):
+        return [MEDICATION_COVERAGE[coverage]]
+    return [MEDICATION_ORDERS_NONE, MEDICATION_COVERAGE["undeclared"]]  # declared, but not a value we recognise
+
+
 def _gap_coverage_notes(draft: Draft, results: dict[str, ToolResult]) -> None:
-    """A cited 'no medication orders' gap carries the import coverage its data source declared."""
+    """Completeness answers state a declared medication import coverage as uncited notes, never as a cited gap.
+
+    No resource proves that orders do not exist, so with a declared coverage the completeness tool cites nothing for
+    the absence and reports the coverage as its scope. Undeclared coverage (the synthetic fixture) is unchanged.
+    """
     missing = results.get("detect_missing_information")
-    if missing is None or not missing.ok:
+    if missing is None or not missing.ok or not missing.scope.get("coverage"):
         return
-    cited = {c for claim in draft.claims for c in claim["citations"]}
-    for index, finding in enumerate(missing.data or [], start=1):
-        coverage = finding.get("coverage")
-        if (finding.get("category") == "medication_list_missing" and coverage in MEDICATION_COVERAGE
-                and f"check:medication_list_missing:{index}" in cited):
-            _note(draft, MEDICATION_COVERAGE[coverage])
+    for text in _completeness_coverage_notes(missing.scope["coverage"]):
+        _note(draft, text)
 
 
 def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str, ToolResult]) -> None:
@@ -500,6 +509,14 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     _gap_coverage_notes(draft, results)
     if zero_orders:
         _zero_order_medication_answer(question, draft, results)
+    missing = ok.get("detect_missing_information")
+    coverage = missing.scope.get("coverage") if missing else None
+    if (not draft.claims and not draft.abstain_reason and "missing_information" in intents and missing
+            and not missing.data and coverage):
+        # Say what was checked. Unimported orders are neither a gap nor evidence that the record is complete; a
+        # source that returned none is a warning from its import provenance, stated rather than cited.
+        lead = COMPLETENESS_NONE if coverage == "not_imported" else COMPLETENESS_NONE_OTHER
+        draft.abstain_reason = " ".join([lead, *_completeness_coverage_notes(coverage)])
     if not draft.claims and not draft.abstain_reason:
         draft.abstain_reason = ("No information answering this question was found in the synthetic record. "
                                 "The assistant does not answer beyond the record.")

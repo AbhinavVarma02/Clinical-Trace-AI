@@ -98,7 +98,12 @@ def assess(records: ClinicalRecords, patient_id: str, encounter_id: str | None =
         reasons.append(f"Encounter {target['id']} has no discharge time, so length of stay is unknown.")
     medications = records.medications(patient_id)
     if not medications:
-        reasons.append("No medication orders are recorded, so medication counts cannot be derived.")
+        if records.source_coverage.get("MedicationRequest") == "not_imported":
+            # Speaks only for this imported record, never for the original source record.
+            reasons.append("Medication orders were not imported from the data source for this record, so medication "
+                           "counts cannot be derived.")
+        else:
+            reasons.append("No medication orders are recorded, so medication counts cannot be derived.")
     if reasons or target is None:
         return {
             "available": False,

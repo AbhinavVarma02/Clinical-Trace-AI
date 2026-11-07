@@ -192,6 +192,19 @@ def _medication_scope(ctx: ToolContext, items: Any) -> dict[str, str]:
             "coverage": ctx.records.source_coverage.get("MedicationRequest", "undeclared")}
 
 
+def _missing_scope(ctx: ToolContext, _: Any) -> dict[str, str]:
+    """No orders and a declared import coverage: query/import provenance, stated by the answer, never cited."""
+    coverage = ctx.records.source_coverage.get("MedicationRequest")
+    if not coverage or ctx.records.medications(ctx.patient_id, include_history=False):
+        return {}
+    return {"medication_orders": "none_recorded", "coverage": coverage}
+
+
+def _provenance_only(finding: dict[str, Any]) -> bool:
+    """A 'no medication orders' warning resting on the source's declared import coverage, not on any resource."""
+    return finding["category"] == "medication_list_missing" and bool(finding.get("coverage"))
+
+
 def _labs(ctx: ToolContext, args: BaseModel) -> tuple[Any, list[EvidenceItem]]:
     assert isinstance(args, LabQuery)
     series = ctx.records.lab_trends(ctx.patient_id)
@@ -268,7 +281,9 @@ def _explanations(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceIte
 
 
 def _missing(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
-    findings = ctx.records.missing_information(ctx.patient_id)
+    # The Patient resource is not evidence that orders do not exist: a coverage-labelled warning becomes the
+    # tool's scope (see _missing_scope) instead of a check cited to the Patient. Undeclared coverage is unchanged.
+    findings = [f for f in ctx.records.missing_information(ctx.patient_id) if not _provenance_only(f)]
     evidence = []
     for index, finding in enumerate(findings, start=1):
         source = finding["source"]
@@ -324,7 +339,8 @@ TOOLS: dict[str, ToolSpec] = {
         ToolSpec("get_model_explanations", "SHAP feature contributions for the readmission prediction.", NoArgs,
                  Action.RISK_READ, _explanations, timeout_s=15.0),
         ToolSpec("detect_missing_information", "Documentation completeness checks (missing discharge "
-                 "summaries, end times, units, medication lists).", NoArgs, Action.PATIENT_READ, _missing),
+                 "summaries, end times, units, medication lists).", NoArgs, Action.PATIENT_READ, _missing,
+                 scope=_missing_scope),
         ToolSpec("detect_inconsistencies", "Contradictory attributes and note values that match no recorded "
                  "observation.", NoArgs, Action.PATIENT_READ, _contradictions),
     )

@@ -133,27 +133,25 @@ def test_human_review_binds_approval_to_the_epic_artifact(epic):
     assert decided["artifact"]["content"]["patient_id"] == pid
 
 
-def test_missing_medication_finding_is_a_documented_scope_artifact(epic):
+def test_unimported_medications_are_a_declared_scope_not_a_finding(epic):
+    """Medications are not imported until A1 is approved; the manifest says so, and no gap is claimed (M2.2-b)."""
     snapshot, runtime, pid = epic
     categories = {f["category"] for f in runtime.records.missing_information(pid)}
-    assert "medication_list_missing" in categories
+    assert "medication_list_missing" not in categories
+    assert runtime.records.source_coverage == {"MedicationRequest": "not_imported"}
     assert any("MedicationRequest" in note and "A1" in note for note in snapshot.manifest["notes"])
 
 
-def test_summary_answer_repeats_one_known_scope_finding(epic):
-    """Recorded limitation, asserted so the report stays honest; its fix needs separate approval.
-
-    ``medication_list_missing``: medications are not imported until A1 is approved, so the
-    isolated record has none; the snapshot manifest says so. The former second false finding,
-    ``discharge_summary_missing`` for the Epic-style "Discharge Summary" note, is fixed (P2).
-    """
+def test_summary_answer_repeats_no_known_false_finding(epic):
+    """The two former false findings are fixed: the Epic-style "Discharge Summary" is recognised (P2), and the
+    unimported medication orders are stated as an uncited import scope, not a Patient-cited gap (M2.2-b)."""
     snapshot, runtime, pid = epic
     result = runtime.agent.run(workspace.local_access(snapshot), pid, QUESTIONS[0])
     cited = {c for claim in result["answer"]["claims"] for c in claim["citations"]}
-    assert not any(c.startswith("check:discharge_summary_missing") for c in cited)
-    assert any(c.startswith("check:medication_list_missing") for c in cited)
-    assert not any("discharge summary" in claim["text"].lower() and claim["kind"] == "missing_information"
-                   for claim in result["answer"]["claims"])
+    assert not any(c.startswith(("check:discharge_summary_missing", "check:medication_list_missing")) for c in cited)
+    assert not any(claim["kind"] == "missing_information" for claim in result["answer"]["claims"])
+    assert any(note.startswith("Structured medication orders were not imported")
+               for note in result["answer"]["uncertainty"])
 
 
 def test_discharge_summary_written_in_epic_style_is_recognised(epic):

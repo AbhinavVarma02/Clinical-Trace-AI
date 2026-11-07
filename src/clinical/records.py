@@ -312,12 +312,15 @@ class ClinicalRecords:
                 findings.append({"category": "unit_missing", "severity": "medium",
                                  "message": f"{obs['name']} value {obs['value']} has no unit recorded.",
                                  "source": obs["source"]})
-        if not self.medications(patient_id, include_history=False):
+        coverage = self.source_coverage.get("MedicationRequest")
+        # Orders that were never imported say nothing about the source: no finding (it would cite the Patient as if
+        # it proved the absence). Answers state the import scope instead. Every other coverage keeps the finding.
+        if coverage != "not_imported" and not self.medications(patient_id, include_history=False):
             finding: dict[str, Any] = {"category": "medication_list_missing", "severity": "high",
                                        "message": "No medication orders are recorded for this patient.",
                                        "source": source_of(patient)}
-            if self.source_coverage.get("MedicationRequest"):
-                finding["coverage"] = self.source_coverage["MedicationRequest"]
+            if coverage:
+                finding["coverage"] = coverage
             findings.append(finding)
         for doc in documents:
             text = (self.document_text(patient_id, doc["id"]) or {}).get("text", "").lower()

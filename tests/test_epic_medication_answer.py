@@ -150,10 +150,11 @@ def test_a_documented_dose_is_quoted_from_the_discharge_summary(meds):
     assert result["answer"]["uncertainty"] == [NONE, NOT_IMPORTED, CAVEAT]
 
 
-def test_the_documentation_gap_keeps_its_wording_and_gains_the_import_scope(meds):
+def test_the_documentation_answer_states_the_import_scope_instead_of_a_gap(meds):
+    # M2.2-b: orders were not imported, so no Patient-cited "no medication orders" gap is claimed.
     result, _ = _run(meds, "Is any documentation missing?")
     gaps = [c["text"] for c in result["answer"]["claims"] if c["kind"] == "missing_information"]
-    assert "Documentation gap: No medication orders are recorded for this patient." in gaps
+    assert "Documentation gap: No medication orders are recorded for this patient." not in gaps
     assert NOT_IMPORTED in result["answer"]["uncertainty"]
 
 
