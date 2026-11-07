@@ -1,5 +1,96 @@
 # Project Status
 
+**Updated:** 2026-11-07 · **Stable:** `main` (2.0 public demo; last recorded release 2026-10-18) · **Beta development:** branch `feature/beta` (local and test-only; not deployed) · **Epic M1:** Draft PR #2, unmerged.
+
+This page is the portable, version-controlled handoff. It contains no credentials, private Epic snapshot content or machine-specific evidence. Detailed private checkpoints stay in the git-ignored `.project-state/` folder of the working copy that produced them; a fresh clone does not have them. The Stable section further down is kept unchanged as the record of 2026-10-18.
+
+## Current status (Beta channel, as of 2026-11-07)
+
+| Stream | State |
+|---|---|
+| Stable 2.0 public demo | Merged to `main` (PR #1). Public edge https://clinical-trace-ai.vathadiabhinav.workers.dev with the HF Space co-host; the v1 dashboard is unchanged. Last recorded release 2026-10-18; not re-verified for this update. None of the Beta changes below are deployed. |
+| Epic M1 sandbox adapter | Complete (all nine gates). Command-line only, read-only, Epic test patients only. Draft PR #2 stays unmerged ([EPIC_SANDBOX.md](EPIC_SANDBOX.md), [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md)). |
+| M2-S1 data-source registry | Committed and pushed on `feature/beta`; hosted CI green. Off by default; an Epic snapshot can be served locally as an isolated, deterministic-only extra source ([ADR 0009](ADR/0009-beta-channel-and-data-sources.md)). |
+| M2.2-a discharge-summary match (P2) | Committed and pushed; hosted CI green. A note counts as a discharge summary by LOINC 18842-5 or its label in any letter case. |
+| M2.2-b medication coverage provenance | Committed on `feature/beta`. When this page was written it had not been pushed and had no hosted CI run; pushing the commit that adds this page publishes M2.2-b with it. |
+| ISSUE-7 | **Open, unresolved.** Records that declare no medication import coverage (the synthetic fixture) still cite the Patient for "no medication orders"; see [LIMITATIONS.md](LIMITATIONS.md). Changing it would alter approved synthetic answers and needs an explicit decision. |
+
+### Git state when this page was written
+
+| Ref | Commit |
+|---|---|
+| `main` (remote) | `72ae8c8`: Stable 2.0 (PR #1, merged) and dependency security fixes (PR #3, merged) |
+| `feature/epic-sandbox-readonly` | `028e609`: Epic M1, Draft PR #2 into `main`, unmerged |
+| `feature/beta` | `83abb78` M2-S1 · `0fd3c75` CI lists · `183dad1` M2.2-a (last pushed commit) · `ee76a58` M2.2-b (local) · then the commit that adds this page |
+
+There is no pull request from `feature/beta`.
+
+### M2.2-b behaviour (records with no medication orders)
+
+A data source's declared medication import coverage is query/import provenance, never clinical evidence. When coverage is declared, the Patient resource is never cited as proof that orders do not exist.
+
+| Declared coverage | Completeness finding (record view) | Answers (summary, missing documentation, review) |
+|---|---|---|
+| none declared (synthetic fixture) | kept | unchanged: Patient-cited gap claim (ISSUE-7, unresolved) |
+| `not_imported` | not made | uncited "not imported" note; the readmission note says the orders were not imported for this record |
+| `returned_none` | kept, labelled with its coverage | uncited "the data source returned no medication orders" note instead of a gap claim |
+| unrecognised value | kept, labelled with its coverage | uncited "no medication orders are recorded" note plus the "absence does not show the patient takes no medication" caveat |
+
+Other completeness findings are unchanged. Changed files: `src/clinical/records.py`, `src/clinical/risk_bridge.py`, `src/agent/tools.py`, `src/agent/composer.py`, four test files (one new) and two docs.
+
+### Test evidence
+
+Local runs are offline and deterministic (no network, no language model, tracing off).
+
+| Check | Result |
+|---|---|
+| Python suite at M2.2-b (local) | 770 passed |
+| Evaluation gate at M2.2-b (local) | Pass, 41/42 (the known `ho-013` miss); metrics identical to M2.2-a |
+| Synthetic demo answers | Byte-identical to M2.2-a (4 patients × 6 questions, plus medication questions) |
+| Default-mode API | 0 differences across 97 responses against the Epic M1 baseline (`028e609`) |
+| Lint, types, formatting, secret scan (local) | Clean |
+| Hosted CI on `feature/beta` | All five jobs green for M2-S1 ([42320483550](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42320483550), [42321659856](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42321659856)) and M2.2-a ([42326596478](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42326596478)); M2.2-b had not run when this page was written |
+
+### Remaining Beta milestones
+
+Each step needs its own approval and lands as its own commit with its own CI.
+
+1. **M2.2-c (next):** disclose DiagnosticReport result references that do not resolve in the record, cited to the report itself; synthetic answers unchanged.
+2. **M2.2-d:** medication vocabulary (L4), including an owner-approved anticoagulant class list, without changing retrieval.
+3. **M2.2-e:** show the note-versus-encounter admission-date conflict (ISSUE-5) in encounter and summary answers.
+4. **M2.2-f:** answer relevance (ISSUE-6), measured against the evaluation and synthetic goldens before any change.
+5. **ISSUE-7:** owner decision on the synthetic Patient-cited gap.
+6. **Before a Beta deployment (provisional roadmap):** medication-date handling and medication import with a live test gate (A1); Epic encounter-class mapping (only with documentation); more than one Epic test patient; coverage shown in answers and the UI; then the deferred hosting, account, public-content and UI decisions. Public exposure, if ever, would ship only a static pre-imported snapshot.
+
+### Approval boundaries
+
+- Approved: Beta work on `feature/beta` (task branches allowed); Beta and Epic sources deterministic-only; data sources tested locally with synthetic and MOCK Epic fixtures only; ADR 0009. The phased roadmap is provisional and is not deployment authority.
+- Deferred, not authorised: Beta backend host, Cloudflare account placement, public Epic content, Beta UI.
+- Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
+- `main`, the Stable demo, production and Draft PR #2 stay unchanged.
+
+### Development workflow
+
+1. Inspect Git state and this page, then the private checkpoint if available.
+2. Agree the exact scope and stop at every approval gate.
+3. Write tests first for any clinical change and show that they fail on the unchanged code.
+4. Implement narrowly; no UI, deployment, retrieval or evaluation changes unless approved.
+5. Run the full offline regression: Python suite, evaluation gate, synthetic goldens, default-mode API comparison, lint, types, formatting, secret scan. Tracing and language-model providers stay off; Epic data stays MOCK unless approved.
+6. Review the exact diff; commit only the reviewed paths, without attribution trailers.
+7. After an approved push, verify every hosted CI job and step.
+8. Update this page and the private handoff after every milestone.
+
+### Continuing in another tool or session (Codex, a new chat, another account)
+
+1. Open the working copy on `feature/beta`. Run `git status -sb`, `git log --oneline -6` and `git ls-remote origin refs/heads/feature/beta`, and compare with the Git state above.
+2. If the working copy has `.project-state/HANDOFF.md`, read its top "CANONICAL RESUME POINT" section; it holds the exact commands, evidence paths and a ready-to-paste prompt. Otherwise use this page, [EPIC_SANDBOX.md](EPIC_SANDBOX.md), [LIMITATIONS.md](LIMITATIONS.md) and [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md) / [ADR 0009](ADR/0009-beta-channel-and-data-sources.md).
+3. Before running anything in Python, set `CLINICAL_TRACE_SKIP_DOTENV=1` and `LANGCHAIN_TRACING_V2=false`: a local `.env` can enable trace upload. Keep the language-model provider unset.
+4. Present a short plan for the next approved step and wait for approval before changing files.
+
+## Stable 2.0 status (as of 2026-10-18)
+
+Historical record, kept unchanged. Since then PR #1 has been merged into `main`; the branch and "No merge to `main`" in the next line describe 2026-10-18.
+
 **Updated:** 2026-10-18 · **Version:** 2.0.0-dev · **Branch:** `feature/clinical-trace-2.0` · **Public:** https://clinical-trace-ai.vathadiabhinav.workers.dev (dedicated Cloudflare Free account, full workflow, live LLM; see [CLOUDFLARE_ACCOUNT_MIGRATION.md](CLOUDFLARE_ACCOUNT_MIGRATION.md)) · v1 dashboard unchanged at the same Space URL. No merge to `main`.
 
 The reviewer-ready deployment phase is complete: the final release gate (complete primary agent workflow through the unauthenticated public URL) passed on desktop and mobile, including a backend cold start. See [PUBLIC_DEPLOYMENT.md](PUBLIC_DEPLOYMENT.md) and [ADR 0007](ADR/0007-public-edge-and-inference.md). The full master plan is not complete: human-review agreement, clinical validation and conditional advanced extensions remain.
