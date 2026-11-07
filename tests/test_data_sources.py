@@ -252,6 +252,72 @@ def test_two_epic_snapshots_are_served_as_separate_sources(epic_repo):
         built.close()
 
 
+def test_diagnostic_availability_uses_only_the_selected_source_and_preserves_its_provenance(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "REPO_ROOT", tmp_path)
+    monkeypatch.delenv("CLINICAL_TRACE_DB_PATH", raising=False)
+    alpha_pid, alpha_resources, alpha_binaries = fixture_patient("alpha")
+    bravo_pid, bravo_resources, bravo_binaries = fixture_patient("bravo")
+    foreign = next(r for r in bravo_resources if r["resourceType"] == "Observation")
+    raw_report = next(r for r in alpha_resources if r["resourceType"] == "DiagnosticReport")
+    raw_report["result"].append({"reference": f"Observation/{foreign['id']}"})
+    alpha = workspace.write_snapshot(
+        alpha_pid,
+        alpha_resources,
+        alpha_binaries,
+        retrieved_at=RETRIEVED_AT,
+        mode="MOCK",
+        snapshot_id="diagnostic-source-alpha",
+    )
+    bravo = workspace.write_snapshot(
+        bravo_pid,
+        bravo_resources,
+        bravo_binaries,
+        retrieved_at=RETRIEVED_AT,
+        mode="MOCK",
+        snapshot_id="diagnostic-source-bravo",
+    )
+    before = {"alpha": tree_hashes(alpha.path), "bravo": tree_hashes(bravo.path)}
+    built = build_registry(
+        f"synthetic,{EPIC}=diagnostic-source-alpha,{EPIC}-bravo=diagnostic-source-bravo",
+        db_path=":memory:",
+        provider=None,
+        enable_model=False,
+    )
+    set_registry(built)
+    RATE_LIMITER._buckets.clear()
+    try:
+        selected = built.get(EPIC).runtime
+        foreign_id = mapping.internal_id("Observation", foreign["id"])
+        assert selected.store.get("Observation", foreign_id) is None
+        assert built.get(f"{EPIC}-bravo").runtime.store.get("Observation", foreign_id) is not None
+        with TestClient(app) as c:
+            pid = alpha.patient_ids[0]
+            response = c.get(f"/api/v2/patients/{pid}", headers=headers(source=EPIC))
+            assert response.status_code == 200
+            (finding,) = [
+                f for f in response.json()["missing_information"] if f["category"] == "diagnostic_result_unavailable"
+            ]
+            assert finding["severity"] == "medium"
+            assert finding["unresolved_results"] == [f"Observation/{foreign_id}"]
+            report_id = mapping.internal_id("DiagnosticReport", raw_report["id"])
+            assert finding["source"]["reference"] == f"DiagnosticReport/{report_id}"
+            lineage = c.get(
+                f"/api/v2/patients/{pid}/resources/DiagnosticReport/{report_id}/provenance",
+                headers=headers(source=EPIC),
+            ).json()["source_provenance"]
+            assert lineage["source_reference"] == f"DiagnosticReport/{raw_report['id']}"
+            assert any("result[1].reference:internal-id" == field for field in lineage["field_status"]["transformed"])
+            assert c.get(f"/api/v2/patients/{pid}", headers=headers(source=f"{EPIC}-bravo")).status_code == 403
+            assert c.get(f"/api/v2/patients/{pid}", headers=headers()).status_code == 403
+            for source, patient_id in ((None, "synthetic_p001"), (f"{EPIC}-bravo", bravo.patient_ids[0])):
+                body = c.get(f"/api/v2/patients/{patient_id}", headers=headers(source=source)).json()
+                assert not any(f["category"] == "diagnostic_result_unavailable" for f in body["missing_information"])
+    finally:
+        set_registry(None)
+        built.close()
+    assert {"alpha": tree_hashes(alpha.path), "bravo": tree_hashes(bravo.path)} == before
+
+
 def test_an_invalid_configuration_stops_application_startup(monkeypatch):
     monkeypatch.setenv(ENV_VAR, f"{EPIC}=snapshot-first-01")
     set_registry(None)

@@ -329,6 +329,21 @@ class ClinicalRecords:
                     findings.append({"category": "note_incomplete", "severity": "medium",
                                      "message": f"'{doc['title']}' contains the phrase \"{marker}\".",
                                      "source": doc["source"]})
-        # Last, so the positions (and check ids) of the findings above never change.
+        # After the checks above, so their positions (and check ids) never change.
         findings.extend(encounter_documentation_gaps(self, patient_id))
+        # Resolve only canonical references in this patient's store, never another patient/source or a URL's id.
+        observation_refs = {f"Observation/{obs['id']}"
+                            for obs in self.store.all_for_patient(patient_id, "Observation")}
+        for report in self.diagnostic_reports(patient_id):
+            unresolved = list(dict.fromkeys(ref for ref in report["results"]
+                                            if isinstance(ref, str) and ref and ref not in observation_refs))
+            if unresolved:
+                noun = "result" if len(unresolved) == 1 else "results"
+                findings.append({
+                    "category": "diagnostic_result_unavailable", "severity": "medium",
+                    "message": f"Diagnostic report '{report['name']}' ({report['effective']}) lists "
+                               f"{len(unresolved)} referenced {noun} that cannot be resolved in this imported "
+                               f"record. The referenced {noun} cannot be reviewed or interpreted from this record.",
+                    "source": report["source"], "unresolved_results": unresolved,
+                })
         return findings

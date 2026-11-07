@@ -12,7 +12,8 @@ This page is the portable, version-controlled handoff. It contains no credential
 | Epic M1 sandbox adapter | Complete (all nine gates). Command-line only, read-only, Epic test patients only. Draft PR #2 stays unmerged ([EPIC_SANDBOX.md](EPIC_SANDBOX.md), [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md)). |
 | M2-S1 data-source registry | Committed and pushed on `feature/beta`; hosted CI green. Off by default; an Epic snapshot can be served locally as an isolated, deterministic-only extra source ([ADR 0009](ADR/0009-beta-channel-and-data-sources.md)). |
 | M2.2-a discharge-summary match (P2) | Committed and pushed; hosted CI green. A note counts as a discharge summary by LOINC 18842-5 or its label in any letter case. |
-| M2.2-b medication coverage provenance | Committed on `feature/beta`. When this page was written it had not been pushed and had no hosted CI run; pushing the commit that adds this page publishes M2.2-b with it. |
+| M2.2-b medication coverage provenance | Committed and pushed on `feature/beta`; hosted CI [42336192381](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42336192381) passed all five jobs at `94b9c5e`. |
+| M2.2-c diagnostic result availability (ISSUE-3) | Implemented and verified locally on `feature/beta`; **not pushed or deployed**. Completeness, summary and review answers disclose unresolved report result references; direct diagnostic-question routing remains ISSUE-6. |
 | ISSUE-7 | **Open, unresolved.** Records that declare no medication import coverage (the synthetic fixture) still cite the Patient for "no medication orders"; see [LIMITATIONS.md](LIMITATIONS.md). Changing it would alter approved synthetic answers and needs an explicit decision. |
 
 ### Git state when this page was written
@@ -21,7 +22,7 @@ This page is the portable, version-controlled handoff. It contains no credential
 |---|---|
 | `main` (remote) | `72ae8c8`: Stable 2.0 (PR #1, merged) and dependency security fixes (PR #3, merged) |
 | `feature/epic-sandbox-readonly` | `028e609`: Epic M1, Draft PR #2 into `main`, unmerged |
-| `feature/beta` | `83abb78` M2-S1 · `0fd3c75` CI lists · `183dad1` M2.2-a (last pushed commit) · `ee76a58` M2.2-b (local) · then the commit that adds this page |
+| `feature/beta` | Remote `feature/beta` is at `94b9c5e`, following `83abb78` M2-S1 · `0fd3c75` CI lists · `183dad1` M2.2-a · `ee76a58` M2.2-b. M2.2-c is the local follow-up to this base and has not been pushed. |
 
 There is no pull request from `feature/beta`.
 
@@ -38,24 +39,35 @@ A data source's declared medication import coverage is query/import provenance, 
 
 Other completeness findings are unchanged. Changed files: `src/clinical/records.py`, `src/clinical/risk_bridge.py`, `src/agent/tools.py`, `src/agent/composer.py`, four test files (one new) and two docs.
 
+### M2.2-c behaviour (local, not deployed)
+
+For each DiagnosticReport with unresolved result references, completeness checks append one medium-severity `diagnostic_result_unavailable` finding after all existing findings, preserving earlier check IDs. It lists the distinct unresolved references in their recorded order, cites the existing report/version and includes its clinical effective timestamp. Summary, missing-documentation and review answers disclose that those referenced results cannot be resolved, reviewed or interpreted from the imported record.
+
+Only canonical Observation references in the same patient's source store resolve. Other reference forms are conservatively reported as unresolvable; no URL or identifier is guessed and no upstream request is made. A report with no nonempty result references creates no new finding. A present Observation is treated as available regardless of its value; this check performs no diagnostic interpretation. The report's references, conclusion and field-level provenance remain unchanged. The finding describes local import availability without asserting why a target is missing or whether it exists upstream.
+
+Production changes are confined to `src/clinical/records.py`. The existing tools and composer carry the new finding without changes. Tests use invented records and MOCK fixtures only. M2.2-a, M2.2-b and unresolved ISSUE-7 retain their existing behaviour. Direct questions such as "What did the stress test show?" still need the separately deferred ISSUE-6 routing/relevance work. Changing clinical code changes the execution revision, so older interrupted checkpointed runs cannot resume.
+
 ### Test evidence
 
 Local runs are offline and deterministic (no network, no language model, tracing off).
 
 | Check | Result |
 |---|---|
-| Python suite at M2.2-b (local) | 770 passed |
-| Evaluation gate at M2.2-b (local) | Pass, 41/42 (the known `ho-013` miss); metrics identical to M2.2-a |
-| Synthetic demo answers | Byte-identical to M2.2-a (4 patients × 6 questions, plus medication questions) |
-| Default-mode API | 0 differences across 97 responses against the Epic M1 baseline (`028e609`) |
+| Tests first at M2.2-c | 17 expected failures / 143 passes on unchanged production code; 160 focused tests passed after the correction |
+| Python suite at M2.2-c (local) | 796 passed (770 existing + 26 new), no skips or expected failures |
+| Evaluation gate at M2.2-c (local) | Pass, 41/42 (the known `ho-013` miss); all quality and retrieval metrics identical to M2.2-b; latencies measured separately |
+| Synthetic demo and medication answers | Byte-identical to the unchanged tree and M2.2-b (4 patients × 6 questions per golden, plus completeness findings) |
+| Original resolved MOCK answers / medication coverage matrix | Byte-identical before and after; new dangling-reference MOCK tests verify the intended disclosures and report provenance |
+| Default-mode API | 0 differences across 97 responses / 16,479 paths against both the unchanged tree and the Epic M1 baseline (`028e609`), using existing volatile-field exclusions |
 | Lint, types, formatting, secret scan (local) | Clean |
-| Hosted CI on `feature/beta` | All five jobs green for M2-S1 ([42320483550](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42320483550), [42321659856](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42321659856)) and M2.2-a ([42326596478](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42326596478)); M2.2-b had not run when this page was written |
+| Protected-file integrity / evidence | All 99 hashes match, including 33 private files checked by hash only under restricted approval; source/test tree unchanged throughout the gate; zero recorded external attempts |
+| Hosted CI on `feature/beta` | Latest verified run [42336192381](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42336192381) passed all five jobs at `94b9c5e`, covering M2.2-b and the prior status page. **M2.2-c has no hosted CI:** a push and hosted verification require separate approval. Earlier M2-S1 and M2.2-a runs remain historical evidence. |
 
 ### Remaining Beta milestones
 
 Each step needs its own approval and lands as its own commit with its own CI.
 
-1. **M2.2-c (next):** disclose DiagnosticReport result references that do not resolve in the record, cited to the report itself; synthetic answers unchanged.
+1. **M2.2-c:** local implementation, offline gate and independent diff review complete; one local commit approved. Push and hosted CI require separate approval.
 2. **M2.2-d:** medication vocabulary (L4), including an owner-approved anticoagulant class list, without changing retrieval.
 3. **M2.2-e:** show the note-versus-encounter admission-date conflict (ISSUE-5) in encounter and summary answers.
 4. **M2.2-f:** answer relevance (ISSUE-6), measured against the evaluation and synthetic goldens before any change.
@@ -65,6 +77,7 @@ Each step needs its own approval and lands as its own commit with its own CI.
 ### Approval boundaries
 
 - Approved: Beta work on `feature/beta` (task branches allowed); Beta and Epic sources deterministic-only; data sources tested locally with synthetic and MOCK Epic fixtures only; ADR 0009. The phased roadmap is provisional and is not deployment authority.
+- Approved for M2.2-c: local implementation, offline verification, existing documentation updates and one focused local commit. Private snapshot integrity checks are hash-only, with aggregate pass/fail/counts; no content inspection, processing, copying, replay, upload or disclosure of private paths or identifiers is authorised.
 - Deferred, not authorised: Beta backend host, Cloudflare account placement, public Epic content, Beta UI.
 - Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
 - `main`, the Stable demo, production and Draft PR #2 stay unchanged.
