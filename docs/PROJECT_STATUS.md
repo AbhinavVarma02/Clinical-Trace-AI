@@ -16,15 +16,15 @@ This page is the portable, version-controlled handoff. It contains no credential
 | M2.2-c diagnostic result availability (ISSUE-3) | Committed and pushed on `feature/beta` at `9402eec`; [hosted CI 42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) passed all five jobs. Not deployed. Completeness, summary and review answers disclose unresolved report result references. M2.2-f adds bounded direct diagnostic handling. |
 | M2.2-d medication vocabulary (L4) | Committed and pushed at `7d13776`; [CI 42387215792](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42387215792) passed all five jobs. Python CI: 948 passed, 3 skipped; evaluation 41/42. Prior local evidence: 951 passed, no skips. Production limited to planner/composer; safe abstention and drug-specific attribution. The original retrieval omission was deferred to M2.2-f. ISSUE-7 remains open. Stable unchanged; Beta not deployed. |
 | M2.2-e encounter/note dates (ISSUE-5 residual) | Committed and pushed at `aef7aef`. [CI 42392508719](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42392508719) passed all five jobs. Hosted Python: 975 passed / 3 skipped; evaluation 41/42 with the known `ho-013` miss. Prior local gate: 168 focused and 978 full tests. Encounter and summary answers disclose existing linked-date findings once, with exact source versions, explicit note-date labels and required human review. Beta is not deployed. |
-| M2.2-f retrieval and diagnostic relevance (ISSUE-6) | Implemented and verified locally, awaiting owner review. Bounded medication-class note recovery and direct diagnostic answers with exact evidence. No publication approval. |
-| M2.3 controlled real-time Epic sandbox retrieval | **Mandatory approved target; not implemented.** Owner-only, read-only refresh of approved synthetic patients directly from Epic FHIR R4 through secure backend OAuth, followed by atomic validated snapshot promotion. Implementation, live calls, infrastructure and deployment each require separate owner approval. |
+| M2.2-f retrieval and diagnostic relevance (ISSUE-6) | Committed and pushed at `505d7610c80da139e2977d15a42be3b45f0b9fdd`. Hosted Python: 1,000 passed / 3 skipped. Clinical evaluation: 41/42 with the known `ho-013` miss. [CI 42400812536 passed 5/5](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42400812536). Stable unchanged. Beta undeployed. |
+| M2.3 controlled real-time Epic sandbox retrieval | **Mandatory approved target. M2.3-1 architectural baseline accepted.** Owner-only, read-only refresh of approved synthetic patients directly from Epic FHIR R4 through backend OAuth, followed by atomic validated snapshot promotion. Implementation, live calls, infrastructure and deployment each require separate owner approval. [M2.3-1 design](M2.3-1_EPIC_REFRESH_DESIGN.md). |
 | ISSUE-7 | **Open, unresolved.** Records that declare no medication import coverage (the synthetic fixture) still cite the Patient for "no medication orders"; see [LIMITATIONS.md](LIMITATIONS.md). Changing it would alter approved synthetic answers and needs an explicit decision. |
 
 The M2.2-c push/CI documentation was refreshed after commit `9402eec`; that commit itself records the earlier local verification state.
 
 M2.2-d's pre-commit success/failure evidence below remains historical. Its approved normal push and hosted CI are complete; the status correction was included in M2.2-e commit `aef7aef`.
 
-The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Beta roadmap. Cached snapshots remain supported with explicit cache labels; public Epic data publication and public live refresh each require independent approval.
+The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Epic plan. The accepted design requires explicit cache labels for retained generations. Public Epic data publication and public live refresh each require independent approval.
 
 ### Git baseline for this roadmap
 
@@ -32,7 +32,8 @@ The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Beta 
 |---|---|
 | `main` (remote) | `72ae8c8`: Stable 2.0 (PR #1, merged) and dependency security fixes (PR #3, merged) |
 | `feature/epic-sandbox-readonly` | `028e609`: Epic M1, Draft PR #2 into `main`, unmerged |
-| `feature/beta` | `aef7aef36ae4b1abb7f48a81e631f0acb22fa215`, parent `7d13776517ee9a8db3332ec29d12bd188b4e696e`. The approved eight-file M2.2-e commit was pushed normally. [CI 42392508719](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42392508719) passed all five jobs. Hosted Python: 975 passed / 3 skipped; evaluation 41/42 with the known `ho-013` miss. Earlier M2.2-d and M2.2-c baselines are `7d13776` and `9402eec`. |
+| `origin/feature/beta` (last verified push) | `505d7610c80da139e2977d15a42be3b45f0b9fdd`, parent `aef7aef36ae4b1abb7f48a81e631f0acb22fa215`. The approved 13-file M2.2-f commit was pushed normally. The prior eight-file M2.2-e commit has its own CI record below. Earlier M2.2-d and M2.2-c baselines are `7d13776` and `9402eec`. |
+| `feature/beta` (local) | M2.3-1 documentation checkpoint based on the M2.2-f commit above. Local commit approval covers the design and the four portable publication corrections. |
 
 There is no pull request from `feature/beta`.
 
@@ -96,7 +97,7 @@ A missing encounter counterpart remains a documentation gap, never a confirmed c
 
 Providers, tracing and dotenv are disabled; all clinical checks use invented/MOCK fixtures with zero recorded external attempts. Secret and protected-file receipts accompany the private review packet; private snapshots are excluded entirely, including hashing. The pre-existing expanded-graph typing diagnostic is a nonblocking final-polish item, with no unrelated production change. M2.2-e left ISSUE-6, ISSUE-7 and the mandatory M2.3 target open. The later owner-approved M2.2-e commit and push are recorded above. Stable is unchanged and Beta is not deployed.
 
-### M2.2-f behaviour and offline verification
+### M2.2-f behaviour and prior offline verification (committed and pushed)
 
 The agent first retrieves the usual five passages for medication-class questions. If they contain no eligible class note, it makes one additional patient-scoped search filtered to exact candidate names in note text before ranking. It keeps the same evidence limit, note context checks, source versions, import coverage and nonexhaustive vocabulary caveats. The raw retrieval benchmark and ordinary search defaults are unchanged. The crowded invented case now quotes the apixaban continuation, and the larger MOCK case resolves the note citation to its source.
 
@@ -111,7 +112,7 @@ A named diagnostic result question uses the existing completeness tool and impor
 | Goldens and API | Four original synthetic, medication, MOCK and coverage captures byte-identical. Zero differences across 97 default API responses / 16,479 paths against the frozen M2.2-e and Epic M1 baselines using the existing volatile-field rules. The guarded replay outside the sandbox succeeded after sandboxed TestClient timeouts. |
 | Static and integrity | Ruff, CI and changed-file mypy, scoped formatting, secret scans and protected-file checks passed. Completed clinical runs recorded zero external attempts. |
 
-Exact medication reproducer and remaining diagnostic limits are in [LIMITATIONS.md](LIMITATIONS.md#issue-6-bounded-medication-and-diagnostic-relevance). This is a local Beta change. ISSUE-7 and the M2.3 requirements retain their prior status.
+This table records the local review history. Hosted CI metrics are separate below. ISSUE-7 and all remaining security and release gates are open. [Exact medication reproducer and remaining diagnostic limits](LIMITATIONS.md#issue-6-bounded-medication-and-diagnostic-relevance).
 
 ### Test evidence
 
@@ -129,16 +130,17 @@ The regression counts and protected-file hashes below are retained M2.2-c eviden
 | Default-mode API | 0 differences across 97 responses / 16,479 paths against both the unchanged tree and the Epic M1 baseline (`028e609`), using existing volatile-field exclusions |
 | Lint, types, formatting, secret scan (local) | Clean |
 | Protected-file integrity / evidence | All 99 hashes match, including 33 private files checked by hash only under restricted approval; source/test tree unchanged throughout the gate; zero recorded external attempts |
-| Hosted CI on `feature/beta` | Latest recorded run at `aef7aef`. [CI 42392508719](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42392508719) passed all five jobs. Hosted Python: 975 passed / 3 skipped; evaluation 41/42 with the known `ho-013` miss. The logs record 52 successful steps and one expected failure-artifact-upload skip, frontend 53 unit / 36 browser tests, Edge 30 unit / 13 script tests and deploy dry-run, a 377-file secret scan, enforced dependency audits, and container build and smoke. The frontend install reported a high-severity warning outside the enforced production-only audit. Previous successful runs include 42387215792 (`7d13776`, M2.2-d, Python 948 passed / 3 skipped), 42342090985 (`4ac67fb`, M2.3 documentation), 42339250764 (`9402eec`, M2.2-c), and 42336192381 (`94b9c5e`, M2.2-b). |
+| Latest hosted CI on `feature/beta` | M2.2-f at `505d7610c80da139e2977d15a42be3b45f0b9fdd`. Attempt 1 passed 5/5 jobs. Python 1,000 passed / 3 skipped (115 warnings, 70.49 s). Clinical evaluation passed 41/42 with the known `ho-013` miss. The receipt records 52 successful steps and one expected failure-artifact upload skip, frontend 53 unit / 36 browser tests, Edge 30 unit / 13 script tests and a deploy dry-run, a 379-file secret scan, enforced dependency audits, and container build and smoke. Frontend and Edge installs each reported a high-severity warning. The enforced frontend audit covers production dependencies. [CI 42400812536](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42400812536). |
+| Prior hosted CI on `feature/beta` | M2.2-e at `aef7aef` passed all five jobs. Python 975 passed / 3 skipped, evaluation 41/42 with the known `ho-013` miss. The logs record 52 successful steps and one expected failure-artifact-upload skip, frontend 53 unit / 36 browser tests, Edge 30 unit / 13 script tests and deploy dry-run, a 377-file secret scan, enforced dependency audits, and container build and smoke. The frontend install reported a high-severity warning outside the enforced production-only audit. Earlier successful runs include 42387215792 (`7d13776`, M2.2-d, Python 948 passed / 3 skipped), 42342090985 (`4ac67fb`, M2.3 documentation), 42339250764 (`9402eec`, M2.2-c), and 42336192381 (`94b9c5e`, M2.2-b). [CI 42392508719](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42392508719). |
 
 ### Remaining Beta milestones
 
-Each step needs its own approval and lands as its own commit with its own CI.
+Each implementation increment needs its own scope approval and offline gate before any approved commit, push and hosted CI.
 
 1. **M2.2-c:** Implementation, offline gate, independent review, commit, push and hosted CI verification complete. This milestone added summary, completeness and review disclosure.
 2. **M2.2-d:** implementation, offline verification, approved commit/push at `7d13776` and hosted CI 42387215792 complete. Initial bounded anticoagulant candidates are `{warfarin, apixaban}`; blood-thinner terminology is ambiguous and matching is nonexhaustive. The owner accepted the demonstrated top-five omission for this milestone only. Safe abstention is required; this is not approval to release Beta with the limitation unresolved.
 3. **M2.2-e:** Local verification, approved commit and push at `aef7aef` complete. [CI 42392508719](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42392508719) passed all five jobs. Hosted Python: 975 passed / 3 skipped; evaluation 41/42 with the known `ho-013` miss. The linked source dates remain clinically unresolved.
-4. **M2.2-f:** Local implementation and offline verification complete. Review the exact diff and behaviour evidence before any separately approved commit or push. ISSUE-7 and later Beta gates remain open.
+4. **M2.2-f:** Local verification, owner review, approved commit and push, and exact-head hosted CI are complete. ISSUE-7 and all remaining security and release gates are open.
 5. **ISSUE-7:** owner decision on the synthetic Patient-cited gap.
 6. **M2.3 (mandatory target):** controlled real-time, read-only Epic FHIR R4 developer-sandbox retrieval in a restricted owner-only Beta environment. Reuse M1 OAuth, client, mapping and provenance; add owner authentication/authorisation, approved-patient selection, refresh budgets, complete coverage states, atomic promotion/versioning and rollback. Implementation and each bounded live verification need separate approval.
 7. **M2.4:** integrate owner refresh controls, source/cache status, retrieval times, resource counts, coverage and loading/error states into the Beta UI. D7 (UI approach) remains an owner decision.
@@ -164,14 +166,12 @@ Reusable code and missing functionality are documented in [ARCHITECTURE.md](ARCH
 ### Approval boundaries
 
 - Approved product scope: the mandatory M2.3 requirement on `feature/beta`; prior M2-S1/M2.2-a/b/c work is complete. Beta/Epic sources remain deterministic-only. M2.3 implementation, live calls, infrastructure and deployment each require separate owner approval ([ADR 0009](ADR/0009-beta-channel-and-data-sources.md)).
-- Implementation, offline verification, approved commits and pushes, and hosted CI verification are complete through M2.2-e. M2.2-f approval covers local investigation, implementation, offline verification and documentation. Earlier restricted M2.2-c integrity checks remain historical. The current task excludes all private snapshot access, including hashing.
+- Implementation, offline verification, approved commits and pushes, and hosted CI verification are complete through M2.2-f. The accepted M2.3-1 specification and four publication-status corrections are approved for one local documentation commit. Earlier restricted M2.2-c integrity checks remain historical. The current task excludes all private snapshot access, including hashing.
 - Deferred, not authorised: Beta backend host, Cloudflare account placement, public Epic content, Beta UI.
 - Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
 - `main`, the Stable demo, production and Draft PR #2 stay unchanged.
 
-**Development sequence:** M2.2-e is committed and pushed with hosted CI green. M2.2-f is locally verified and awaits owner review. Stable is unchanged and Beta is not deployed.
-
-M2.3 is mandatory but not yet implemented; implementation, live calls, infrastructure and deployment require separate approvals.
+**Development sequence:** M2.2-f is committed and pushed with hosted CI green. The owner accepted the M2.3-1 architectural baseline. M2.3-2 requires its own scope approval and starts with local MOCK services. Stable is unchanged and Beta is not deployed. [Design, pending decisions and implementation gates](M2.3-1_EPIC_REFRESH_DESIGN.md).
 
 ### Development workflow
 
