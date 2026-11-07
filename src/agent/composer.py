@@ -163,17 +163,29 @@ def _missing_claims(result: ToolResult) -> list[dict[str, Any]]:
 
 def _inconsistency_claims(result: ToolResult) -> list[dict[str, Any]]:
     claims = []
+    date_sources: set[tuple[str, str]] = set()
     checks = [e for e in result.evidence if e.evidence_id.startswith("check:inconsistency:")]
     sources = [e for e in result.evidence if not e.evidence_id.startswith("check:")]
     for check, finding in zip(checks, result.data or []):
         refs = {s["reference"] for s in finding["sources"]}
         cited = [s.evidence_id for s in sources if s.source_ref in refs]
+        date_conflict = finding.get("category") == "encounter_date_conflict"
+        if date_conflict:
+            cited = list(dict.fromkeys(eid(source) for source in finding["sources"]))
         claims.append(_claim(f"Possible inconsistency: {check.text}", [check.evidence_id] + cited,
                              "inconsistency"))
         for source in finding["sources"]:
-            match = next((s for s in sources if s.source_ref == source["reference"]), None)
+            match = next((s for s in sources if s.source_ref == source["reference"]
+                          and (not date_conflict or s.source_version == str(source["version"]))), None)
             if match:
-                claims.append(_claim(f"{source['title']} ({d(source['date'])}) records \"{source['excerpt']}\".",
+                label = ""
+                if date_conflict:
+                    key = (match.evidence_id, source["excerpt"])
+                    if key in date_sources:
+                        continue
+                    date_sources.add(key)
+                    label = "note date " if source["reference"].startswith("DocumentReference/") else "encounter start date "
+                claims.append(_claim(f"{source['title']} ({label}{d(source['date'])}) records \"{source['excerpt']}\".",
                                      [match.evidence_id], "inconsistency_source"))
     return claims
 
@@ -610,6 +622,19 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
                 items = [m for m in result.data or [] if any(_mentions(m["medication"], drug) for drug in class_drugs)]
                 result = ToolResult(tool=tool, ok=True, data=items, evidence=result.evidence)
             draft.claims.extend(builder(result))
+    encounters = ok.get("get_patient_encounters")
+    date_findings = {finding["check_id"]: finding for enc in encounters.data or []
+                     for finding in enc.get("date_conflicts", [])} if encounters else {}
+    if encounters and {"encounters", "summary", "review_preparation"} & set(intents):
+        covered = {claim["citations"][0] for claim in draft.claims if claim["kind"] == "inconsistency"}
+        checks = [item for item in encounters.evidence if item.evidence_id in date_findings
+                  and item.evidence_id not in covered]
+        # Reuse the existing finding composer once, even in combined/review answers.
+        sources = [item for item in encounters.evidence if item.kind == "consistency_check"
+                   and not item.evidence_id.startswith("check:")]
+        draft.claims.extend(_inconsistency_claims(ToolResult(
+            tool="get_patient_encounters", ok=True, data=[date_findings[item.evidence_id] for item in checks],
+            evidence=checks + sources)))
     if "risk" in intents or "review_preparation" in intents:
         claims, caveats, unavailable = _risk_claims(ok.get("get_readmission_prediction"),
                                                     ok.get("get_model_explanations"))
@@ -619,10 +644,13 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
             draft.uncertainty.append(unavailable)
             if intents == ["risk"]:
                 draft.abstain_reason = unavailable
-    # Only a documentation gap's own check marks a source as covered. Its supporting citations (for example
-    # the note that states a date) must not stop other sections of that note from being quoted.
+    # Date-finding excerpts do not cover the rest of a note (e.g. its follow-up plan).
+    date_source_ids = {eid(source) for finding in date_findings.values() for source in finding["sources"]}
+    # Only a documentation gap's own check marks a source as covered.
     structured_sources = {
         ref for claim in draft.claims
+        if not ((claim["kind"] == "inconsistency" and claim["citations"][0] in date_findings)
+                or (claim["kind"] == "inconsistency_source" and claim["citations"][0] in date_source_ids))
         for ref in _sources_of(claim["citations"][:1] if claim["kind"] == "missing_information"
                                else claim["citations"], results)
     }

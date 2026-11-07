@@ -14,11 +14,14 @@ This page is the portable, version-controlled handoff. It contains no credential
 | M2.2-a discharge-summary match (P2) | Committed and pushed; hosted CI green. A note counts as a discharge summary by LOINC 18842-5 or its label in any letter case. |
 | M2.2-b medication coverage provenance | Committed and pushed on `feature/beta`; hosted CI [42336192381](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42336192381) passed all five jobs at `94b9c5e`. |
 | M2.2-c diagnostic result availability (ISSUE-3) | Committed and pushed on `feature/beta` at `9402eec`; [hosted CI 42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) passed all five jobs. Not deployed. Completeness, summary and review answers disclose unresolved report result references; direct diagnostic-question routing remains ISSUE-6. |
-| M2.2-d medication vocabulary (L4) | Implemented and verified locally, **uncommitted; owner review pending**. Production limited to planner/composer. Exact apixaban/torsemide names, separate bounded class vocabulary, safe abstention and drug-specific attribution. 951 offline tests pass; evaluation/goldens/default API unchanged. Retrieval omission remains ISSUE-6 and a Beta release prerequisite. |
+| M2.2-d medication vocabulary (L4) | Committed and pushed at `7d13776`; [CI 42387215792](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42387215792) passed all five jobs. Python CI: 948 passed, 3 skipped; evaluation 41/42. Prior local evidence: 951 passed, no skips. Production limited to planner/composer; safe abstention and drug-specific attribution. ISSUE-6 remains an unresolved Beta release prerequisite; ISSUE-7 remains open. Stable unchanged; Beta not deployed. |
+| M2.2-e encounter/note dates (ISSUE-5 residual) | Implemented and verified locally; **uncommitted, stopped for owner review**. Existing linked-date findings now appear once in encounter/summary answers with exact source versions, explicit note-date labels and required human review. 978 offline tests pass; evaluation 41/42 and all quality/retrieval metrics unchanged; original goldens/default API unchanged. No hosted CI for this uncommitted change. |
 | M2.3 controlled real-time Epic sandbox retrieval | **Mandatory approved target; not implemented.** Owner-only, read-only refresh of approved synthetic patients directly from Epic FHIR R4 through secure backend OAuth, followed by atomic validated snapshot promotion. Implementation, live calls, infrastructure and deployment each require separate owner approval. |
 | ISSUE-7 | **Open, unresolved.** Records that declare no medication import coverage (the synthetic fixture) still cite the Patient for "no medication orders"; see [LIMITATIONS.md](LIMITATIONS.md). Changing it would alter approved synthetic answers and needs an explicit decision. |
 
 The M2.2-c push/CI documentation was refreshed after commit `9402eec`; that commit itself records the earlier local verification state.
+
+M2.2-d's pre-commit success/failure evidence below remains historical. Its approved normal push and hosted CI are complete; the status correction is part of the uncommitted M2.2-e work, with no separate documentation-only commit.
 
 The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Beta roadmap. Cached snapshots remain supported with explicit cache labels; public Epic data publication and public live refresh each require independent approval.
 
@@ -28,7 +31,7 @@ The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Beta 
 |---|---|
 | `main` (remote) | `72ae8c8`: Stable 2.0 (PR #1, merged) and dependency security fixes (PR #3, merged) |
 | `feature/epic-sandbox-readonly` | `028e609`: Epic M1, Draft PR #2 into `main`, unmerged |
-| `feature/beta` | M2.2-c implementation baseline: `9402eec`, parent `94b9c5e`; exactly the reviewed six-file commit was pushed as a normal fast-forward. Subsequent documentation commits do not change that implementation baseline. |
+| `feature/beta` | `7d13776517ee9a8db3332ec29d12bd188b4e696e`, parent `4ac67fb5ade116b6ce4cd457dae8a311f7a35543`: approved seven-file M2.2-d commit, normally pushed; hosted CI 42387215792 green 5/5. Prior M2.2-c implementation baseline remains `9402eec`. |
 
 There is no pull request from `feature/beta`.
 
@@ -53,7 +56,7 @@ Only canonical Observation references in the same patient's source store resolve
 
 Production changes are confined to `src/clinical/records.py`. The existing tools and composer carry the new finding without changes. Tests use invented records and MOCK fixtures only. M2.2-a, M2.2-b and unresolved ISSUE-7 retain their existing behaviour. Direct questions such as "What did the stress test show?" still need the separately deferred ISSUE-6 routing/relevance work. Changing clinical code changes the execution revision, so older interrupted checkpointed runs cannot resume.
 
-### M2.2-d behaviour and local evidence (uncommitted, not deployed)
+### M2.2-d behaviour and prior local evidence (committed/pushed, not deployed)
 
 Apixaban and torsemide now select medication tools by exact name. Class terms are separate from drug identity; the initial anticoagulant candidate list `{warfarin, apixaban}` is explicitly nonexhaustive. Blood-thinner phrases carry an ambiguity caveat. Class answers inspect only actual structured medication results and existing returned notes, including exact-name passages with BM25 zero. Administrative class terminology alone cannot establish medication use. Without supporting evidence the medication question abstains, preserving declared coverage and explaining the bounded vocabulary/retrieval limitation; an unreturned note is never evidence of source absence.
 
@@ -73,6 +76,25 @@ Class-note selection also retains sentence and section/title context: family-mem
 
 **ISSUE-6 remains open and blocks Beta release acceptance until its impact is resolved.** With six administrative anticoagulation notes competing against an apixaban-only note, unchanged hybrid top-five retrieval omits the medication note. The corrected answer abstains with no administrative medication claim. Sparse returned apixaban evidence is quoted safely. The same omission occurs in a larger MOCK fixture; a sparse MOCK fixture verifies positive note provenance. See the exact [reproducer and boundary](LIMITATIONS.md). No retrieval query, `k=5`, ranking, tokenizer, index or tool architecture changed. No private snapshot or live service was accessed.
 
+### M2.2-e behaviour and local verification (uncommitted, not deployed)
+
+The existing `encounter_date_conflict` detector is unchanged. The encounter tool carries only those patient-linked findings; the composer reuses their evidence in encounter and summary answers and avoids repeating findings already supplied by the inconsistency tool. It labels the note's own date separately from the admission/discharge date stated in its text and the encounter's recorded start/end. It quotes both values without deciding which is clinically correct. Source-version citations remain exact, and the review gate requires human review when the encounter tool returns a conflict.
+
+A missing encounter counterpart remains a documentation gap, never a confirmed contradiction. The existing one-day tolerance, labelled valid ISO-date requirement and same-patient linked-encounter boundary remain unchanged. The fix does not add planner calls, change retrieval or alter the detector/verifier/registry/API schemas. Production scope: `src/agent/tools.py`, `src/agent/composer.py` and the small existing review-gate condition in `src/agent/graph.py`.
+
+| Local check / history | Verified outcome |
+|---|---|
+| Tests first, production unchanged | 12 failed / 11 passed; zero external attempts. Failures reproduce missing encounter/summary disclosure and ambiguous note-date labels. |
+| Preservation correction | Initial fix suppressed a follow-up plan elsewhere in a date-cited note. Existing regression reproduced 1 failure / 163 deselected; correction limits that suppression to the covered date excerpts. No original tests removed. |
+| Focused / complete offline suite | 168 / **978 passed** (951 existing + 27 new); full suite has no skips/xfails. Final full suite includes the subsequent test-only typing correction. |
+| Actual behaviour capture | 12 verified answers: six question forms each on invented and MOCK Epic data; one supported date finding each, exact citations and mandatory human review. Additional regressions cover multiple findings, missing/matching dates, tolerance, invalid/unlinked dates, other patients/sources, versions and discharge-only conflicts. |
+| Evaluation / retrieval | Gate passed **41/42**, known `ho-013`; all non-latency quality/retrieval metrics identical to fresh before and M2.2-d. |
+| Goldens / default API | Synthetic, medication, original MOCK and coverage outputs byte-identical; **0 differences across 97 responses / 16,479 paths** against fresh before and Epic M1, with unchanged volatile exclusions. |
+| Static checks | Ruff, CI mypy (19 files), tools/composer/new-test mypy (3 files), both CI formatting scopes and new-test formatting passed. An expanded graph check reports the same pre-existing LangGraph `add_node` overload diagnostic as exact HEAD; no new diagnostic. |
+| Retained nonpassing attempts | Private baseline driver initially expected a not-yet-created test file; sandbox API capture timed out and API-inclusive focused execution stalled. Guarded execution outside the sandbox passed. New fixture typing and intermediate Ruff issues were corrected; isolated mypy caches removed expanded-check cache contamination. These attempts remain history, not passing gates. |
+
+Providers, tracing and dotenv are disabled; all clinical checks use invented/MOCK fixtures with zero recorded external attempts. Secret and protected-file receipts accompany the private review packet; private snapshots are excluded entirely, including hashing. The pre-existing expanded-graph typing diagnostic is a nonblocking final-polish item, with no unrelated production change. ISSUE-6, ISSUE-7, the mandatory M2.3 target and the full roadmap remain unchanged. Stable is unchanged; Beta is not deployed. Stop for owner review before commit, push, PR, merge, deployment or M2.2-f.
+
 ### Test evidence
 
 Local runs are offline and deterministic (no network, no language model, tracing off).
@@ -89,15 +111,15 @@ The regression counts and protected-file hashes below are retained M2.2-c eviden
 | Default-mode API | 0 differences across 97 responses / 16,479 paths against both the unchanged tree and the Epic M1 baseline (`028e609`), using existing volatile-field exclusions |
 | Lint, types, formatting, secret scan (local) | Clean |
 | Protected-file integrity / evidence | All 99 hashes match, including 33 private files checked by hash only under restricted approval; source/test tree unchanged throughout the gate; zero recorded external attempts |
-| Hosted CI on `feature/beta` | Latest verified push run [42339250764](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42339250764) at `9402eec`: success, all five jobs; 53 completed steps (52 success, one by-design skip of failure-artifact upload). No failed jobs or steps. Job/step conclusions were read; raw logs were not read, so local test counts above are not claimed as hosted counts. Prior run 42336192381 at `94b9c5e` covers M2.2-b. |
+| Hosted CI on `feature/beta` | Latest verified push run [42387215792](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42387215792) at `7d13776`: all five jobs passed; 52 successful steps and one expected failure-artifact-upload skip. Logs: Python 948 passed / 3 artifact-dependent skips; evaluation gate passed 41/42, known `ho-013`; frontend 53 unit / 36 browser tests; Edge 30 unit / 13 script tests; security and container build/smoke passed. No failed jobs or steps. Prior successful runs: 42342090985 at `4ac67fb` (M2.3 documentation), 42339250764 at `9402eec` (M2.2-c), 42336192381 at `94b9c5e` (M2.2-b). Local counts remain separate. |
 
 ### Remaining Beta milestones
 
 Each step needs its own approval and lands as its own commit with its own CI.
 
 1. **M2.2-c:** implementation, offline gate, independent review, local commit, approved push and hosted CI verification complete. Direct diagnostic routing remains ISSUE-6; no deployment is authorised.
-2. **M2.2-d:** local implementation and offline verification complete; uncommitted, stopped for owner review. Initial bounded anticoagulant candidates are `{warfarin, apixaban}`; blood-thinner terminology is ambiguous and matching is nonexhaustive. The owner accepted the demonstrated top-five omission for this milestone only. Safe abstention is required; this is not approval to release Beta with the limitation unresolved.
-3. **M2.2-e:** show the note-versus-encounter admission-date conflict (ISSUE-5) in encounter and summary answers.
+2. **M2.2-d:** implementation, offline verification, approved commit/push at `7d13776` and hosted CI 42387215792 complete. Initial bounded anticoagulant candidates are `{warfarin, apixaban}`; blood-thinner terminology is ambiguous and matching is nonexhaustive. The owner accepted the demonstrated top-five omission for this milestone only. Safe abstention is required; this is not approval to release Beta with the limitation unresolved.
+3. **M2.2-e:** local tests-first implementation and full offline verification complete; uncommitted, stopped for owner review. The linked date mismatch is disclosed in encounter/summary answers without resolving it clinically. Commit, push and later milestones require separate approval.
 4. **M2.2-f:** answer relevance and medication-class retrieval omission (ISSUE-6), measured against evaluation and existing goldens before any change. Retrieval expansion, additional candidate queries, ranking and index changes are deferred here, not started. Resolve the omission's impact before Beta release acceptance; exact reproducer in [LIMITATIONS.md](LIMITATIONS.md).
 5. **ISSUE-7:** owner decision on the synthetic Patient-cited gap.
 6. **M2.3 (mandatory target):** controlled real-time, read-only Epic FHIR R4 developer-sandbox retrieval in a restricted owner-only Beta environment. Reuse M1 OAuth, client, mapping and provenance; add owner authentication/authorisation, approved-patient selection, refresh budgets, complete coverage states, atomic promotion/versioning and rollback. Implementation and each bounded live verification need separate approval.
@@ -124,12 +146,12 @@ Reusable code and missing functionality are documented in [ARCHITECTURE.md](ARCH
 ### Approval boundaries
 
 - Approved product scope: the mandatory M2.3 requirement on `feature/beta`; prior M2-S1/M2.2-a/b/c work is complete. Beta/Epic sources remain deterministic-only. M2.3 implementation, live calls, infrastructure and deployment each require separate owner approval ([ADR 0009](ADR/0009-beta-channel-and-data-sources.md)).
-- Completed under separate approvals for M2.2-c: local implementation, offline verification, existing documentation updates, one focused commit, its normal push and hosted CI verification. Private snapshot integrity checks are hash-only, with aggregate pass/fail/counts; no content inspection, processing, copying, replay, upload or disclosure of private paths or identifiers is authorised.
+- Completed under separate approvals through M2.2-d: local implementation, offline verification, documentation, focused commits, normal pushes and hosted CI verification. M2.2-e currently permits local tests-first implementation and verification only. Earlier M2.2-c private integrity checks were hash-only under their own restricted approval; the current task excludes all private snapshot access, including hashing.
 - Deferred, not authorised: Beta backend host, Cloudflare account placement, public Epic content, Beta UI.
 - Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
 - `main`, the Stable demo, production and Draft PR #2 stay unchanged.
 
-**Development sequence:** M2.2-d (L4) is implemented locally and awaits owner review before commit. M2.2-e, followed by M2.2-f, remain the next clinical development candidates; each requires separate scope approval before work starts.
+**Development sequence:** M2.2-d (L4) is committed/pushed with hosted CI green. M2.2-e is implemented and verified locally, uncommitted and awaiting owner review; M2.2-f remains unstarted and requires separate approval. Stable is unchanged and Beta is not deployed.
 
 M2.3 is mandatory but not yet implemented; implementation, live calls, infrastructure and deployment require separate approvals.
 

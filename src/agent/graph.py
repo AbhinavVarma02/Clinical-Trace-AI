@@ -178,7 +178,10 @@ def build_graph(ctx: ToolContext, provider: OpenAICompatibleProvider | None,
         if report.get("status") == "partially_verified":
             reasons.append("some generated claims failed verification and were removed")
         inconsistencies = state.get("results", {}).get("detect_inconsistencies")
-        if inconsistencies is not None and inconsistencies.ok and inconsistencies.data:
+        encounters = state.get("results", {}).get("get_patient_encounters")
+        date_conflicts = (encounters is not None and encounters.ok
+                          and any(enc.get("date_conflicts") for enc in encounters.data or []))
+        if (inconsistencies is not None and inconsistencies.ok and inconsistencies.data) or date_conflicts:
             reasons.append("the record contains inconsistencies")
         if any(e.flags for e in state.get("evidence", {}).values()):
             reasons.append("retrieved content contained instruction-like text")

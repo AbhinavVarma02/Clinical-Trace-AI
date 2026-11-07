@@ -157,6 +157,17 @@ def _encounters(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]
                          current["start"])
         item.evidence_id = f"check:encounter_interval:{previous['id']}:{current['id']}"
         evidence.append(item)
+    # Surface only existing linked-date conflicts here; unrelated inconsistencies
+    # remain with their own tool. Preserve its full finding order/check identity.
+    for index, finding in enumerate(find_inconsistencies(ctx.records, ctx.patient_id), start=1):
+        if finding["category"] != "encounter_date_conflict":
+            continue
+        refs = {source["reference"] for source in finding["sources"]}
+        for enc in items:
+            if enc["source"]["reference"] in refs:
+                enc.setdefault("date_conflicts", []).append(
+                    {**finding, "check_id": f"check:inconsistency:{index}"})
+        evidence.extend(_inconsistency_evidence(ctx, finding, index))
     return items, evidence
 
 
@@ -300,19 +311,28 @@ def _missing(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
     return findings, evidence
 
 
+def _inconsistency_evidence(ctx: ToolContext, finding: dict[str, Any], index: int) -> list[EvidenceItem]:
+    """Use the same source versions and check identity through either tool."""
+    evidence = []
+    for source in finding["sources"]:
+        label = ""
+        if finding["category"] == "encounter_date_conflict":
+            label = "note date " if source["reference"].startswith("DocumentReference/") else "encounter start date "
+        evidence.append(_evidence(ctx, source, f"{source['title']} ({label}{_date(source['date'])}): "
+                                               f"\"{source['excerpt']}\"", "consistency_check",
+                                  source["title"], source["date"]))
+    evidence.append(EvidenceItem(evidence_id=f"check:inconsistency:{index}", patient_id=ctx.patient_id,
+                                 source_ref=finding["sources"][0]["reference"],
+                                 source_version=str(finding["sources"][0]["version"]),
+                                 text=finding["message"], kind="consistency_check",
+                                 title=finding["attribute"]))
+    return evidence
+
+
 def _contradictions(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
     findings = find_inconsistencies(ctx.records, ctx.patient_id)
-    evidence = []
-    for index, finding in enumerate(findings, start=1):
-        for source in finding["sources"]:
-            evidence.append(_evidence(ctx, source, f"{source['title']} ({_date(source['date'])}): "
-                                                   f"\"{source['excerpt']}\"", "consistency_check",
-                                      source["title"], source["date"]))
-        evidence.append(EvidenceItem(evidence_id=f"check:inconsistency:{index}", patient_id=ctx.patient_id,
-                                     source_ref=finding["sources"][0]["reference"],
-                                     source_version=str(finding["sources"][0]["version"]),
-                                     text=finding["message"], kind="consistency_check",
-                                     title=finding["attribute"]))
+    evidence = [item for index, finding in enumerate(findings, start=1)
+                for item in _inconsistency_evidence(ctx, finding, index)]
     return findings, evidence
 
 
