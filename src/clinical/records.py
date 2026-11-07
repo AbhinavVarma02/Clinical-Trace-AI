@@ -331,10 +331,16 @@ class ClinicalRecords:
                                      "source": doc["source"]})
         # After the checks above, so their positions (and check ids) never change.
         findings.extend(encounter_documentation_gaps(self, patient_id))
+        findings.extend(self.diagnostic_result_gaps(patient_id, self.diagnostic_reports(patient_id)))
+        return findings
+
+    def diagnostic_result_gaps(self, patient_id: str, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Use the selected report versions for completeness and direct diagnostic answers."""
+        findings: list[dict[str, Any]] = []
         # Resolve only canonical references in this patient's store, never another patient/source or a URL's id.
         observation_refs = {f"Observation/{obs['id']}"
                             for obs in self.store.all_for_patient(patient_id, "Observation")}
-        for report in self.diagnostic_reports(patient_id):
+        for report in reports:
             unresolved = list(dict.fromkeys(ref for ref in report["results"]
                                             if isinstance(ref, str) and ref and ref not in observation_refs))
             if unresolved:

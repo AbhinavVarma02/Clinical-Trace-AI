@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.agent.llm import OpenAICompatibleProvider, ProviderUnavailable, extract_json
+from src.agent.question_scope import MEDICATION_CLASSES, MEDICATION_NAMES, diagnostic_subjects
 from src.agent.tools import PLANNER_TOOLS, TOOLS
 
 MAX_TOOL_CALLS = 8
@@ -23,14 +24,6 @@ LAB_TERMS = {
     "bnp": "BNP", "potassium": "Potassium", "hemoglobin": "Hemoglobin", "fev1": "FEV1",
     "oxygen": "Oxygen saturation", "saturation": "Oxygen saturation",
 }
-
-# Intent terms and drug identities are deliberately separate. Class terminology
-# selects evidence tools; it never identifies a medication prescribed to a patient.
-MEDICATION_NAMES = re.compile(
-    r"\b(insulin|metformin|warfarin|lisinopril|furosemide|tiotropium|albuterol|prednisone|"
-    r"amlodipine|metoprolol|glargine|apixaban|torsemide)\b", re.I)
-MEDICATION_CLASSES = re.compile(
-    r"\b(?:anticoagulants?|anticoagulation|anticoagulated|blood(?:\s+|-)thinners?)\b", re.I)
 
 INTENT_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("risk", re.compile(r"\b(risk|predict\w*|shap|model|likelihood|probability)\b", re.I)),
@@ -63,8 +56,28 @@ INTENT_TOOLS: dict[str, list[str]] = {
     "encounters": ["get_patient_encounters", "retrieve_clinical_notes"],
     "conditions": ["get_patient_conditions"],
     "smoking": ["detect_inconsistencies", "retrieve_clinical_notes"],
+    "diagnostic": ["detect_missing_information", "retrieve_clinical_notes"],
+    "diagnostic_compound": [],
     "record_qa": ["retrieve_clinical_notes"],
 }
+
+_QUESTION_WORDS = r"(?:what|which|when|where|why|how)"
+_QUESTION_AUXILIARIES = r"(?:is|are|was|were|do|does|did|has|have|had)"
+_REQUEST_PROMPTS = (
+    rf"(?:(?:what|which)\b(?!\s+(?:if|about)\b)|(?:when|where|why)\s+{_QUESTION_AUXILIARIES}\b|"
+    rf"how\s+(?:{_QUESTION_AUXILIARIES}|many|much|long|often)\b|"
+    r"list\b|summari[sz]e\b|(?:(?:can|could)\s+you\s+)?(?:show|tell)\s+me\b)"
+)
+_REQUEST_OPENING = rf"(?:please\s+)?(?:{_REQUEST_PROMPTS}|{_QUESTION_AUXILIARIES}\b)"
+_DIRECT_REQUEST = re.compile(rf"^{_REQUEST_OPENING}", re.I)
+_REQUEST_BREAK = re.compile(
+    rf"(?:[,;?]\s*(?:and\s+)?|\s+and\s+)(?:also\s+)?(?={_REQUEST_OPENING})", re.I)
+_CLINICAL_REQUEST = re.compile(
+    rf"^(?:please\s+)?(?:{_REQUEST_PROMPTS}|{_QUESTION_AUXILIARIES}\s+"
+    rf"(?:(?:the|his|her|their)\s+\w+|(?:there|he|she|they)\b|{MEDICATION_NAMES.pattern}))", re.I)
+_TEST_CONTINUATION = re.compile(
+    rf"^(?:please\s+)?(?:{_QUESTION_WORDS}\s+)?{_QUESTION_AUXILIARIES}\s+"
+    r"(?:it|(?:the|this|that)\s+(?:test|report|results?|findings?))\b", re.I)
 
 
 @dataclass
@@ -76,7 +89,23 @@ class Plan:
     latency_ms: float | None = None
 
 
+def _has_separate_clinical_request(question: str) -> bool:
+    """Require a separate request clause. A medication mention alone is context."""
+    has_diagnostic = has_clinical = False
+    for clause in _REQUEST_BREAK.split(question.strip()):
+        if not _DIRECT_REQUEST.match(clause):
+            continue
+        if diagnostic_subjects(clause):
+            has_diagnostic = True
+        elif (_CLINICAL_REQUEST.match(clause) and not _TEST_CONTINUATION.match(clause)
+              and any(pattern.search(clause) for _, pattern in INTENT_RULES)):
+            has_clinical = True
+    return has_diagnostic and has_clinical
+
+
 def detect_intents(question: str) -> list[str]:
+    if diagnostic_subjects(question):
+        return ["diagnostic_compound"] if _has_separate_clinical_request(question) else ["diagnostic"]
     intents = [name for name, pattern in INTENT_RULES if pattern.search(question)]
     return intents or ["record_qa"]
 

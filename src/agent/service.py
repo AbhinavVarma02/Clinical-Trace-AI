@@ -14,6 +14,7 @@ from typing import Any, Callable, Iterator
 from src.agent.checkpoints import execution_revision, open_checkpoints
 from src.agent.graph import CANCELLATION, RECURSION_LIMIT, CancelledRun, build_graph
 from src.agent.llm import OpenAICompatibleProvider
+from src.agent.question_scope import diagnostic_subjects
 from src.agent.tools import ToolContext
 from src.clinical.records import ClinicalRecords
 from src.config import SAFETY_DISCLAIMER
@@ -204,7 +205,7 @@ class AgentService:
                     raise RunConflict("run already exists; inspect its status and explicitly resume if interrupted")
                 session_id = self._session(access, patient_id, session_id)
                 run_id = run_id or str(uuid.uuid4())
-                mode = "llm" if self.provider else "deterministic"
+                mode = "llm" if self.provider and not diagnostic_subjects(question) else "deterministic"
                 conn.execute(
                     "INSERT INTO agent_run(run_id, session_id, persona, patient_id, question, status, inference_mode, "
                     "created_at, idempotency_key, engine_revision, data_version) VALUES (?,?,?,?,?, 'running', ?, ?,?,?,?)",
@@ -233,7 +234,8 @@ class AgentService:
                  question: str, mode: str, resume: bool,
                  observer: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
         ctx = ToolContext(access=access, policy=self.policy, records=self.records, index=self.index,
-                          patient_id=patient_id, predictor=self.predictor)
+                          patient_id=patient_id, predictor=self.predictor,
+                          diagnostic_question=question if diagnostic_subjects(question) else None)
         deadline = time.monotonic() + 180
 
         def cancelled() -> bool:
@@ -245,7 +247,8 @@ class AgentService:
                 raise TimeoutError("agent run time budget exhausted")
             return cancelled()
 
-        graph = build_graph(ctx, self.provider, checkpointer=self.checkpoints, check_cancel=check_control,
+        graph = build_graph(ctx, self.provider if mode == "llm" else None, checkpointer=self.checkpoints,
+                            check_cancel=check_control,
                             observer=observer)
         graph_config = {"configurable": {"thread_id": run_id}, "recursion_limit": RECURSION_LIMIT}
         started = time.perf_counter()
@@ -335,7 +338,7 @@ class AgentService:
         if outcome == "abstained":
             abstain_reason = (draft.abstain_reason if draft and draft.abstain_reason
                               else "No claim survived evidence verification, so no answer is given.")
-        provider = self.provider.describe() if self.provider else None
+        provider = self.provider.describe() if self.provider and mode == "llm" else None
         notes = " ".join((plan.notes if plan else []) + (draft.notes if draft else []))
         degraded = None
         if mode == "llm" and "ProviderQuotaExhausted" in notes:

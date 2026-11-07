@@ -9,6 +9,7 @@ chunk belongs to that patient and fails closed otherwise.
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -119,9 +120,10 @@ class RetrievalIndex:
         date_from: str | None = None,
         date_to: str | None = None,
         source_types: tuple[str, ...] | None = None,
+        note_terms: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         started = time.perf_counter()
-        key = (patient_id, query.strip().lower(), k, mode, date_from, date_to, source_types, self.version)
+        key = (patient_id, query.strip().lower(), k, mode, date_from, date_to, source_types, note_terms, self.version)
         with self._lock:
             cached = self._cache.get(key)
             if cached is not None:
@@ -146,6 +148,12 @@ class RetrievalIndex:
             ]
         if source_types:
             candidates = [i for i in candidates if partition.chunks[i].source_type.startswith(source_types)]
+        if note_terms:
+            # Literal note text, before ranking. Token aliases and structured
+            # chunks cannot occupy this focused candidate window.
+            terms = re.compile(r"\b(?:" + "|".join(map(re.escape, note_terms)) + r")\b", re.I)
+            candidates = [i for i in candidates if partition.chunks[i].source_ref.startswith("DocumentReference/")
+                          and terms.search(partition.chunks[i].text)]
 
         bm25_scores = partition.bm25.scores(tokenize(query))
         dense_scores = (partition.vectors @ embedder.encode([query])[0]).tolist()

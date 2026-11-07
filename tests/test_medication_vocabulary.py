@@ -1,9 +1,8 @@
 """M2.2-d approval gate: invented records and MOCK Epic only; no live services.
 
 Keep intent, named-drug identity and bounded class matching separate. Retrieval
-tests use the real index, not injected search hits. The owner accepted the crowded
-record omission for this milestone only; it must cause safe abstention and remain
-an unresolved ISSUE-6 release prerequisite. The original 85 cases are preserved.
+tests use the real index, not injected search hits. M2.2-f preserves the raw
+retrieval reproducer and requires the agent to recover the supported passage.
 """
 
 from __future__ import annotations
@@ -268,7 +267,7 @@ def test_end_to_end_class_answer_quotes_the_returned_apixaban_only_passage(vocab
 
 
 def test_class_retrieval_gate_finds_apixaban_among_administrative_class_mentions(vocab_runtime):
-    """Owner-approved revised gate: preserve the omission and abstain safely."""
+    """The agent recovers a note the ordinary top five still omit."""
     pid = "synthetic_l4crowded"
     hits = vocab_runtime.index.search(pid, "Is the patient on an anticoagulant?", k=5)["results"]
     assert len(hits) == 5 and all(hit["patient_id"] == pid for hit in hits)
@@ -284,8 +283,15 @@ def test_class_retrieval_gate_finds_apixaban_among_administrative_class_mentions
     )
     assert any("apixaban" in chunk.text.lower() for chunk in vocab_runtime.index.chunks_for(pid))
     assert not any("apixaban" in hit["text"].lower() for hit in hits)
-    assert result["outcome"] == "abstained" and result["answer"]["claims"] == []
-    scope = " ".join([result["answer"]["abstain_reason"] or "", *result["answer"]["uncertainty"]]).lower()
+    assert result["outcome"] == "answered"
+    (claim,) = result["answer"]["claims"]
+    assert "CONTINUED: apixaban 5 mg twice daily." in claim["text"]
+    assert claim["citations"] == ["crowded-apixaban#s1@v1"]
+    (evidence,) = [e for e in result["evidence"] if e["evidence_id"] in claim["citations"]]
+    assert evidence["source_ref"] == "DocumentReference/crowded-apixaban" and evidence["source_version"] == "1"
+    assert len(result["evidence"]) <= 5
+    assert CAVEAT in result["answer"]["uncertainty"]
+    scope = " ".join(result["answer"]["uncertainty"]).lower()
     assert "not exhaustive" in scope and "not imported" in scope
     assert "returned" in scope and "source" in scope
     assert "takes no" not in scope and "is not on" not in scope
@@ -341,19 +347,11 @@ def test_source_isolated_mock_epic_new_vocabulary_has_caveats_and_resolving_cita
     snapshot, runtime, pid = vocab_epic[index]
     result = runtime.agent.run(workspace.local_access(snapshot), pid, question)
     assert result["error"] is None and result["inference"]["mode"] == "deterministic"
-    returned = runtime.index.search(pid, question, k=5)["results"]
-    candidate_returned = any(
-        drug in hit["text"].lower() and hit["source_ref"].startswith("DocumentReference/") for hit in returned
-    )
-    if "anticoagulant" in question and not candidate_returned:
-        # The accepted omission also occurs in this larger MOCK fixture. Never
-        # turn the missing candidate into an administrative answer or absence claim.
-        assert result["outcome"] == "abstained" and result["answer"]["claims"] == []
-        scope = " ".join([result["answer"]["abstain_reason"] or "", *result["answer"]["uncertainty"]])
+    assert result["outcome"] == "answered" and CAVEAT in result["answer"]["uncertainty"]
+    assert any(drug in claim["text"].lower() for claim in result["answer"]["claims"])
+    if "anticoagulant" in question:
+        scope = " ".join(result["answer"]["uncertainty"])
         assert "not exhaustive" in scope and "not imported" in scope
-    else:
-        assert result["outcome"] == "answered" and CAVEAT in result["answer"]["uncertainty"]
-        assert any(drug in claim["text"].lower() for claim in result["answer"]["claims"])
     assert all(item["patient_id"] == pid for item in result["evidence"])
     provenance = workspace.citation_provenance(runtime, result)
     assert provenance.get("unresolved", 0) == 0

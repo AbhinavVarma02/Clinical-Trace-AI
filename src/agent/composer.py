@@ -16,14 +16,22 @@ from typing import Any
 
 from src.agent.llm import OpenAICompatibleProvider, ProviderUnavailable, extract_json
 from src.agent.evidence import interval_statement, summary_focus
-from src.agent.planner import MEDICATION_CLASSES, MEDICATION_NAMES, detect_intents
+from src.agent.planner import detect_intents
+from src.agent.question_scope import (
+    MEDICATION_CLASSES,
+    SENTENCE,
+    class_drugs as _class_drugs,
+    diagnostic_note_result,
+    diagnostic_subjects,
+    documented as _documented,
+    mentions as _mentions,
+    named_drugs as _named_drugs,
+    patient_class_sentence as _patient_class_sentence,
+)
 from src.agent.tools import ToolResult
 from src.retrieval.lexical import tokenize
 from src.safety.guards import flag_content
 from src.safety.verifier import EvidenceItem
-
-SENTENCE = re.compile(r"(?<=[.!?])\s+")
-
 
 @dataclass
 class Draft:
@@ -306,7 +314,6 @@ NOTE_TEXT_CAVEAT = ("Quoted note passages are clinical note text, not verified m
 REASON_AS_WRITTEN = "The reason is reported only as written in the cited note; no reason is inferred."
 GENERIC_QUESTION_WORDS = frozenset(tokenize("document documents documented documentation recorded list listed noted "
                                             "mentioned written"))
-ANTICOAGULANT_CANDIDATES = ("warfarin", "apixaban")
 CLASS_SCOPE_NOTE = (
     "Class matching is limited to warfarin and apixaban in structured medication evidence and the passages returned "
     "for this question. This vocabulary and retrieval are not exhaustive; an unreturned medication mention may "
@@ -314,16 +321,6 @@ CLASS_SCOPE_NOTE = (
 BLOOD_THINNER_NOTE = (
     "Blood-thinner terminology is ambiguous and may refer to medicines outside this bounded anticoagulant "
     "vocabulary; the terms are not treated as equivalent.")
-# A patient-bound document can still describe someone else, an allergy or a
-# discussion. Those contexts cannot turn a class candidate into patient use.
-NON_USE_CLASS_CONTEXT = re.compile(
-    r"\b(family|mother|father|parents?|sisters?|brothers?|siblings?|daughters?|sons?|children|child|"
-    r"wife|husband|spouse|grandmother|grandfather|aunts?|uncles?|relatives?|"
-    r"allerg(?:y|ies|ic)|hypersensitiv(?:ity|e)|intoleran(?:ce|t)|"
-    r"denies|denied|declined|refused|discuss\w*|hypothetic\w*|potential\w*|possible|"
-    r"plans?|planned|planning|would|could|might|should)\b|"
-    r"\bmay\s+(start|prescribe|take|use|continue)\b|"
-    r"\bno\s+(prescriptions?|orders?|current\s+use|longer\s+(taking|using))\b", re.I)
 MEDICATION_EVENTS = {
     "stopped": re.compile(r"\b(stop\w*|discontinu\w*|held|hold\w*|ceased)\b", re.I),
     "started": re.compile(r"\b(start\w*|initiat\w*|began|begun|commenced)\b", re.I),
@@ -365,39 +362,6 @@ DOCUMENTED_EVENTS = {
     "started": re.compile(r"\b(started|initiated|began|begun|commenced)\b", re.I),
     "changed": re.compile(r"\b(changed|increased|decreased|reduced|adjusted|titrated|switched)\b", re.I),
 }
-NOT_DOCUMENTED = re.compile(r"\b(not|never|if|unless|consider\w*|possibly|probably|perhaps|uncertain|unclear|planned|proposed)\b|n't\b|"
-                            r"\b(should|may|might|could|would|will|can|must|to)\s+(?:have\s+been|be)\b", re.I)
-
-
-def _named_drugs(question: str) -> list[str]:
-    """Exact named medications only; generic intent and class terms are not identities."""
-    return list(dict.fromkeys(m.lower() for m in MEDICATION_NAMES.findall(question)))
-
-
-def _mentions(text: str, drug: str) -> bool:
-    return bool(re.search(rf"\b{re.escape(drug)}\b", text, re.I))
-
-
-def _class_drugs(question: str) -> tuple[str, ...]:
-    """An approved, nonexhaustive selection vocabulary, never patient-use evidence."""
-    if not MEDICATION_CLASSES.search(question):
-        return ()
-    named = _named_drugs(question)
-    return tuple(drug for drug in ANTICOAGULANT_CANDIDATES if not named or drug in named)
-
-
-def _patient_class_sentence(sentence: str, title: str, drugs: tuple[str, ...]) -> bool:
-    """Reject non-use contexts before a returned note is offered as a class answer.
-
-    Keep the section/title context as well as the complete sentence: extracting
-    just a drug-bearing clause could erase its experiencer, negation or purpose.
-    A separate affirmative sentence remains eligible with the note-only caveat.
-    """
-    return (any(_mentions(sentence, drug) for drug in drugs)
-            and not NON_USE_CLASS_CONTEXT.search(title + " " + sentence)
-            and _documented(sentence) and "?" not in sentence)
-
-
 def _attributed_entries(text: str, drug: str, documented: bool = False) -> list[str]:
     """Keep each drug's local clause; reject unresolved multi-drug attribution.
 
@@ -422,11 +386,6 @@ def _status_drugs(question: str) -> list[str]:
     if any(pattern.search(question) for pattern in MEDICATION_EVENTS.values()) or DOSE_QUESTION.search(question):
         return []
     return _named_drugs(question)
-
-
-def _documented(entry: str) -> bool:
-    """False for a negated, conditional, proposed or modal entry: it does not document that anything happened."""
-    return not NOT_DOCUMENTED.search(entry)
 
 
 def _status_entries(text: str, drug: str) -> list[str]:
@@ -599,7 +558,52 @@ def _class_answer_notes(question: str, draft: Draft) -> None:
             draft.abstain_reason = explanation
 
 
+def _compose_diagnostic(question: str, results: dict[str, ToolResult]) -> Draft:
+    draft = Draft(composer="deterministic-template")
+    reports = results.get("detect_missing_information")
+    if reports is None or not reports.ok:
+        draft.abstain_reason = "The imported diagnostic reports could not be checked."
+        return draft
+    status = reports.data["status"]
+    if status in {"unavailable", "reported"}:
+        item = reports.evidence[0]
+        kind = "missing_information" if status == "unavailable" else "quote"
+        draft.claims.append(_claim(item.text, [item.evidence_id], kind))
+        return draft
+    if status == "linked_results":
+        report, *observations = reports.evidence
+        title = reports.data["report_title"]
+        for item in observations:
+            draft.claims.append(_claim(f"{title}, linked observation: {item.text}",
+                                       [report.evidence_id, item.evidence_id], "diagnostic_result"))
+        draft.uncertainty.append("Up to five linked observations with a recorded value are shown as documented.")
+        return draft
+    if status == "multiple_tests":
+        draft.abstain_reason = "Ask about one named diagnostic test at a time."
+    elif status == "specify_date":
+        draft.abstain_reason = "Specify the diagnostic report's date in YYYY-MM-DD format to identify the result."
+    else:
+        draft.abstain_reason = "No documented result answering this question was found in the available evidence."
+    notes = results.get("retrieve_clinical_notes")
+    if status == "no_report" and notes and notes.ok:
+        subject, = diagnostic_subjects(question)
+        for item in notes.evidence:
+            for sentence in _quotable(item, frozenset()):
+                if diagnostic_note_result(sentence, item.title, subject):
+                    draft.claims.append(_claim(f'{item.title} ({d(item.date)}): "{sentence}"',
+                                               [item.evidence_id], "quote"))
+                    draft.uncertainty.append("The result is quoted from note text. The date shown is the note date.")
+                    draft.abstain_reason = None
+                    return draft
+    return draft
+
+
 def compose_deterministic(question: str, intents: list[str], results: dict[str, ToolResult]) -> Draft:
+    if "diagnostic_compound" in intents:
+        return Draft(composer="deterministic-template",
+                     abstain_reason="Please submit separate questions for the diagnostic result and the other clinical request.")
+    if "diagnostic" in intents:
+        return _compose_diagnostic(question, results)
     draft = Draft(composer="deterministic-template")
     ok = {name: r for name, r in results.items() if r.ok}
     class_question = bool(MEDICATION_CLASSES.search(question))

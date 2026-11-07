@@ -23,11 +23,22 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src.agent.question_scope import (
+    DIAGNOSTIC_DATE,
+    SENTENCE,
+    UNSUPPORTED_DIAGNOSTIC_TIME,
+    class_drugs,
+    diagnostic_note_result,
+    diagnostic_report_matches,
+    diagnostic_subjects,
+    patient_class_sentence,
+)
 from src.clinical.consistency import find_inconsistencies
 from src.clinical.fhir_models import parse_timestamp
 from src.clinical.records import ClinicalRecords
 from src.clinical.risk_bridge import assess
 from src.retrieval.index import RetrievalIndex
+from src.safety.guards import flag_content
 from src.safety.policy import AccessContext, Action, AuthorizationError, PolicyEngine
 from src.safety.verifier import EvidenceItem
 
@@ -43,6 +54,7 @@ class ToolContext:
     index: RetrievalIndex
     patient_id: str
     predictor: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    diagnostic_question: str | None = None
 
 
 @dataclass
@@ -205,6 +217,8 @@ def _medication_scope(ctx: ToolContext, items: Any) -> dict[str, str]:
 
 def _missing_scope(ctx: ToolContext, _: Any) -> dict[str, str]:
     """No orders and a declared import coverage: query/import provenance, stated by the answer, never cited."""
+    if ctx.diagnostic_question:
+        return {}
     coverage = ctx.records.source_coverage.get("MedicationRequest")
     if not coverage or ctx.records.medications(ctx.patient_id, include_history=False):
         return {}
@@ -242,12 +256,39 @@ def _timeline(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
     return compact, evidence
 
 
+def _class_candidate(hit: dict[str, Any], drugs: tuple[str, ...]) -> bool:
+    if not hit["source_ref"].startswith("DocumentReference/"):
+        return False
+    title = f"{hit['title']} - {hit['section']}"
+    return any(not (hit["flags"] and flag_content(sentence))
+               and patient_class_sentence(sentence, title, drugs)
+               for sentence in SENTENCE.split(hit["text"]))
+
+
 def _notes(ctx: ToolContext, args: BaseModel) -> tuple[Any, list[EvidenceItem]]:
     assert isinstance(args, NotesQuery)
+    question = ctx.diagnostic_question or ""
+    subject = diagnostic_subjects(question)
+    if subject and (len(subject) != 1 or DIAGNOSTIC_DATE.search(question) or UNSUPPORTED_DIAGNOSTIC_TIME.search(question)):
+        return {"results": [], "diagnostics": {}}, []
     response = ctx.index.search(ctx.patient_id, args.query, k=args.k, date_from=args.date_from,
-                                date_to=args.date_to)
+                                date_to=args.date_to, note_terms=subject)
+    hits = response["results"]
+    drugs = class_drugs(args.query) if not subject else ()
+    if drugs and not any(_class_candidate(hit, drugs) for hit in hits):
+        fallback = ctx.index.search(ctx.patient_id, args.query, k=args.k, date_from=args.date_from,
+                                    date_to=args.date_to, note_terms=drugs)
+        selected = [hit for hit in fallback["results"] if _class_candidate(hit, drugs)]
+        if selected:
+            selected_ids = {hit["chunk_id"] for hit in selected}
+            hits = (selected + [hit for hit in hits if hit["chunk_id"] not in selected_ids])[:args.k]
+    if subject:
+        hits = [hit for hit in hits if any(
+            diagnostic_note_result(sentence, f"{hit['title']} - {hit['section']}", subject[0])
+            and not (hit["flags"] and flag_content(sentence)) for sentence in SENTENCE.split(hit["text"])
+        )]
     evidence = []
-    for hit in response["results"]:
+    for hit in hits:
         item = EvidenceItem(
             evidence_id=hit["chunk_id"], patient_id=hit["patient_id"], source_ref=hit["source_ref"],
             source_version=hit["source_version"],
@@ -256,7 +297,7 @@ def _notes(ctx: ToolContext, args: BaseModel) -> tuple[Any, list[EvidenceItem]]:
             scores=hit["scores"],
         )
         evidence.append(item)
-    return {"results": [{k: v for k, v in hit.items() if k != "text"} for hit in response["results"]],
+    return {"results": [{k: v for k, v in hit.items() if k != "text"} for hit in hits],
             "diagnostics": response["diagnostics"]}, evidence
 
 
@@ -292,6 +333,8 @@ def _explanations(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceIte
 
 
 def _missing(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
+    if ctx.diagnostic_question:
+        return _diagnostic_from_record(ctx, ctx.diagnostic_question)
     # The Patient resource is not evidence that orders do not exist: a coverage-labelled warning becomes the
     # tool's scope (see _missing_scope) instead of a check cited to the Patient. Undeclared coverage is unchanged.
     findings = [f for f in ctx.records.missing_information(ctx.patient_id) if not _provenance_only(f)]
@@ -309,6 +352,62 @@ def _missing(ctx: ToolContext, _: BaseModel) -> tuple[Any, list[EvidenceItem]]:
                                                   f"\"{cited['excerpt']}\"", "completeness_check",
                                       cited["title"], cited["date"]))
     return findings, evidence
+
+
+def _diagnostic_from_record(ctx: ToolContext, question: str) -> tuple[dict[str, str], list[EvidenceItem]]:
+    subjects = diagnostic_subjects(question)
+    if len(subjects) != 1:
+        return {"status": "multiple_tests"}, []
+    dates = DIAGNOSTIC_DATE.findall(question)
+    if len(dates) > 1 or UNSUPPORTED_DIAGNOSTIC_TIME.search(question):
+        return {"status": "specify_date"}, []
+    matches = [report for report in ctx.records.diagnostic_reports(ctx.patient_id)
+               if diagnostic_report_matches(report["name"], subjects[0])
+               and (not dates or report["effective"].startswith(dates[0]))]
+    if len(matches) > 1:
+        return {"status": "specify_date"}, []
+    if not matches:
+        return {"status": "no_report"}, []
+    report = matches[0]
+    unavailable = ctx.records.diagnostic_result_gaps(ctx.patient_id, [report])
+    if unavailable:
+        item = _evidence(ctx, report["source"], unavailable[0]["message"], "completeness_check",
+                         report["name"], report["effective"])
+        item.evidence_id = "check:diagnostic_result_unavailable:1"
+        return {"status": "unavailable"}, [item]
+    conclusion = (report["conclusion"] or "").strip()
+    if not conclusion or flag_content(conclusion):
+        return _linked_diagnostic_results(ctx, report)
+    text = f'{report["name"]} ({_date(report["effective"])}), report conclusion: "{conclusion}"'
+    return {"status": "reported"}, [
+        _evidence(ctx, report["source"], text, "diagnostic_report", report["name"], report["effective"])
+    ]
+
+
+def _linked_diagnostic_results(ctx: ToolContext, report: dict[str, Any]
+                               ) -> tuple[dict[str, str], list[EvidenceItem]]:
+    refs = set(report["results"])
+    title = f'{report["name"]} ({_date(report["effective"])})'
+    observations = []
+    for obs in ctx.records.observations(ctx.patient_id):
+        if obs["source"]["reference"] not in refs or obs["value"] in (None, ""):
+            continue
+        value = f'{obs["value"]} {obs["unit"] or ""}'.strip()
+        text = f'{obs["name"]}: {value} on {_date(obs["effective"])}.'
+        if len(value) > 200 or flag_content(text):
+            continue
+        item = _evidence(ctx, obs["source"], text, "diagnostic_result", obs["name"], obs["effective"])
+        item.evidence_id = f"diagnostic:observation:{item.evidence_id}"
+        observations.append(item)
+        if len(observations) == 5:
+            break
+    if not observations:
+        return {"status": "no_conclusion"}, []
+    linked = ", ".join(item.source_ref for item in observations)
+    report_item = _evidence(ctx, report["source"], f"{title} lists linked results: {linked}.",
+                            "diagnostic_report", report["name"], report["effective"])
+    report_item.evidence_id = f"diagnostic:report:{report_item.evidence_id}"
+    return {"status": "linked_results", "report_title": title}, [report_item, *observations]
 
 
 def _inconsistency_evidence(ctx: ToolContext, finding: dict[str, Any], index: int) -> list[EvidenceItem]:
