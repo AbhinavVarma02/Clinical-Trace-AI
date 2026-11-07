@@ -31,6 +31,26 @@ def source_of(resource: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+LOINC_SYSTEM = "http://loinc.org"
+DISCHARGE_SUMMARY_LOINC = "18842-5"
+
+
+def is_discharge_summary(document: dict[str, Any]) -> bool:
+    """LOINC 18842-5 in the note type, or a type text/coding display reading "discharge summary" (any case/spacing).
+
+    Deliberately narrow: "Discharge instructions", "Discharge summary addendum" or the code under another system
+    do not count, so a real missing discharge summary is still reported.
+    """
+    raw = document.get("type")
+    concept: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    codings = [c for c in concept.get("coding") or [] if isinstance(c, dict)]
+    if any(c.get("system") == LOINC_SYSTEM and str(c.get("code")) == DISCHARGE_SUMMARY_LOINC for c in codings):
+        return True
+    labels = [concept.get("text"), *(c.get("display") for c in codings)]
+    return any(isinstance(label, str) and " ".join(label.split()).casefold() == "discharge summary"
+               for label in labels)
+
+
 def _age_on(birth_date: str, when: str) -> int:
     born = parse_timestamp(birth_date)
     at = parse_timestamp(when)
@@ -276,7 +296,8 @@ class ClinicalRecords:
             return []
         findings: list[dict[str, Any]] = []
         documents = self.documents(patient_id)
-        discharge_encounters = {d["encounter"] for d in documents if d["type"] == "Discharge summary"}
+        notes = self.store.all_for_patient(patient_id, "DocumentReference")
+        discharge_encounters = {_encounter_ref(doc) for doc in notes if is_discharge_summary(doc)}
         for enc in self.encounters(patient_id):
             if enc["class"] == "IMP" and not enc["end"]:
                 findings.append({"category": "encounter_end_missing", "severity": "high",

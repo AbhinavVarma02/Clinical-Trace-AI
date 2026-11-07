@@ -37,7 +37,7 @@ Several existing views also assume the fixture's shapes. One example is that med
 - The existing agent, retrieval, verifier and review run unchanged on Epic test patients, offline and deterministically. Citations trace back to the original Epic resource.
 - The synthetic demo, public deployment and user interface are unaffected.
 - Known gaps are recorded rather than hidden:
-  - exact-case discharge-summary detection;
+  - exact-case discharge-summary detection (fixed on `feature/beta` in M2.2-a);
   - medication absence while A1 is pending;
   - RTF-only notes;
   - `effectivePeriod` observations;

@@ -140,27 +140,26 @@ def test_missing_medication_finding_is_a_documented_scope_artifact(epic):
     assert any("MedicationRequest" in note and "A1" in note for note in snapshot.manifest["notes"])
 
 
-def test_answers_currently_repeat_two_known_false_findings(epic):
-    """Recorded limitation, asserted so the report stays honest; each fix needs separate approval.
+def test_summary_answer_repeats_one_known_scope_finding(epic):
+    """Recorded limitation, asserted so the report stays honest; its fix needs separate approval.
 
-    * ``discharge_summary_missing``: the existing exact-case match misses an Epic-style
-      "Discharge Summary" note (P2 candidate).
-    * ``medication_list_missing``: medications are not imported until A1 is approved, so the
-      isolated record has none; the snapshot manifest says so.
+    ``medication_list_missing``: medications are not imported until A1 is approved, so the
+    isolated record has none; the snapshot manifest says so. The former second false finding,
+    ``discharge_summary_missing`` for the Epic-style "Discharge Summary" note, is fixed (P2).
     """
     snapshot, runtime, pid = epic
     result = runtime.agent.run(workspace.local_access(snapshot), pid, QUESTIONS[0])
     cited = {c for claim in result["answer"]["claims"] for c in claim["citations"]}
-    assert any(c.startswith("check:discharge_summary_missing") for c in cited)
+    assert not any(c.startswith("check:discharge_summary_missing") for c in cited)
     assert any(c.startswith("check:medication_list_missing") for c in cited)
+    assert not any("discharge summary" in claim["text"].lower() and claim["kind"] == "missing_information"
+                   for claim in result["answer"]["claims"])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="P2 candidate: discharge-summary detection is an exact, case-sensitive "
-    "match on 'Discharge summary'; Epic-style 'Discharge Summary' is missed",
-)
 def test_discharge_summary_written_in_epic_style_is_recognised(epic):
+    """P2: the MOCK note's type is text "Discharge Summary" with LOINC 18842-5 (display "Discharge summary")."""
     _snapshot, runtime, pid = epic
+    documents = runtime.records.documents(pid)
+    assert any(d["type"] == "Discharge Summary" for d in documents)  # the Epic-style label is kept as written
     categories = {f["category"] for f in runtime.records.missing_information(pid)}
     assert "discharge_summary_missing" not in categories
