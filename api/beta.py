@@ -29,6 +29,7 @@ from api.beta_oidc import (
 )
 from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError, Limits, require_mock
 from src.interop.epic.beta_catalog import MOCK_PATIENTS, Catalog, RefreshRejected
+from src.interop.epic.beta_generations import Generations, Hook
 
 LOGIN = ("POST", "/beta/auth/login")
 CALLBACK = ("GET", "/beta/auth/callback")
@@ -104,6 +105,7 @@ class Control:
     catalog: Catalog
     owner: OwnerAuth
     work: Work | None = None
+    generations: Generations | None = None
 
 
 def create_mock_beta_app(
@@ -115,6 +117,8 @@ def create_mock_beta_app(
     epic_transport: httpx.MockTransport,
     limits: Limits = DEFAULT_LIMITS,
     clock: Callable[[], float] = time.time,
+    generation_root: Path | None = None,
+    publication_hook: Hook | None = None,
 ) -> FastAPI:
     """Build an isolated Beta origin with an invented owner and two invented patients."""
     require_mock(oidc_transport)
@@ -143,12 +147,17 @@ def create_mock_beta_app(
         control.catalog = Catalog(catalog_path.resolve(), clock)
         control.owner = OwnerAuth(control.catalog, oidc_key, oidc_transport)
         control.work = None
+        control.generations = None
         app.state.revoke_owner = revoke_owner
         try:
+            if generation_root is not None:
+                control.generations = Generations(control.catalog, generation_root, publication_hook)
             yield
         finally:
             if control.work is not None:
                 await cancel(control.work, "shutdown")
+            if control.generations is not None:
+                control.generations.close()
             control.owner.sessions.clear()
             control.owner.flows.clear()
             control.catalog.close()
@@ -184,7 +193,8 @@ def create_mock_beta_app(
                     session is None or not TOKEN_SHAPE.fullmatch(csrf) or not secrets.compare_digest(csrf, session.csrf)
                 ):
                     raise RefreshRejected(403, "csrf_rejected")
-                await _require_empty(request)
+                if not (control.generations is not None and route[0] == "POST" and route[1].endswith("/runs")):
+                    await _require_empty(request)
             if route not in {LOGIN, CALLBACK} and control.owner.session(token, touch=True) is None:
                 raise RefreshRejected(401, "owner_required")
             request.state.owner_session = token
@@ -246,7 +256,9 @@ def create_mock_beta_app(
     @app.get(PATIENT_ROUTE + "/status")
     async def status(request: Request, alias: str) -> JSONResponse:
         patient_id(request, alias)
-        return JSONResponse(control.catalog.status(alias))
+        return JSONResponse(
+            control.generations.status(alias) if control.generations is not None else control.catalog.status(alias)
+        )
 
     @app.post(PATIENT_ROUTE + "/revoke")
     async def revoke_patient(request: Request, alias: str) -> Response:
@@ -261,11 +273,21 @@ def create_mock_beta_app(
             return control.owner.session(item.session) is not None and not control.catalog.revoked(item.alias)
 
         attempt = Acquisition(
-            control.catalog, item.attempt, patient, epic_key, epic_transport, limits, deadline, authorized
+            control.catalog,
+            item.attempt,
+            patient,
+            epic_key,
+            epic_transport,
+            limits,
+            deadline,
+            authorized,
+            retain=control.generations is not None,
         )
         try:
             control.catalog.start(item.attempt)
             await attempt.run()
+            if control.generations is not None:
+                await control.generations.publish(attempt, item.alias)
         except asyncio.CancelledError:
             control.catalog.finish(item.attempt, "interrupted", item.cancel_code, attempt.operations)
         except (AcquisitionError, RefreshRejected) as exc:
@@ -283,6 +305,8 @@ def create_mock_beta_app(
         key = _single_header(request, "idempotency-key")
         if not IDEMPOTENCY_KEY.fullmatch(key):
             raise RefreshRejected(400, "idempotency_key_required")
+        if control.generations is not None and control.catalog.existing_attempt(alias, key) is None:
+            control.generations.quota()
         deadline = time.monotonic() + limits.deadline_s
         attempt, created = control.catalog.admit(
             alias,
@@ -296,5 +320,101 @@ def create_mock_beta_app(
             control.work = Work(attempt, alias, request.state.owner_session)
             control.work.task = asyncio.create_task(acquire(control.work, patient, deadline))
         return JSONResponse({"attempt_id": attempt}, status_code=202)
+
+    def generation_store(request: Request, alias: str) -> Generations:
+        patient_id(request, alias)
+        if control.generations is None:
+            raise RefreshRejected(404, "not_found")
+        return control.generations
+
+    generation_route = PATIENT_ROUTE + "/generations/{gid}"
+
+    @app.post(generation_route + "/select")
+    async def select_generation(request: Request, alias: str, gid: str) -> JSONResponse:
+        store = generation_store(request, alias)
+        return JSONResponse(store.select(alias, gid, _single_header(request, "x-beta-cache-ack") == "1"))
+
+    @app.post(generation_route + "/rollback")
+    async def rollback(request: Request, alias: str, gid: str) -> JSONResponse:
+        store = generation_store(request, alias)
+        session = control.owner.session(request.state.owner_session)
+        if session is None or control.catalog.clock() - session.created >= 300:
+            raise RefreshRejected(401, "fresh_login_required")
+        result = await store.rollback(
+            alias,
+            gid,
+            lambda: control.owner.session(request.state.owner_session) is not None
+            and not control.catalog.revoked(alias),
+        )
+        return JSONResponse(result)
+
+    @app.post(generation_route + "/runs")
+    async def run_generation(request: Request, alias: str, gid: str) -> JSONResponse:
+        store = generation_store(request, alias)
+        try:
+            async with asyncio.timeout(1):
+                body = bytearray()
+                async for chunk in request.stream():
+                    if len(body) + len(chunk) > 4096:
+                        raise RefreshRejected(400, "invalid_question")
+                    body.extend(chunk)
+            from src.interop.epic.beta_acquisition import object_json
+
+            value = object_json(bytes(body))
+            question = value.get("question")
+            if set(value) != {"question"} or not isinstance(question, str) or not 1 <= len(question) <= 1000:
+                raise RefreshRejected(400, "invalid_question")
+        except (TimeoutError, AcquisitionError, ClientDisconnect):
+            raise RefreshRejected(400, "invalid_question") from None
+        from src.interop.epic.mapping import internal_id
+        from src.safety.guards import classify_question
+
+        other_patients = tuple(
+            marker
+            for other, patient in MOCK_PATIENTS.items()
+            if other != alias
+            for marker in (other, patient, internal_id("Patient", patient))
+        )
+        if (
+            classify_question(question, internal_id("Patient", MOCK_PATIENTS[alias]), other_patients).category
+            == "cross_patient"
+        ):
+            raise RefreshRejected(403, "patient_scope")
+        runtime, manifest, identifier = store.pin_run(alias, gid, _single_header(request, "x-beta-cache-ack") == "1")
+        try:
+            result = await asyncio.to_thread(store.execute, runtime, manifest, identifier, question)
+        except Exception:
+            raise RefreshRejected(409, "clinical_run_failed") from None
+        patient_id(request, alias)
+        store.runtime(alias, gid)
+        store.finish_run(identifier, result)
+        return JSONResponse(store.present(alias, gid, result))
+
+    @app.get(generation_route + "/runs/{identifier}")
+    async def get_run(request: Request, alias: str, gid: str, identifier: str) -> JSONResponse:
+        store = generation_store(request, alias)
+        _, result = store.pinned(alias, gid, identifier, "run")
+        return JSONResponse(store.present(alias, gid, result))
+
+    @app.post(generation_route + "/runs/{identifier}/review")
+    async def submit_review(request: Request, alias: str, gid: str, identifier: str) -> JSONResponse:
+        return JSONResponse(
+            generation_store(request, alias).submit_review(
+                alias,
+                gid,
+                identifier,
+                _single_header(request, "x-beta-cache-ack") == "1",
+            )
+        )
+
+    @app.get(generation_route + "/reviews/{identifier}")
+    async def get_review(request: Request, alias: str, gid: str, identifier: str) -> JSONResponse:
+        _, result = generation_store(request, alias).pinned(alias, gid, identifier, "review")
+        return JSONResponse(result)
+
+    @app.post(generation_route + "/reviews/{identifier}/decide")
+    async def decide_review(request: Request, alias: str, gid: str, identifier: str) -> JSONResponse:
+        generation_store(request, alias).pinned(alias, gid, identifier, "review")
+        raise RefreshRejected(403, "independent_reviewer_required")
 
     return app

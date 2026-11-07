@@ -51,6 +51,13 @@ class Catalog:
                 CREATE TABLE IF NOT EXISTS audit (
                     sequence INTEGER PRIMARY KEY, at REAL NOT NULL, code TEXT NOT NULL, attempt_id TEXT
                 );
+                CREATE TABLE IF NOT EXISTS patient_head (
+                    alias TEXT PRIMARY KEY, epoch INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0,
+                    active TEXT, last_success TEXT, rolled_back INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS attempt_fence (
+                    attempt_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, revision INTEGER NOT NULL
+                );
                 COMMIT;
                 """
             )
@@ -81,6 +88,10 @@ class Catalog:
     def revoke(self, target: str) -> None:
         with self.db:
             self.db.execute("INSERT OR IGNORE INTO revoked VALUES (?)", (target,))
+            self.db.execute(
+                "UPDATE patient_head SET revision = revision + 1, epoch = epoch + 1 WHERE alias = ? OR ? = 'owner'",
+                (target, target),
+            )
             self._audit("owner_revoked" if target == "owner" else "patient_revoked")
 
     def _window(self, now: float, table: str, column: str, alias: str | None = None) -> list[float]:
@@ -92,18 +103,25 @@ class Catalog:
             params += (alias,)
         return [row[0] for row in self.db.execute(sql + f" ORDER BY {column}", params)]
 
-    def admit(
-        self, alias: str, key: str, *, cooldown_s: int, patient_limit: int, global_limit: int, request_limit: int
-    ) -> tuple[str, bool]:
+    def existing_attempt(self, alias: str, key: str) -> str | None:
         key_digest = hashlib.sha256(key.encode("ascii")).hexdigest()
-        now = self.clock()
         existing = self.db.execute(
             "SELECT attempt_id, alias FROM attempt WHERE key_digest = ?", (key_digest,)
         ).fetchone()
         if existing is not None:
             if existing["alias"] != alias:
                 raise RefreshRejected(409, "idempotency_conflict")
-            return existing["attempt_id"], False
+            return str(existing["attempt_id"])
+        return None
+
+    def admit(
+        self, alias: str, key: str, *, cooldown_s: int, patient_limit: int, global_limit: int, request_limit: int
+    ) -> tuple[str, bool]:
+        existing = self.existing_attempt(alias, key)
+        if existing is not None:
+            return existing, False
+        key_digest = hashlib.sha256(key.encode("ascii")).hexdigest()
+        now = self.clock()
         if self.db.execute("SELECT 1 FROM attempt WHERE state IN ('queued','running')").fetchone():
             raise RefreshRejected(409, "refresh_busy")
         patient = self._window(now, "attempt", "admitted_at", alias)
@@ -119,10 +137,15 @@ class Catalog:
             raise RefreshRejected(429, "quota_exhausted", math.ceil(max(resumes) - now))
         attempt = secrets.token_urlsafe(24)
         with self.db:
+            self.db.execute("INSERT OR IGNORE INTO patient_head(alias) VALUES (?)", (alias,))
             self.db.execute(
                 "INSERT INTO attempt (attempt_id, key_digest, alias, state, policy, admitted_at) "
                 "VALUES (?, ?, ?, 'queued', ?, ?)",
                 (attempt, key_digest, alias, POLICY_VERSION, now),
+            )
+            self.db.execute(
+                "INSERT INTO attempt_fence SELECT ?, epoch, revision FROM patient_head WHERE alias = ?",
+                (attempt, alias),
             )
             self._audit("admitted", attempt)
         return attempt, True

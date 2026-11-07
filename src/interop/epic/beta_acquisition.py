@@ -181,6 +181,8 @@ class Acquisition:
         limits: Limits,
         deadline: float,
         authorized: Callable[[], bool],
+        *,
+        retain: bool = False,
     ) -> None:
         self.catalog, self.attempt, self.patient, self.key = catalog, attempt, patient, key
         self.transport, self.limits, self.deadline, self.authorized = transport, limits, deadline, authorized
@@ -189,13 +191,14 @@ class Acquisition:
         self.token: AccessToken | None = None
         self.renewed = False
         self.seen: dict[tuple[str, str], bytes] = {}
+        self.resources: dict[tuple[str, str], dict[str, Any]] | None = {} if retain else None
         self.patient_url = f"{settings.FHIR_BASE}/Patient/{valid_fhir_id(patient)}"
         self.search_urls = {
             (kind, category): f"{settings.FHIR_BASE}/{kind}?"
             + urlencode({"patient": patient, **({"category": category} if category else {})})
             for kind, category in PROFILE
         }
-        self.operations = {
+        self.operations: dict[str, dict[str, Any]] = {
             (f"{kind}:{category}" if category else kind): {
                 "execution": "not_requested",
                 "matches": 0,
@@ -204,6 +207,9 @@ class Acquisition:
             }
             for kind, category in (("Patient", None), *PROFILE)
         }
+        if retain:
+            for counts in self.operations.values():
+                counts.update(imported=0, excluded=0, rejected=0, duplicates=0, **{"import": "not_imported"})
 
     def checkpoint(self) -> float:
         if not self.authorized():
@@ -233,6 +239,7 @@ class Acquisition:
                 resource = await self.fhir(self.patient_url)
                 if resource.get("resourceType") != "Patient" or resource.get("id") != self.patient:
                     raise AcquisitionError("patient_scope")
+                self.retain_resource(resource)
                 counts.update(matches=1, unique=1, pages=1)
             else:
                 await self.search(kind, category, counts)
@@ -325,7 +332,26 @@ class Acquisition:
             raise AcquisitionError("invalid_json") from None
         if self.seen.setdefault((kind, rid), digest) != digest:
             raise AcquisitionError("conflicting_identity")
+        self.retain_resource(resource)
         return rid
+
+    def retain_resource(self, resource: dict[str, Any]) -> None:
+        if self.resources is None:
+            return
+        kind, rid = resource["resourceType"], resource["id"]
+        if kind == "DocumentReference":
+            from src.interop.epic.mapping import content_sha256
+
+            # Note bodies, inline data, attachment URLs and narrative are never staged.
+            metadata = {
+                key: resource[key]
+                for key in ("resourceType", "id", "meta", "subject", "status", "type", "category", "date", "context")
+                if key in resource
+            }
+            metadata["_sourceContentSha256"] = content_sha256(resource)
+            self.resources[kind, rid] = metadata
+        else:
+            self.resources[kind, rid] = resource
 
     async def fhir(self, url: str) -> dict[str, Any]:
         status, headers, body = await self.request("GET", url)

@@ -216,13 +216,22 @@ def _medication_scope(ctx: ToolContext, items: Any) -> dict[str, str]:
 
 
 def _missing_scope(ctx: ToolContext, _: Any) -> dict[str, str]:
-    """No orders and a declared import coverage: query/import provenance, stated by the answer, never cited."""
+    """Declared import and metadata coverage, stated by the answer and never cited as clinical evidence."""
     if ctx.diagnostic_question:
         return {}
     coverage = ctx.records.source_coverage.get("MedicationRequest")
-    if not coverage or ctx.records.medications(ctx.patient_id, include_history=False):
-        return {}
-    return {"medication_orders": "none_recorded", "coverage": coverage}
+    scope: dict[str, str] = {}
+    if coverage and not ctx.records.medications(ctx.patient_id, include_history=False):
+        scope.update(medication_orders="none_recorded", coverage=coverage)
+    if ctx.records.source_coverage.get("DocumentReference") == "not_imported":
+        scope.update(
+            note_bodies="not_imported",
+            document_metadata=ctx.records.source_coverage.get("DocumentReference.metadata", "unknown"),
+            discharge_summary_metadata=ctx.records.source_coverage.get(
+                "DocumentReference.discharge_summary_metadata", "unknown"
+            ),
+        )
+    return scope
 
 
 def _provenance_only(finding: dict[str, Any]) -> bool:

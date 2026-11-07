@@ -71,7 +71,7 @@ class ClinicalRecords:
 
     def __init__(self, store: FHIRStore) -> None:
         self.store = store
-        # Import coverage a data source declares per resource type, e.g. {"MedicationRequest": "not_imported"}.
+        # Declared import coverage. Document metadata availability is distinct from clinical note-body import.
         # Empty means not declared. It describes the import, never the patient, and is never cited as evidence.
         self.source_coverage: dict[str, str] = {}
 
@@ -297,13 +297,15 @@ class ClinicalRecords:
         findings: list[dict[str, Any]] = []
         documents = self.documents(patient_id)
         notes = self.store.all_for_patient(patient_id, "DocumentReference")
+        document_coverage = self.source_coverage.get("DocumentReference")
         discharge_encounters = {_encounter_ref(doc) for doc in notes if is_discharge_summary(doc)}
         for enc in self.encounters(patient_id):
             if enc["class"] == "IMP" and not enc["end"]:
                 findings.append({"category": "encounter_end_missing", "severity": "high",
                                  "message": f"Inpatient encounter {enc['id']} has no discharge/end time.",
                                  "source": enc["source"]})
-            if enc["class"] == "IMP" and f"Encounter/{enc['id']}" not in discharge_encounters:
+            if (enc["class"] == "IMP" and document_coverage in (None, "imported")
+                    and f"Encounter/{enc['id']}" not in discharge_encounters):
                 findings.append({"category": "discharge_summary_missing", "severity": "high",
                                  "message": f"No discharge summary found for inpatient encounter {enc['id']}.",
                                  "source": enc["source"]})

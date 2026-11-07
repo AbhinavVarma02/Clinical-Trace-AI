@@ -32,7 +32,7 @@ The mandatory M2.3 requirement supersedes the earlier static-snapshot-only Epic 
 |---|---|
 | `main` (remote) | `72ae8c8`: Stable 2.0 (PR #1, merged) and dependency security fixes (PR #3, merged) |
 | `feature/epic-sandbox-readonly` | `028e609`: Epic M1, Draft PR #2 into `main`, unmerged |
-| `feature/beta` and `origin/feature/beta` | `c4025d1267c1d7b3fabe9817abf9c931bebad04e`, parent `505d7610c80da139e2977d15a42be3b45f0b9fdd`. Owner-accepted M2.3-1 design committed and pushed. [CI 42404572150](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42404572150) passed 5/5. |
+| `feature/beta` and `origin/feature/beta` | `e278d0f5cdc51585a3ed2457613e8b0d7df787e9`, parent `c4025d1267c1d7b3fabe9817abf9c931bebad04e`. M2.3-2 committed and pushed. [CI 42412151414](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42412151414) passed 5/5. |
 
 There is no pull request from `feature/beta`.
 
@@ -115,11 +115,21 @@ This table records the local review history. Hosted CI metrics are separate belo
 
 ### M2.3-2 local MOCK owner authentication and acquisition
 
+M2.3-2 was owner-accepted, committed and pushed at `e278d0f5cdc51585a3ed2457613e8b0d7df787e9`. [CI 42412151414](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42412151414) passed all five required jobs. Hosted Python recorded 1,102 passed and 3 skipped. Clinical evaluation passed 41/42 with the known `ho-013` miss. Stable is unchanged and Beta is undeployed. Actual OIDC/MFA, Epic grants and patients, hosted storage and secret custody require separate approval.
+
 The isolated FastAPI factory uses a signed synthetic OIDC identity, one-time PKCE/state/nonce, an opaque server-side session and same-origin CSRF checks. Legacy and clinical routes stay closed on this origin. Refresh binds the owner session to an exact invented patient alias before obtaining a token. The SQLite catalog persists idempotency, cooldown, quotas, revocation and content-free attempt status. A restart fences abandoned attempts. The eight-operation profile acquires only the exact Patient and seven scoped searches. DocumentReference contributes metadata counts and note bodies are marked `not_imported`. The live allowlist is empty, and every refresh reports serving as `unavailable`.
 
 Tests-first runs exposed the missing boundary, missing transport-level operation checks, permissive MOCK token parsing and retry limits that reset on renewal. Local verification passed 194 focused and 1,101 full Python tests with zero skips. The locked evaluation passed 41/42 with the known `ho-013` miss. The four existing golden captures matched byte for byte and the 97-response default API comparison had zero differences. Frontend type-check, both builds, 53 unit and 36 browser tests passed. Edge type-check, 30 unit and 13 script tests and its deployment dry run passed.
 
 Tests exercise the MOCK factory and the default API separately. Identity provider, owner binding, sandbox grants and patients, live pagination, hosting, storage, secret custody and release gates remain owner decisions. Normalized staging, complete coverage, atomic publication, durable pinning and rollback are the separately approved M2.3-3 scope. [MOCK test contract](../tests/test_beta_owner_refresh.py).
+
+The owner-review correction added case-insensitive blocked-header matching and four raw-ASGI regressions. All four originally returned 202. The corrected requests return 400 with no acquisition dispatch. Final M2.3-2 local evidence is 198 focused and 1,105 full passes, zero skips, unchanged evaluation/goldens and 97-response API parity. The earlier 194/1,101 results above remain historical.
+
+### M2.3-3 local MOCK generation implementation
+
+With explicit generation storage, the isolated MOCK factory maps the bounded acquisition through M1, validates coverage and evidence, builds a matching deterministic runtime and publishes one catalog pointer. Per-generation databases pin clinical runs and pending human reviews. Explicit cache acknowledgement, age limits, integrity checks and rollback apply at the owner boundary. The live allowlist remains empty. [Local generation contract](M2.3-3_GENERATIONS.md).
+
+Owner-requested safety corrections apply the seven-day clinical-use boundary to every review submission, including repeats, while retaining separate historical access and unchanged artifact hashes. Explicit metadata-only note coverage prevents excluded discharge-summary bodies from becoming false documentation-absence findings; tools and answers distinguish returned metadata, excluded bodies and completed searches with no matching metadata. These corrections remain local, uncommitted and subject to owner review.
 
 ### Test evidence
 
@@ -137,7 +147,8 @@ The regression counts and protected-file hashes below are retained M2.2-c eviden
 | Default-mode API | 0 differences across 97 responses / 16,479 paths against both the unchanged tree and the Epic M1 baseline (`028e609`), using existing volatile-field exclusions |
 | Lint, types, formatting, secret scan (local) | Clean |
 | Protected-file integrity / evidence | All 99 hashes match, including 33 private files checked by hash only under restricted approval; source/test tree unchanged throughout the gate; zero recorded external attempts |
-| Latest hosted CI on `feature/beta` (M2.3-1) | [CI 42404572150](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42404572150), attempt 1, exact head `c4025d1267c1d7b3fabe9817abf9c931bebad04e`, 5/5 required jobs successful. Hosted Python 1,000 passed, 3 skipped (115 warnings, 102.1 s). Clinical evaluation 41/42, known `ho-013` miss. |
+| Latest hosted CI on `feature/beta` (M2.3-2) | [CI 42412151414](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42412151414), exact head `e278d0f5cdc51585a3ed2457613e8b0d7df787e9`, attempt 1. Five jobs passed. Python 1,102 passed, 3 skipped, 115 warnings in 94.45 s. Evaluation 41/42, known `ho-013`. Frontend 53 unit and 36 browser tests. Edge 30 unit and 13 script tests and dry run. 385-file secret scan and enforced audits passed. Frontend installs reported one high-severity finding in two jobs. Container smoke passed after two readiness retries. All five jobs reported Node.js 20 action-runtime deprecation. |
+| Prior hosted CI on `feature/beta` (M2.3-1) | [CI 42404572150](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42404572150), attempt 1, exact head `c4025d1267c1d7b3fabe9817abf9c931bebad04e`, 5/5 required jobs successful. Hosted Python 1,000 passed, 3 skipped (115 warnings, 102.1 s). Clinical evaluation 41/42, known `ho-013` miss. |
 | Prior hosted CI on `feature/beta` (M2.2-f) | M2.2-f at `505d7610c80da139e2977d15a42be3b45f0b9fdd`. Parent `aef7aef36ae4b1abb7f48a81e631f0c22fa215`. Earlier M2.2-d and M2.2-c baselines are `7d13776` and `9402eec`. Attempt 1 passed 5/5 jobs. Python 1,000 passed / 3 skipped (115 warnings, 70.49 s). Clinical evaluation passed 41/42 with the known `ho-013` miss. The receipt records 52 successful steps and one expected failure-artifact upload skip, frontend 53 unit / 36 browser tests, Edge 30 unit / 13 script tests and a deploy dry-run, a 379-file secret scan, enforced dependency audits, and container build and smoke. Frontend and Edge installs each reported a high-severity warning. The enforced frontend audit covers production dependencies. [CI 42400812536](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42400812536). |
 | Prior hosted CI on `feature/beta` | M2.2-e at `aef7aef` passed all five jobs. Python 975 passed / 3 skipped, evaluation 41/42 with the known `ho-013` miss. The logs record 52 successful steps and one expected failure-artifact-upload skip, frontend 53 unit / 36 browser tests, Edge 30 unit / 13 script tests and deploy dry-run, a 377-file secret scan, enforced dependency audits, and container build and smoke. The frontend install reported a high-severity warning outside the enforced production-only audit. Earlier successful runs include 42387215792 (`7d13776`, M2.2-d, Python 948 passed / 3 skipped), 42342090985 (`4ac67fb`, M2.3 documentation), 42339250764 (`9402eec`, M2.2-c), and 42336192381 (`94b9c5e`, M2.2-b). [CI 42392508719](https://github.com/AbhinavVarma02/Clinical-Trace-AI/actions/runs/42392508719). |
 
@@ -179,7 +190,7 @@ Reusable code and missing functionality are documented in [ARCHITECTURE.md](ARCH
 - Every commit, push, pull request, merge and deployment needs separate owner approval. So do live Epic or language-model calls, cloud resources, any UI change, replaying a private snapshot, and starting the next milestone.
 - `main`, the Stable demo, production and Draft PR #2 stay unchanged.
 
-**Development sequence:** M2.3-2 is a local MOCK implementation under owner review. Stable is unchanged and Beta is undeployed. Separate approval is required for publication and M2.3-3. [Design, pending decisions and implementation gates](M2.3-1_EPIC_REFRESH_DESIGN.md).
+**Development sequence:** M2.3-2 is accepted, committed and pushed with hosted CI green. M2.3-3 is implemented locally for MOCK review. Stable is unchanged and Beta is undeployed. Separate approval is required for publication and M2.3-4. [Design, pending decisions and implementation gates](M2.3-1_EPIC_REFRESH_DESIGN.md).
 
 ### Development workflow
 

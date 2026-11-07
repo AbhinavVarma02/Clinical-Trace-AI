@@ -303,6 +303,19 @@ MEDICATION_COVERAGE = {
 }
 COMPLETENESS_NONE = "The completeness checks reported no documentation gaps for the imported record."
 COMPLETENESS_NONE_OTHER = "The completeness checks reported no other documentation gaps for the imported record."
+NOTE_BODIES_EXCLUDED = "Clinical note bodies were not imported under this source policy and cannot be reviewed here."
+DOCUMENT_METADATA_COVERAGE = {
+    "returned": "Clinical-note document metadata was returned.",
+    "returned_none": "The completed clinical-note metadata search returned no document metadata.",
+}
+DISCHARGE_METADATA_COVERAGE = {
+    "returned": "Discharge-summary document metadata was returned.",
+    "returned_none": "No matching discharge-summary metadata was returned by the completed clinical-note search.",
+}
+NOTE_COMPLETENESS_UNKNOWN = (
+    "Clinical documentation completeness cannot be determined from excluded note bodies. "
+    "This import does not establish documentation absence at the source."
+)
 MEDICATION_ABSTAIN_TAIL = {
     "not_imported": "Structured medication orders were not imported, so this cannot be determined from the current evidence.",
     "returned_none": ("The data source returned no medication orders for this patient, so this cannot be determined "
@@ -467,10 +480,20 @@ def _gap_coverage_notes(draft: Draft, results: dict[str, ToolResult]) -> None:
     the absence and reports the coverage as its scope. Undeclared coverage (the synthetic fixture) is unchanged.
     """
     missing = results.get("detect_missing_information")
-    if missing is None or not missing.ok or not missing.scope.get("coverage"):
+    if missing is None or not missing.ok:
         return
-    for text in _completeness_coverage_notes(missing.scope["coverage"]):
-        _note(draft, text)
+    if missing.scope.get("coverage"):
+        for text in _completeness_coverage_notes(missing.scope["coverage"]):
+            _note(draft, text)
+    if missing.scope.get("note_bodies") == "not_imported":
+        _note(draft, " ".join((
+            NOTE_BODIES_EXCLUDED,
+            DOCUMENT_METADATA_COVERAGE.get(missing.scope.get("document_metadata", ""),
+                                           "Clinical-note metadata coverage is unknown."),
+            DISCHARGE_METADATA_COVERAGE.get(missing.scope.get("discharge_summary_metadata", ""),
+                                            "Discharge-summary metadata coverage is unknown."),
+            NOTE_COMPLETENESS_UNKNOWN,
+        )))
 
 
 def _zero_order_medication_answer(question: str, draft: Draft, results: dict[str, ToolResult]) -> None:
@@ -687,11 +710,15 @@ def compose_deterministic(question: str, intents: list[str], results: dict[str, 
     missing = ok.get("detect_missing_information")
     coverage = missing.scope.get("coverage") if missing else None
     if (not draft.claims and not draft.abstain_reason and "missing_information" in intents and missing
-            and not missing.data and coverage):
+            and not missing.data and (coverage or missing.scope.get("note_bodies"))):
         # Say what was checked. Unimported orders are neither a gap nor evidence that the record is complete; a
         # source that returned none is a warning from its import provenance, stated rather than cited.
-        lead = COMPLETENESS_NONE if coverage == "not_imported" else COMPLETENESS_NONE_OTHER
-        draft.abstain_reason = " ".join([lead, *_completeness_coverage_notes(coverage)])
+        if missing.scope.get("note_bodies") == "not_imported":
+            draft.abstain_reason = NOTE_COMPLETENESS_UNKNOWN
+        else:
+            assert coverage is not None
+            lead = COMPLETENESS_NONE if coverage == "not_imported" else COMPLETENESS_NONE_OTHER
+            draft.abstain_reason = " ".join([lead, *_completeness_coverage_notes(coverage)])
     if not draft.claims and not draft.abstain_reason:
         draft.abstain_reason = ("No information answering this question was found in the synthetic record. "
                                 "The assistant does not answer beyond the record.")

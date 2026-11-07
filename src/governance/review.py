@@ -39,7 +39,7 @@ def artifact_hash(content: dict[str, Any]) -> str:
 
 def artifact_content_from_run(run: dict[str, Any]) -> dict[str, Any]:
     answer = run.get("answer") or {}
-    return {
+    content = {
         "run_id": run["run_id"],
         "patient_id": run["patient_id"],
         "question": run["question"],
@@ -51,6 +51,9 @@ def artifact_content_from_run(run: dict[str, Any]) -> dict[str, Any]:
         "inference_mode": (run.get("inference") or {}).get("mode"),
         "reviewer_note": None,
     }
+    if "evidence_context" in run:
+        content["evidence_context"] = run["evidence_context"]
+    return content
 
 
 class ReviewService:
