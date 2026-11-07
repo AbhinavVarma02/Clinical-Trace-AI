@@ -14,6 +14,7 @@ is not a medical device and returns no medical advice.
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -34,8 +35,10 @@ from src.errors import NotFoundError
 from src.governance.review import ReviewConflict, ReviewError
 from src.persistence.db import utc_now
 from src.retrieval.index import IsolationError
-from src.runtime import close_runtime, get_runtime
+from src.runtime import close_runtime, get_registry, get_runtime
 from src.safety.policy import AuthorizationError
+from src.sources import ENV_VAR as DATA_SOURCES_ENV
+from src.sources import DataSourceError
 from src.tracing import configure_langsmith
 from src import observability
 
@@ -46,6 +49,8 @@ WORKSPACE_DIST = PROJECT_ROOT / "frontend" / "dist-workspace"
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_langsmith()
     observability.configure()
+    if os.getenv(DATA_SOURCES_ENV, "").strip():
+        get_registry()  # build every configured source now: an invalid configuration stops startup
     try:
         yield
     finally:
@@ -53,8 +58,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         observability.shutdown()
 
 
-def _log_request(request_id: str, method: str, route: str, status_code: int, latency_ms: float) -> None:
-    get_runtime().db.execute(
+def _log_request(request_id: str, method: str, route: str, status_code: int, latency_ms: float,
+                 data_source: str | None = None) -> None:
+    runtime = get_registry().get(data_source).runtime if data_source else get_runtime()
+    runtime.db.execute(
         "INSERT INTO request_log(request_id, ts, method, route, status_code, latency_ms) VALUES (?,?,?,?,?,?)",
         (request_id, utc_now(), method, route, status_code, latency_ms),
     )
@@ -87,6 +94,11 @@ async def _missing_persona(request: Request, exc: MissingPersona) -> JSONRespons
 @app.exception_handler(WorkspaceRequired)
 async def _workspace_required(request: Request, exc: WorkspaceRequired) -> JSONResponse:
     return _error(request, 400, "workspace_required", str(exc))
+
+
+@app.exception_handler(DataSourceError)
+async def _invalid_data_source(request: Request, exc: DataSourceError) -> JSONResponse:
+    return _error(request, 400, "invalid_data_source", str(exc))
 
 
 @app.exception_handler(RequestValidationError)

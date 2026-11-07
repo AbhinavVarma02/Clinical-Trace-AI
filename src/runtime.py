@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from src.agent.llm import OpenAICompatibleProvider, provider_from_env
 from src.agent.service import AgentService
@@ -24,6 +24,9 @@ from src.persistence.db import Database
 from src.retrieval.index import RetrievalIndex
 from src.safety.guards import flag_content
 from src.safety.policy import PolicyEngine
+
+if TYPE_CHECKING:  # pragma: no cover
+    from src.sources import SourceRegistry
 
 
 @dataclass
@@ -89,30 +92,48 @@ def build_runtime(
     )
 
 
-_runtime: Runtime | None = None
+_registry: SourceRegistry | None = None
 _lock = threading.Lock()
 
 
-def get_runtime() -> Runtime:
-    global _runtime
+def get_registry() -> SourceRegistry:
+    """The configured data sources (src/sources.py). Unconfigured: only the synthetic runtime, as before."""
+    global _registry
     with _lock:
-        if _runtime is None:
-            _runtime = build_runtime(os.getenv("CLINICAL_TRACE_DB_PATH") or None)
-        return _runtime
+        if _registry is None:
+            from src.sources import build_registry
+
+            _registry = build_registry(db_path=os.getenv("CLINICAL_TRACE_DB_PATH") or None)
+        return _registry
+
+
+def get_runtime() -> Runtime:
+    """The default (synthetic) runtime."""
+    return get_registry().default.runtime
+
+
+def set_registry(registry: SourceRegistry | None) -> None:
+    global _registry
+    with _lock:
+        _registry = registry
 
 
 def set_runtime(runtime: Runtime | None) -> None:
-    global _runtime
-    with _lock:
-        _runtime = runtime
+    """Serve one runtime as the only (synthetic) data source; None resets to lazy construction."""
+    if runtime is None:
+        set_registry(None)
+        return
+    from src.sources import SourceRegistry
+
+    set_registry(SourceRegistry.single(runtime))
 
 
 def close_runtime() -> bool:
-    global _runtime
+    global _registry
     with _lock:
-        if _runtime is None:
+        if _registry is None:
             return True
-        if not _runtime.close():
+        if not _registry.close():
             return False
-        _runtime = None
+        _registry = None
         return True

@@ -4,6 +4,10 @@ Every route resolves an ``AccessContext`` from the ``X-Demo-Persona`` header
 and authorises through the central policy. Domain exceptions are mapped to a
 consistent ``{"error": {"code", "message", "request_id"}}`` body in
 ``api.main``.
+
+The optional ``X-Data-Source`` header selects a configured data source
+(``src/sources.py``). Without it, or when no extra source is configured, every
+route serves the synthetic fixture exactly as before.
 """
 
 from __future__ import annotations
@@ -41,8 +45,9 @@ from src.clinical.risk_bridge import assess
 from src.clinical.model_audit import calibration_summary
 from src.persistence.db import utc_now
 from src.errors import NotFoundError
-from src.runtime import Runtime, get_runtime
-from src.safety.policy import ALL_SYNTHETIC_PATIENTS, PERSONAS, PATIENT_SCOPED_ACTIONS, AccessContext, Action,     evaluate, resolve_persona
+from src.runtime import Runtime, get_registry
+from src.safety.policy import ALL_SYNTHETIC_PATIENTS, PERSONAS, PATIENT_SCOPED_ACTIONS, AccessContext, Action, evaluate
+from src.sources import DataSource, source_provenance
 
 router = APIRouter(prefix="/api/v2", tags=["clinical workspace v2"])
 EVALUATION_RESULTS = config.PROJECT_ROOT / "evaluation" / "results" / "latest.json"
@@ -66,13 +71,28 @@ def public_mode() -> bool:
     return os.getenv("CLINICAL_TRACE_PUBLIC_MODE", "").strip() == "1"
 
 
-def runtime() -> Runtime:
-    return get_runtime()
+def data_source(request: Request, x_data_source: str | None = Header(None)) -> DataSource:
+    """The data source this request reads: ``X-Data-Source`` if given, otherwise the synthetic fixture."""
+    registry = get_registry()
+    source = registry.get(x_data_source)
+    if source is not registry.default:
+        request.state.data_source = source.source_id  # keeps this request's log entry in the source's database
+    return source
+
+
+def requested_source(request: Request, x_data_source: str | None = Header(None)) -> DataSource | None:
+    """For routes that need no runtime: None without ``X-Data-Source`` (nothing is built, as before)."""
+    return None if x_data_source is None else data_source(request, x_data_source)
+
+
+def runtime(source: DataSource = Depends(data_source)) -> Runtime:
+    return source.runtime
 
 
 def access(request: Request, x_demo_persona: str | None = Header(None),
-           x_demo_workspace: str | None = Header(None)) -> AccessContext:
-    persona = resolve_persona(x_demo_persona)
+           x_demo_workspace: str | None = Header(None),
+           source: DataSource = Depends(data_source)) -> AccessContext:
+    persona = source.persona(x_demo_persona)
     if persona is None:
         raise MissingPersona("select a synthetic demo persona with the X-Demo-Persona header")
     if x_demo_workspace is not None and not WORKSPACE_PATTERN.fullmatch(x_demo_workspace):
@@ -85,17 +105,22 @@ def access(request: Request, x_demo_persona: str | None = Header(None),
 
 # ------------------------------------------------------------------- system
 @router.get("/system/status")
-def system_status(rt: Runtime = Depends(runtime)) -> dict[str, Any]:
+def system_status(rt: Runtime = Depends(runtime), source: DataSource = Depends(data_source)) -> dict[str, Any]:
     """Public readiness summary (no patient data)."""
     provider = rt.provider.describe() if rt.provider else None
+    data: dict[str, Any] = {"patients": len(rt.store.patient_ids()), "startup_ingestion": rt.startup_ingestion,
+                            "origin": source.origin}
+    registry = get_registry()
+    if registry.multi:
+        data["source"] = source.source_id
+        data["sources"] = registry.describe()
     return {
         "service": "Clinical-Trace AI",
         "version": "2.0.0-dev",
         "status": "ready",
         "uptime_s": round(time.time() - rt.started_at, 1),
         "database": {"engine": "sqlite", "schema_version": rt.db.schema_version()},
-        "data": {"patients": len(rt.store.patient_ids()), "startup_ingestion": rt.startup_ingestion,
-                 "origin": "synthetic FHIR R4 fixture (no real patients)"},
+        "data": data,
         "retrieval": rt.index.stats(),
         "readmission_model": {"loaded": rt.model_available,
                               "metadata": _model_summary() if rt.model_available else None},
@@ -106,7 +131,8 @@ def system_status(rt: Runtime = Depends(runtime)) -> dict[str, Any]:
                       "Deterministic mode: rule-based planning and template/extractive answers; no language "
                       "model is called."),
         },
-        "evaluation": _latest_evaluation_summary(),
+        # The locked offline evaluation covers the synthetic fixture only.
+        "evaluation": _latest_evaluation_summary() if source.is_synthetic else None,
         "disclaimer": config.POSITIONING_STATEMENT,
     }
 
@@ -128,28 +154,30 @@ def _model_summary() -> dict[str, Any]:
 
 
 @router.get("/personas")
-def personas() -> list[dict[str, Any]]:
+def personas(source: DataSource | None = Depends(requested_source)) -> list[dict[str, Any]]:
+    listed = PERSONAS.values() if source is None else source.persona_list()
     return [
         {"persona_id": p.persona_id, "display_name": p.display_name, "role": p.role, "panel": list(p.panel),
          "description": p.description}
-        for p in PERSONAS.values()
+        for p in listed
     ]
 
 
 @router.get("/policy/matrix")
-def policy_matrix() -> dict[str, Any]:
+def policy_matrix(source: DataSource | None = Depends(requested_source)) -> dict[str, Any]:
     """Evaluate the live policy for every persona x action (patient actions against each patient)."""
+    patients = ALL_SYNTHETIC_PATIENTS if source is None else source.panel_patients()
     rows = []
-    for persona in PERSONAS.values():
+    for persona in (PERSONAS.values() if source is None else source.persona_list()):
         context = AccessContext(persona)
         for action in Action:
             if action in PATIENT_SCOPED_ACTIONS:
-                cells = {pid: evaluate(context, action, pid).allowed for pid in ALL_SYNTHETIC_PATIENTS}
+                cells = {pid: evaluate(context, action, pid).allowed for pid in patients}
             else:
                 cells = {"-": evaluate(context, action).allowed}
             rows.append({"persona": persona.persona_id, "role": persona.role, "action": action.value,
                          "patient_scoped": action in PATIENT_SCOPED_ACTIONS, "decisions": cells})
-    return {"patients": list(ALL_SYNTHETIC_PATIENTS), "rows": rows,
+    return {"patients": list(patients), "rows": rows,
             "note": "Computed from src/safety/policy.py at request time (default deny)."}
 
 
@@ -233,9 +261,23 @@ def resource_provenance(patient_id: str, resource_type: str, resource_id: str, c
     if resource is None or (resource_type != "Patient" and
                             (resource.get("subject") or {}).get("reference") != f"Patient/{patient_id}"):
         raise NotFoundError("resource not found for this patient")
-    return {"provenance": rt.store.provenance(resource_type, resource_id),
-            "history": [{"version": r["meta"]["versionId"], "last_updated": r["meta"]["lastUpdated"]}
-                        for r in rt.store.history(resource_type, resource_id)]}
+    body: dict[str, Any] = {
+        "provenance": rt.store.provenance(resource_type, resource_id),
+        "history": [{"version": r["meta"]["versionId"], "last_updated": r["meta"]["lastUpdated"]}
+                    for r in rt.store.history(resource_type, resource_id)],
+    }
+    lineage = source_provenance(resource)  # only resources mapped from an external source carry it
+    if lineage is not None:
+        body["source_provenance"] = lineage
+    return body
+
+
+@router.get("/patients/{patient_id}/coverage")
+def patient_coverage(patient_id: str, ctx: AccessContext = Depends(access),
+                     source: DataSource = Depends(data_source)) -> dict[str, Any]:
+    """What the data source declares it imported for this patient (counts, statuses, scope notes)."""
+    _patient_guard(source.runtime, ctx, patient_id)
+    return source.coverage(patient_id)
 
 
 @router.get("/patients/{patient_id}/risk")
@@ -471,8 +513,12 @@ def _latest_evaluation_summary() -> dict[str, Any] | None:
 
 
 @router.get("/evaluation/latest")
-def evaluation_latest(ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime)) -> dict[str, Any]:
+def evaluation_latest(ctx: AccessContext = Depends(access), rt: Runtime = Depends(runtime),
+                      source: DataSource = Depends(data_source)) -> dict[str, Any]:
     rt.policy.require(ctx, Action.EVALUATION_READ)
+    if not source.is_synthetic:
+        raise NotFoundError("the locked offline evaluation covers the synthetic fixture only; "
+                            "no evaluation exists for this data source")
     if not EVALUATION_RESULTS.exists():
         raise NotFoundError("no evaluation results have been generated; run python -m evaluation.run_eval")
     data = json.loads(EVALUATION_RESULTS.read_text(encoding="utf-8"))

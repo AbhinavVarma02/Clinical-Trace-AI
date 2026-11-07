@@ -34,7 +34,7 @@ Developer terminal ── python -m src.interop.epic.cli ...
 - The agent never calls Epic. Import is a separate, earlier step.
 - Requests never leave the sandbox host. The FHIR base and token endpoint are code constants, redirects are refused, and proxy variables are ignored.
 - Nothing in `api/`, `frontend/`, `deploy/` or the default runtime database (`var/clinical_trace.db`) is used or changed.
-- Snapshots are never shown in the user interface or exposed through the API.
+- Snapshots are never shown in the user interface. The API serves a snapshot only on a local server whose `CLINICAL_TRACE_DATA_SOURCES` names it (M2-S1, off by default, not deployed; see [Future work](#future-work-each-needs-separate-approval)).
 
 ## One-time setup on the existing Epic app
 
@@ -362,11 +362,13 @@ Each run below was approved separately by the owner and run from the owner's ter
 
 ## Future work (each needs separate approval)
 
-- **M2-S1, local source switch** (about 25 backend lines, off by default, local dev server only; no UI, edge or Space change):
-  - `get_runtime()` selects a snapshot via `CLINICAL_TRACE_DATA_SOURCE=epic-sandbox-workspace`.
-  - Persona panels come from the snapshot manifest.
-  - `/system/status` reports the data origin truthfully.
-  - Guided cases reference synthetic ids and would not apply.
+- **M2-S1, local data sources: implemented 2026-11-06 on the local `feature/beta` branch; not deployed** (backend only, off by default; no UI, edge, Docker or Space change; [ADR 0009](ADR/0009-beta-channel-and-data-sources.md)):
+  - `CLINICAL_TRACE_DATA_SOURCES=synthetic,epic-sandbox=<snapshot>` serves a snapshot beside the synthetic fixture. Requests choose it with `X-Data-Source`; without the header they get the synthetic fixture, unchanged.
+  - Each source has its own runtime. The snapshot's runtime database is in memory, so the snapshot itself is never written.
+  - Persona panels come from the snapshot manifest. `/system/status` reports each source's origin, MOCK/LIVE mode and retrieval time.
+  - New: `/patients/{id}/coverage`, plus `source_provenance` in the provenance route.
+  - Fails closed: an invalid configuration, a modified or misplaced snapshot, a patient in two sources, a language-model provider or LangSmith tracing stops startup.
+  - Tested with synthetic and MOCK fixtures only. Guided cases reference synthetic ids and do not apply to Epic patients.
 - **M3, public exposure:** only a static, pre-imported snapshot, and never keys or live Epic calls on public infrastructure.
 
 ## Rollback
@@ -377,7 +379,7 @@ Each run below was approved separately by the owner and run from the owner's ter
   - Disable Pages or delete `epic-jwks`.
   - Delete the local key.
 - **Remove data:** delete `var/epic_sandbox/`.
-- **Revert code:** revert the feature-branch commits. Nothing in the running application imports `src/interop/`.
+- **Revert code:** revert the feature-branch commits. The running application imports `src/interop/` only when `CLINICAL_TRACE_DATA_SOURCES` names an Epic snapshot; unset it to stop serving snapshots.
 
 ## Review of the earlier Phase 1 package
 

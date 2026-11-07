@@ -1,10 +1,8 @@
-"""M2 readiness (MOCK/offline, test-only): existing /api/v2 routes served from an Epic snapshot.
+"""M2 readiness (MOCK/offline): existing /api/v2 routes served from an Epic snapshot.
 
-No production code is changed or configured here. The test swaps in the snapshot
-runtime with ``set_runtime`` and temporarily widens two demo personas' panels with
-``monkeypatch``. It shows the future local source switch (M2-S1, which needs separate
-approval) would need no schema, route or UI change, and it records the one hard-coded
-status string M2-S1 would have to make truthful.
+The snapshot is configured as a second data source (M2-S1, src/sources.py) and
+selected per request with ``X-Data-Source``. Persona panels come from the snapshot
+manifest; no persona is patched. The routes and schemas are the existing ones.
 """
 
 from __future__ import annotations
@@ -15,8 +13,8 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.middleware import RATE_LIMITER
 from src.interop.epic import mapping, settings, workspace
-from src.runtime import set_runtime
-from src.safety.policy import PERSONAS, Persona
+from src.runtime import set_registry
+from src.sources import SYNTHETIC_ORIGIN, build_registry
 from tests.epic_support import RETRIEVED_AT, fixture_patient
 
 
@@ -32,23 +30,19 @@ def epic_api(tmp_path, monkeypatch):
     snapshot = workspace.write_snapshot(
         pid, resources, binaries, retrieved_at=RETRIEVED_AT, mode="MOCK", snapshot_id="m2-readiness-01"
     )
-    runtime = workspace.load_runtime(snapshot.path)
-    monkeypatch.setitem(
-        PERSONAS, "clinician.demo", Persona("clinician.demo", "Demo Clinician", "clinician", snapshot.patient_ids)
+    registry = build_registry(
+        "synthetic,epic-sandbox=m2-readiness-01", db_path=":memory:", provider=None, enable_model=False
     )
-    monkeypatch.setitem(
-        PERSONAS, "reviewer.demo", Persona("reviewer.demo", "Demo Reviewer", "reviewer", snapshot.patient_ids)
-    )
-    set_runtime(runtime)
+    set_registry(registry)
     RATE_LIMITER._buckets.clear()
     try:
         yield TestClient(app), snapshot.patient_ids[0]
     finally:
-        set_runtime(None)
-        runtime.close()
+        set_registry(None)
+        registry.close()
 
 
-HEADERS = {"X-Demo-Persona": "clinician.demo"}
+HEADERS = {"X-Demo-Persona": "clinician.demo", "X-Data-Source": "epic-sandbox"}
 
 
 def test_existing_patient_routes_serve_the_epic_snapshot(epic_api):
@@ -83,7 +77,9 @@ def test_existing_agent_route_accepts_the_internal_epic_patient_id(epic_api):
     assert body["verification"]["isolation_violations"] == 0
 
 
-def test_status_origin_is_still_hard_coded_which_m2_s1_must_make_truthful(epic_api):
+def test_status_origin_is_truthful_for_each_source(epic_api):
     client, _ = epic_api
-    status = client.get("/api/v2/system/status").json()
-    assert status["data"]["origin"] == "synthetic FHIR R4 fixture (no real patients)"
+    synthetic = client.get("/api/v2/system/status").json()
+    assert synthetic["data"]["origin"] == SYNTHETIC_ORIGIN
+    epic = client.get("/api/v2/system/status", headers={"X-Data-Source": "epic-sandbox"}).json()
+    assert epic["data"]["origin"].startswith("Epic-shaped MOCK fixture") and "m2-readiness-01" in epic["data"]["origin"]

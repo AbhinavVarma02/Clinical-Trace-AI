@@ -9,7 +9,7 @@
 
 - Four hand-designed synthetic patients (86 FHIR resources). They exercise specific behaviours (readmission, contradiction, incompleteness, versioned orders) and are not a representative population.
 - FHIR support covers a validated subset of seven resource types; it is not a full R4 implementation. Patient ids use an underscore (`synthetic_p001`), which FHIR's id grammar does not allow; kept for compatibility with the v1 synthetic-id rule.
-- The mock FHIR server and HTTP client have no SMART on FHIR or OAuth. A separate, command-line-only adapter reads Epic's public FHIR sandbox (Epic test patients only) with SMART Backend Services authentication; the application does not use it ([EPIC_SANDBOX.md](EPIC_SANDBOX.md)). No production EHR has been connected.
+- The mock FHIR server and HTTP client have no SMART on FHIR or OAuth. A separate, command-line-only adapter reads Epic's public FHIR sandbox (Epic test patients only) with SMART Backend Services authentication ([EPIC_SANDBOX.md](EPIC_SANDBOX.md)). The application never calls Epic; a local server can serve an already-imported snapshot as an extra data source only when explicitly configured, and no deployment does so. No production EHR has been connected.
 
 ## Readmission model
 

@@ -192,8 +192,11 @@ class RequestContextMiddleware:
                 if status_code >= 500:
                     current.set_status(StatusCode.ERROR)
             if protected and self.request_logger is not None:
+                # Requests served by a non-default data source are logged in that source's database.
+                source = scope["state"].get("data_source")
                 try:
-                    self.request_logger(request_id, request.method, template, status_code, latency_ms)
+                    self.request_logger(request_id, request.method, template, status_code, latency_ms,
+                                        **({"data_source": source} if source else {}))
                 except Exception:  # pragma: no cover - diagnostics never break a request
                     logger.error("request log write failed")
             logger.info(json.dumps({"event": "http_request", "request_id": request_id,

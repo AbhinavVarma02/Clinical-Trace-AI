@@ -10,6 +10,7 @@ Errors from v2 use one shape:
 
 | Status | Code | When |
 | --- | --- | --- |
+| 400 | `invalid_data_source` | `X-Data-Source` is malformed or names a source this server does not serve |
 | 401 | `persona_required` | Missing or unknown persona |
 | 403 | `forbidden` / `session_mismatch` | Policy denial; session belongs to another persona or patient |
 | 404 | `not_found` | Unknown resource, or a resource of another patient |
@@ -35,9 +36,14 @@ Errors from v2 use one shape:
 | GET | `/api/v2/patients/{id}` | Profile, encounters, conditions, medications (with versions), lab trends, vitals, documents, documentation gaps |
 | GET | `/api/v2/patients/{id}/timeline` | Merged chronological events with source references |
 | GET | `/api/v2/patients/{id}/documents/{doc}` | Decoded note text, provenance, retrieval chunks |
-| GET | `/api/v2/patients/{id}/resources/{type}/{rid}/provenance` | Provenance and version history |
+| GET | `/api/v2/patients/{id}/resources/{type}/{rid}/provenance` | Provenance and version history; plus `source_provenance` (source reference, retrieval time, content hash, field status) for resources mapped from an Epic snapshot |
+| GET | `/api/v2/patients/{id}/coverage` | What the data source declares it imported for this patient: counts, statuses and scope notes, no record content (`declared: false` for the synthetic fixture) |
 | GET | `/api/v2/patients/{id}/risk` | Readmission prediction where applicable, else `available: false` with reasons |
 | POST | `/api/v2/patients/{id}/retrieve` | `{query, k≤20, mode: hybrid|bm25|dense, date_from?, date_to?}` → ranked chunks with scores and diagnostics |
+
+### Data sources (local only, off by default)
+
+By default every route serves the synthetic fixture. For local testing, `CLINICAL_TRACE_DATA_SOURCES=synthetic,epic-sandbox=<snapshot>` adds an Epic sandbox snapshot as a second source (`src/sources.py`), and the optional `X-Data-Source: synthetic | epic-sandbox` header selects it per request. Each source has its own database, index, runs, reviews and audit log, and its own persona panels. A patient, run or review of one source is not reachable through another. Epic sources run deterministically: startup fails if a language-model provider or LangSmith tracing is configured. With more than one source, `/system/status` adds `data.source` and `data.sources`; with one source its response is unchanged. The public edge does not forward this header.
 
 ## v2 — agent (clinician)
 

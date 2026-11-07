@@ -1,6 +1,6 @@
 # ADR 0008: Epic sandbox records enter through an isolated, provenance-preserving adapter
 
-**Status:** accepted for the internal milestone M1 (2026-11-05); amended 2026-11-06 (see the end). Using the adapter from the application (M2) or publicly (M3) needs a separate decision.
+**Status:** accepted for the internal milestone M1 (2026-11-05); amended 2026-11-06 (see the end). Using the adapter from the application (M2) or publicly (M3) needs a separate decision. The local data-source registry (M2-S1) is recorded in [ADR 0009](0009-beta-channel-and-data-sources.md).
 
 **Context.** The platform reads a generated synthetic FHIR fixture. The owner has registered a read-only Backend Systems app on the Epic on FHIR public R4 sandbox, which holds only test patients. Raw Epic resources do not meet the platform's FHIR contract:
 
