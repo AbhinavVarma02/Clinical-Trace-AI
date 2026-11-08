@@ -400,6 +400,111 @@ def test_explicit_cache_stale_rollback_and_age_limits(generations):
         assert h.post(client, f"{ALPHA}/generations/{first}/rollback").status_code == 410
 
 
+def _offline_child(script):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return subprocess.run(
+        [sys.executable, "-B", "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        'socket.socket().connect(("198.51.100.1", 443))',
+        'socket.socket().connect_ex(("198.51.100.1", 443))',
+        'socket.socket(socket.AF_INET6).connect(("2001:db8::1", 443))',
+        'socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b"x", ("198.51.100.1", 53))',
+        'socket.socket(socket.AF_INET6, socket.SOCK_DGRAM).sendto(b"x", ("2001:db8::1", 53))',
+        'socket.getaddrinfo("blocked.invalid", 443)',
+        'socket.gethostbyname("blocked.invalid")',
+        'socket.gethostbyaddr("198.51.100.1")',
+        'socket.getnameinfo(("198.51.100.1", 443), 0)',
+    ],
+)
+def test_offline_guard_blocks_external_egress(operation):
+    result = _offline_child(
+        "from tests.offline_network import NetworkBlocked, blocked_events, install\n"
+        "install()\ninstall()\n"
+        "import importlib.util\nimport socket\n"
+        "assert importlib.util.find_spec('netguard') is None\n"
+        "try:\n"
+        f"    {operation}\n"
+        "except NetworkBlocked:\n"
+        "    assert len(blocked_events) == 1\n"
+        "    print('blocked before egress')\n"
+        "else:\n"
+        "    raise AssertionError('network guard allowed outbound I/O')\n"
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "blocked before egress"
+
+
+def test_offline_guard_preserves_mock_asyncio_and_local_ipc():
+    result = _offline_child(
+        """
+from tests.offline_network import blocked_events, install
+install()
+import asyncio
+import importlib.util
+import socket
+import sys
+import httpx
+assert importlib.util.find_spec("netguard") is None
+async def main():
+    left, right = socket.socketpair()
+    try:
+        left.send(b"x")
+        assert right.recv(1) == b"x"
+    finally:
+        left.close()
+        right.close()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as client:
+        assert (await client.get("https://blocked.invalid/only-mock")).status_code == 200
+    child = await asyncio.create_subprocess_exec(sys.executable, "-B", "-c", "pass")
+    assert await child.wait() == 0
+    await asyncio.sleep(0)
+asyncio.run(main())
+assert blocked_events == []
+print("mock, asyncio and local IPC passed")
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "mock, asyncio and local IPC passed"
+
+
+def test_offline_guard_fails_if_audit_registration_is_suppressed():
+    result = _offline_child(
+        """
+import sys
+def suppress_new_hook(event, args):
+    if event == "sys.addaudithook":
+        raise RuntimeError("registration suppressed")
+sys.addaudithook(suppress_new_hook)
+from tests.offline_network import install
+try:
+    install()
+except RuntimeError:
+    print("guard installation failed closed")
+else:
+    raise AssertionError("guard silently failed to install")
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "guard installation failed closed"
+
+
 @pytest.mark.parametrize("phase", ["staging", "before_finalize", "after_finalize", "before_publish", "after_publish"])
 def test_failure_at_publication_boundaries_recovers_complete_pointer(generations, phase):
     h = generations
@@ -629,12 +734,12 @@ def test_process_kill_recovers_pointer_and_historical_review(generations, phase)
         review = h.post(client, f"{ALPHA}/generations/{original}/runs/{run['run_id']}/review").json()
     marker = h.db.parent / "kill-marker"
     script = """
+from tests.offline_network import install
+install()
 import asyncio
 import json
 import sys
 from pathlib import Path
-import netguard
-netguard.install()
 import httpx
 from cryptography.hazmat.primitives.asymmetric import rsa
 from src.interop.epic.beta_catalog import Catalog, MOCK_PATIENTS
@@ -698,6 +803,7 @@ asyncio.run(main())
             time.sleep(0.02)
         assert marker.exists(), process.communicate(timeout=1)
         candidate = marker.read_text()
+        assert process.poll() is None, "child exited before the intended forced termination"
     finally:
         if process.poll() is None:
             process.kill()
@@ -715,8 +821,10 @@ asyncio.run(main())
             assert h.select_generation(client, candidate, ack=True).status_code == 404
         historical = client.get(f"{ALPHA}/generations/{original}/runs/{run['run_id']}")
         assert historical.json()["answer"] == run["answer"]
+        assert historical.json()["evidence_context"] == run["evidence_context"]
         restored = client.get(f"{ALPHA}/generations/{original}/reviews/{review['review_id']}")
         assert restored.json()["artifact"]["content_hash"] == review["artifact"]["content_hash"]
+    print(f"PROCESS_KILL phase={phase} returncode={process.returncode} answer_pins_review_hash=unchanged")
 
 
 def test_clinical_artifact_hash_includes_generation_identity():
