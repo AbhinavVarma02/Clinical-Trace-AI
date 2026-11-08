@@ -12,6 +12,8 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from src.errors import NotFoundError
+from src.governance.review import artifact_content_from_run, artifact_hash
 from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError, object_json
 from src.interop.epic.beta_catalog import MOCK_PATIENTS, Catalog, RefreshRejected
 from src.interop.epic.beta_staging import MANIFEST_VERSION, SOURCE, encoded, normalize
@@ -368,13 +370,17 @@ class Generations:
                 result["evidence_error"] = "generation_integrity"
         return result
 
-    def select(self, alias: str, gid: str, acknowledgement: bool) -> dict[str, Any]:
+    def select(self, alias: str, gid: str, acknowledgement: bool, *, explicit: bool = False) -> dict[str, Any]:
         _, manifest = self.runtime(alias, gid)
         state = self.serving(alias, gid, manifest)
         if state == "unavailable":
             raise RefreshRejected(410, "generation_expired")
         if state != "fresh" and not acknowledgement:
             raise RefreshRejected(409, "cache_acknowledgement_required")
+        row = self._row(alias, gid)
+        if explicit:
+            event = "generation_selected" if state == "fresh" else "cached_generation_selected"
+            self.catalog.audit(event, row["attempt_id"])
         return {
             "generation_id": gid,
             "source": SOURCE,
@@ -383,7 +389,7 @@ class Generations:
             "serving": state,
             "retrieved_at": manifest["retrieved_at"],
             "coverage": manifest["coverage"],
-            "promoted_at": self._row(alias, gid)["promoted_at"],
+            "promoted_at": row["promoted_at"],
         }
 
     async def rollback(self, alias: str, gid: str, authorized: Callable[[], bool]) -> dict[str, Any]:
@@ -393,7 +399,7 @@ class Generations:
         await self.phase("before_rollback", gid)
         if not authorized():
             raise RefreshRejected(401, "owner_required")
-        self.evidence(alias, gid)
+        manifest = self.evidence(alias, gid)
         with self.catalog.db:
             changed = self.catalog.db.execute(
                 "UPDATE patient_head SET active = ?, rolled_back = 1, epoch = epoch + 1 "
@@ -402,7 +408,7 @@ class Generations:
             )
             if changed.rowcount != 1:
                 raise RefreshRejected(409, "publication_fenced")
-            self.catalog._audit("generation_rolled_back")
+            self.catalog._audit("generation_rolled_back", manifest["attempt_id"])
         return self.status(alias)
 
     @staticmethod
@@ -490,11 +496,16 @@ class Generations:
             if content.get("evidence_context") != self.context(manifest):
                 raise RefreshRejected(409, "generation_integrity")
         else:
-            content = runtime.reviews.get(access, identifier)
-            from src.governance.review import artifact_hash
-
+            try:
+                content = runtime.reviews.get(access, identifier)
+            except (NotFoundError, TypeError, ValueError):
+                raise RefreshRejected(409, "generation_integrity") from None
             artifact = content.get("artifact")
-            if not artifact or artifact["content"].get("evidence_context") != self.context(manifest):
+            if (
+                not artifact
+                or not isinstance(artifact["content"], dict)
+                or artifact["content"].get("evidence_context") != self.context(manifest)
+            ):
                 raise RefreshRejected(409, "generation_integrity")
             if artifact_hash(artifact["content"]) != artifact["content_hash"]:
                 raise RefreshRejected(409, "generation_integrity")
@@ -522,10 +533,41 @@ class Generations:
         access = self.access(alias, gid, run["patient_id"])
         if run["outcome"] != "answered":
             raise RefreshRejected(409, "answered_run_required")
-        review = runtime.reviews.submit_run(access, run)
-        with self.catalog.db:
-            self.catalog.db.execute(
-                "INSERT OR IGNORE INTO clinical_pin VALUES (?, ?, ?, 'review', ?, ?)",
-                (review["review_id"], gid, alias, self.catalog.clock(), content_sha256(encoded(review))),
+        existing = runtime.db.all("SELECT review_id FROM review WHERE artifact_id = ? LIMIT 2", (identifier,))
+        if len(existing) > 1:
+            raise RefreshRejected(409, "generation_integrity")
+        try:
+            # A persisted review must be checked even if its artifact has gone missing.
+            review = (
+                runtime.reviews.get(access, existing[0]["review_id"])
+                if existing
+                else runtime.reviews.submit_run(access, run)
             )
+        except (NotFoundError, TypeError, ValueError, sqlite3.IntegrityError):
+            raise RefreshRejected(409, "generation_integrity") from None
+        artifact = review["artifact"]
+        expected_hash = artifact_hash(artifact_content_from_run(run))
+        if (
+            not artifact
+            or review["patient_id"] != run["patient_id"]
+            or review["status"] != "pending_review"
+            or review["artifact_version"] != 1
+            or review["artifact_hash"] != expected_hash
+            or artifact["content_hash"] != expected_hash
+            or artifact_hash(artifact["content"]) != expected_hash
+        ):
+            raise RefreshRejected(409, "generation_integrity")
+        digest = content_sha256(encoded(review))
+        with self.catalog.db:
+            pin = self.catalog.db.execute(
+                "SELECT generation_id, alias, kind, content_hash FROM clinical_pin WHERE identifier = ?",
+                (review["review_id"],),
+            ).fetchone()
+            if pin is None:
+                self.catalog.db.execute(
+                    "INSERT INTO clinical_pin VALUES (?, ?, ?, 'review', ?, ?)",
+                    (review["review_id"], gid, alias, self.catalog.clock(), digest),
+                )
+            elif tuple(pin) != (gid, alias, "review", digest):
+                raise RefreshRejected(409, "generation_integrity")
         return review

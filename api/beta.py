@@ -332,7 +332,7 @@ def create_mock_beta_app(
     @app.post(generation_route + "/select")
     async def select_generation(request: Request, alias: str, gid: str) -> JSONResponse:
         store = generation_store(request, alias)
-        return JSONResponse(store.select(alias, gid, _single_header(request, "x-beta-cache-ack") == "1"))
+        return JSONResponse(store.select(alias, gid, _single_header(request, "x-beta-cache-ack") == "1", explicit=True))
 
     @app.post(generation_route + "/rollback")
     async def rollback(request: Request, alias: str, gid: str) -> JSONResponse:
@@ -380,6 +380,7 @@ def create_mock_beta_app(
             == "cross_patient"
         ):
             raise RefreshRejected(403, "patient_scope")
+        patient_id(request, alias)
         runtime, manifest, identifier = store.pin_run(alias, gid, _single_header(request, "x-beta-cache-ack") == "1")
         try:
             result = await asyncio.to_thread(store.execute, runtime, manifest, identifier, question)

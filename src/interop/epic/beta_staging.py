@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from src.clinical.fhir_models import parse_timestamp, validate_resource
-from src.interop.epic.beta_acquisition import PROFILE, Acquisition, AcquisitionError
+from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError
 from src.interop.epic.beta_catalog import POLICY_VERSION
 from src.interop.epic.mapping import EpicMapper, MAPPING_VERSION, MappingReport, content_sha256
 from src.interop.epic.workspace import count_dangling_references
@@ -105,7 +105,6 @@ def normalize(acquisition: Acquisition, alias: str, gid: str) -> tuple[dict[str,
     acquisition.checkpoint()
     if acquisition.resources is None:
         raise AcquisitionError("candidate_unavailable")
-    resources = list(acquisition.resources.values())
     retrieved_at = acquisition.catalog.clock()
     mapper = EpicMapper(acquisition.patient, snapshot_id=gid, retrieved_at=instant(retrieved_at))
     mapped: list[dict[str, Any]] = []
@@ -115,7 +114,7 @@ def normalize(acquisition: Acquisition, alias: str, gid: str) -> tuple[dict[str,
     for counts in coverage.values():
         counts.update(imported=0, rejected=0, excluded=0, duplicates=counts["matches"] - counts["unique"])
         counts["import"] = "not_imported"
-    for resource in resources:
+    for identity, resource in acquisition.resources.items():
         acquisition.checkpoint()
         _check_source(resource, acquisition.patient)
         kind = resource["resourceType"]
@@ -129,31 +128,16 @@ def normalize(acquisition: Acquisition, alias: str, gid: str) -> tuple[dict[str,
         except (ValueError, TypeError, AttributeError):
             raise AcquisitionError("mapping_rejected") from None
         report.add(outcome)
-        names = (
-            [kind]
-            if kind == "Patient"
-            else [
-                f"{kind}:{category}" if category else kind
-                for planned, category in PROFILE
-                if planned == kind
-                and (
-                    category is None
-                    or any(
-                        coding.get("code") == category
-                        for concept in resource.get("category", [])
-                        for coding in concept.get("coding", [])
-                    )
-                )
-            ]
-        )
-        for name in names:
-            coverage[name]["imported" if outcome.resource is not None else "rejected"] += 1
+        names = acquisition.resource_operations[identity]
         if outcome.resource is None or validate_resource(outcome.resource):
             # No unexplained clinical mapping rejection is an approved MOCK exclusion.
             for name in names:
+                coverage[name]["rejected"] += 1
                 coverage[name]["import"] = "partially_imported" if coverage[name]["imported"] else "not_imported"
             acquisition.operations = coverage
             raise AcquisitionError("mapping_rejected")
+        for name in names:
+            coverage[name]["imported"] += 1
         mapped.append(outcome.resource)
     if sum(r["resourceType"] == "Patient" for r in mapped) != 1:
         raise AcquisitionError("patient_scope")

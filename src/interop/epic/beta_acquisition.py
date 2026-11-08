@@ -192,6 +192,7 @@ class Acquisition:
         self.renewed = False
         self.seen: dict[tuple[str, str], bytes] = {}
         self.resources: dict[tuple[str, str], dict[str, Any]] | None = {} if retain else None
+        self.resource_operations: dict[tuple[str, str], set[str]] = {}
         self.patient_url = f"{settings.FHIR_BASE}/Patient/{valid_fhir_id(patient)}"
         self.search_urls = {
             (kind, category): f"{settings.FHIR_BASE}/{kind}?"
@@ -239,10 +240,10 @@ class Acquisition:
                 resource = await self.fhir(self.patient_url)
                 if resource.get("resourceType") != "Patient" or resource.get("id") != self.patient:
                     raise AcquisitionError("patient_scope")
-                self.retain_resource(resource)
+                self.retain_resource(resource, name)
                 counts.update(matches=1, unique=1, pages=1)
             else:
-                await self.search(kind, category, counts)
+                await self.search(kind, category, name, counts)
         except (AcquisitionError, RefreshRejected, asyncio.CancelledError) as exc:
             counts["execution"] = (
                 "truncated"
@@ -253,7 +254,7 @@ class Acquisition:
             raise
         counts["execution"] = "succeeded"
 
-    async def search(self, kind: str, category: str | None, counts: dict[str, Any]) -> None:
+    async def search(self, kind: str, category: str | None, name: str, counts: dict[str, Any]) -> None:
         initial = self.search_urls[kind, category]
         url = initial
         visited: set[str] = set()
@@ -284,7 +285,7 @@ class Acquisition:
                     or self.matches >= self.limits.matches_per_attempt
                 ):
                     raise AcquisitionError("resource_limit")
-                rid = self.accept(entry, kind, category)
+                rid = self.accept(entry, kind, category, name)
                 self.matches += 1
                 counts["matches"] += 1
                 operation_ids.add(rid)
@@ -303,7 +304,7 @@ class Acquisition:
                 raise AcquisitionError("pagination_scope")
             url = continuation(targets[0], initial)
 
-    def accept(self, entry: Any, kind: str, category: str | None) -> str:
+    def accept(self, entry: Any, kind: str, category: str | None, name: str) -> str:
         if not isinstance(entry, dict) or not isinstance(entry.get("resource"), dict):
             raise AcquisitionError("invalid_bundle")
         resource = entry["resource"]
@@ -332,10 +333,10 @@ class Acquisition:
             raise AcquisitionError("invalid_json") from None
         if self.seen.setdefault((kind, rid), digest) != digest:
             raise AcquisitionError("conflicting_identity")
-        self.retain_resource(resource)
+        self.retain_resource(resource, name)
         return rid
 
-    def retain_resource(self, resource: dict[str, Any]) -> None:
+    def retain_resource(self, resource: dict[str, Any], name: str) -> None:
         if self.resources is None:
             return
         kind, rid = resource["resourceType"], resource["id"]
@@ -352,6 +353,7 @@ class Acquisition:
             self.resources[kind, rid] = metadata
         else:
             self.resources[kind, rid] = resource
+        self.resource_operations.setdefault((kind, rid), set()).add(name)
 
     async def fhir(self, url: str) -> dict[str, Any]:
         status, headers, body = await self.request("GET", url)
