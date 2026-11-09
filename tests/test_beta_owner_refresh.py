@@ -344,12 +344,25 @@ def test_csrf_origin_cookie_and_revocation(harness):
 
 
 @pytest.mark.parametrize("idle", [901, 8 * 3600])
-def test_session_expiry(harness, idle):
+def test_session_expiry(harness, idle, monkeypatch):
+    from api.beta_oidc import OwnerAuth
+
+    owners = []
+    original = OwnerAuth.create_session
+
+    def remember(owner, previous):
+        owners.append(owner)
+        return original(owner, previous)
+
+    monkeypatch.setattr(OwnerAuth, "create_session", remember)
     with harness.client() as client:
         harness.login(client)
         if idle > 901:
             for _ in range(32):
                 harness.clock += 899
+                # Explicit activity isolates the absolute cap. GETs no longer renew it.
+                token = client.cookies.get("__Host-beta-session")
+                assert client.portal.call(lambda token=token: owners[0].session(token, touch=True)) is not None
                 assert client.get(ALPHA + "/status").status_code == 200
             harness.clock += idle - 32 * 899
         else:

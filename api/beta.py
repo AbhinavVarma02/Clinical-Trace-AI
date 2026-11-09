@@ -1,4 +1,10 @@
-"""Isolated local Beta origin. Only explicit in-process MOCK construction is supported."""
+"""Isolated local Beta origin. Only explicit in-process MOCK construction is supported.
+
+An optional ``live`` argument adds a staging-only LIVE refresh for the aliases in its explicit, immutable
+allowlist (empty approves nothing): refresh, status, revoke and candidate erasure recognise such an alias;
+every other route stays MOCK-only. A LIVE attempt never publishes a generation. Its validated candidate is
+kept privately for at most 24 hours (see ``beta_live_staging``) and is erased on revocation or owner request.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +23,19 @@ from fastapi import FastAPI, Request
 from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from api.beta_browser import (
+    BROWSER_LOGIN,
+    PATIENTS_ROUTE,
+    SESSION_ROUTE,
+    BrowserAssets,
+    browser_path,
+    form_profile,
+    patient_view,
+    payload_length,
+    read_profile,
+    session_view,
+    static_namespace,
+)
 from api.beta_oidc import (
     FLOW_COOKIE,
     FLOW_TTL,
@@ -24,18 +43,29 @@ from api.beta_oidc import (
     ORIGIN,
     SESSION_ABSOLUTE,
     SESSION_COOKIE,
+    INVENTED_IDENTITY,
     TOKEN_SHAPE,
     OwnerAuth,
+    OwnerIdentity,
 )
+from src.interop.epic import beta_catalog
 from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError, Limits, require_mock
 from src.interop.epic.beta_catalog import MOCK_PATIENTS, Catalog, RefreshRejected
 from src.interop.epic.beta_generations import Generations, Hook
+from src.interop.epic.beta_live_acquisition import LiveAcquisition, LiveRefresh
+from src.interop.epic.beta_live_generations import LiveGenerations
+from src.interop.epic.beta_live_staging import LiveStaging
+from src.interop.epic.beta_staging import encoded
 
 LOGIN = ("POST", "/beta/auth/login")
 CALLBACK = ("GET", "/beta/auth/callback")
+STEP_UP = ("POST", "/beta/auth/step-up")
 PATIENT_ROUTE = "/beta/epic/patients/{alias}"
 IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:/-]{12,128}")
 DEFAULT_LIMITS = Limits()
+# Retention is time-driven, not request-driven: an idle process must not keep expired LIVE data. The pass is
+# internal cleanup only (no network, no refresh, nothing exposed) and is read at each wait so tests can shorten it.
+LIVE_PURGE_INTERVAL_S = 60.0
 UNTRUSTED_HEADERS = (
     "x-owner",
     "x-user",
@@ -106,6 +136,8 @@ class Control:
     owner: OwnerAuth
     work: Work | None = None
     generations: Generations | None = None
+    staging: LiveStaging | None = None
+    live_generations: LiveGenerations | None = None
 
 
 def create_mock_beta_app(
@@ -119,12 +151,16 @@ def create_mock_beta_app(
     clock: Callable[[], float] = time.time,
     generation_root: Path | None = None,
     publication_hook: Hook | None = None,
+    browser_assets_root: Path | None = None,
+    live: LiveRefresh | None = None,
+    identity: OwnerIdentity = INVENTED_IDENTITY,
 ) -> FastAPI:
     """Build an isolated Beta origin with an invented owner and two invented patients."""
     require_mock(oidc_transport)
     require_mock(epic_transport)
     if min(oidc_key.key_size, epic_key.key_size) < 2048:
         raise ValueError("MOCK signing keys must be at least 2048 bits")
+    browser_assets = BrowserAssets.load(browser_assets_root) if browser_assets_root is not None else None
     control = Control()
 
     async def cancel(item: Work, code: str) -> None:
@@ -141,19 +177,58 @@ def create_mock_beta_app(
         control.owner.sessions.clear()
         if control.work is not None:
             await cancel(control.work, "authorization_revoked")
+        if control.staging is not None:
+            # After the cancel, so an in-flight LIVE attempt cannot stage a candidate behind the erase.
+            control.staging.erase_all("owner_revoked")
+        if control.live_generations is not None:
+            control.live_generations.erase_all("owner_revoked")
+
+    async def purge_loop() -> None:
+        while True:
+            await asyncio.sleep(LIVE_PURGE_INTERVAL_S)
+            try:
+                if control.staging is not None:
+                    control.staging.purge()
+                if control.live_generations is not None:
+                    control.live_generations.purge()
+            except Exception:
+                try:
+                    control.catalog.audit("live_purge_failed")
+                except Exception:
+                    pass  # the loop must outlive a failed pass; the next pass retries
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         control.catalog = Catalog(catalog_path.resolve(), clock)
-        control.owner = OwnerAuth(control.catalog, oidc_key, oidc_transport)
+        control.owner = OwnerAuth(control.catalog, oidc_key, oidc_transport, identity)
         control.work = None
         control.generations = None
+        control.staging = None
+        control.live_generations = None
         app.state.revoke_owner = revoke_owner
+        purger: asyncio.Task[None] | None = None
         try:
             if generation_root is not None:
                 control.generations = Generations(control.catalog, generation_root, publication_hook)
+            if live is not None:
+                # Startup applies retention and revocation and removes anything the catalog does not own.
+                control.staging = LiveStaging(control.catalog, catalog_path.resolve().parent / "live-staging")
+                control.live_generations = LiveGenerations(
+                    control.catalog,
+                    catalog_path.resolve().parent / "live-generations",
+                    live.allowlist,
+                    control.staging,
+                )
+                purger = asyncio.create_task(purge_loop())
             yield
         finally:
+            if purger is not None:
+                purger.cancel()
+                await asyncio.gather(purger, return_exceptions=True)
+            if control.staging is not None:
+                control.staging.purge()
+            if control.live_generations is not None:
+                control.live_generations.purge()
             if control.work is not None:
                 await cancel(control.work, "shutdown")
             if control.generations is not None:
@@ -171,6 +246,9 @@ def create_mock_beta_app(
 
     @app.middleware("http")
     async def owner_boundary(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        path = request.scope["path"]
+        browser_request = browser_assets is not None and browser_path(path)
+        static_request = browser_assets is not None and static_namespace(path)
         try:
             route = (request.method, request.scope["path"])
             token = _cookie(request, SESSION_COOKIE)
@@ -178,61 +256,167 @@ def create_mock_beta_app(
                 raise RefreshRejected(403, "invalid_origin")
             if any(name.lower().startswith(UNTRUSTED_HEADERS) for name in request.headers):
                 raise RefreshRejected(400, "untrusted_header")
-            session = control.owner.session(token)
-            if route not in {LOGIN, CALLBACK} and session is None:
-                raise RefreshRejected(401, "owner_required")
-            if request.scope.get("raw_path") not in (None, route[1].encode("utf-8")):
-                raise RefreshRejected(404, "not_found")
-            if route != CALLBACK and request.scope["query_string"]:
-                raise RefreshRejected(400, "unexpected_payload")
-            if request.method not in {"GET", "HEAD"}:
-                if _single_header(request, "origin") != ORIGIN:
-                    raise RefreshRejected(403, "invalid_origin")
-                csrf = _single_header(request, "x-csrf-token")
-                if route != LOGIN and (
-                    session is None or not TOKEN_SHAPE.fullmatch(csrf) or not secrets.compare_digest(csrf, session.csrf)
-                ):
-                    raise RefreshRejected(403, "csrf_rejected")
-                if not (control.generations is not None and route[0] == "POST" and route[1].endswith("/runs")):
+            if browser_request:
+                if request.scope.get("raw_path") not in (None, path.encode("utf-8")):
+                    raise RefreshRejected(404, "not_found")
+                if static_request:
+                    if request.method not in {"GET", "HEAD"}:
+                        raise RefreshRejected(405, "method_not_allowed")
+                    if request.scope["query_string"]:
+                        raise RefreshRejected(400, "unexpected_payload")
+                    payload_length(request)
                     await _require_empty(request)
-            if route not in {LOGIN, CALLBACK} and control.owner.session(token, touch=True) is None:
-                raise RefreshRejected(401, "owner_required")
-            request.state.owner_session = token
-            response = await call_next(request)
+                    assert browser_assets is not None
+                    response = browser_assets.response(path, head=request.method == "HEAD")
+                else:
+                    session = control.owner.session(token)
+                    if path != BROWSER_LOGIN and session is None:
+                        raise RefreshRejected(401, "owner_required")
+                    if request.method != ("POST" if path == BROWSER_LOGIN else "GET"):
+                        raise RefreshRejected(405, "method_not_allowed")
+                    if request.scope["query_string"]:
+                        raise RefreshRejected(400, "unexpected_payload")
+                    payload_length(request)
+                    if path == BROWSER_LOGIN:
+                        form_profile(request)
+                    else:
+                        read_profile(request)
+                    await _require_empty(request)
+                    if path != BROWSER_LOGIN and control.owner.session(token) is None:
+                        raise RefreshRejected(401, "owner_required")
+                    request.state.owner_session = token
+                    response = await call_next(request)
+                response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+            else:
+                response = await legacy_boundary(request, route, token, call_next)
         except RefreshRejected as exc:
-            control.catalog.audit(exc.code)
+            if not static_request:
+                control.catalog.audit(exc.code)
             response = _error(exc)
+        except Exception:
+            if not browser_request and not (browser_assets is not None and path == CALLBACK[1]):
+                raise
+            response = _error(RefreshRejected(500, "internal_error"))
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        if browser_request:
+            response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+            if request.method == "HEAD":
+                response = Response(status_code=response.status_code, headers=dict(response.headers))
         return response
+
+    async def legacy_boundary(
+        request: Request,
+        route: tuple[str, str],
+        token: str,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        session = control.owner.session(token)
+        if route not in {LOGIN, CALLBACK} and session is None:
+            raise RefreshRejected(401, "owner_required")
+        if request.scope.get("raw_path") not in (None, route[1].encode("utf-8")):
+            raise RefreshRejected(404, "not_found")
+        if route != CALLBACK and request.scope["query_string"]:
+            raise RefreshRejected(400, "unexpected_payload")
+        if request.method not in {"GET", "HEAD"}:
+            if _single_header(request, "origin") != ORIGIN:
+                raise RefreshRejected(403, "invalid_origin")
+            csrf = _single_header(request, "x-csrf-token")
+            if route != LOGIN and (
+                session is None or not TOKEN_SHAPE.fullmatch(csrf) or not secrets.compare_digest(csrf, session.csrf)
+            ):
+                raise RefreshRejected(403, "csrf_rejected")
+            if not (control.generations is not None and route[0] == "POST" and route[1].endswith("/runs")):
+                await _require_empty(request)
+        if route not in {LOGIN, CALLBACK} and control.owner.session(token) is None:
+            raise RefreshRejected(401, "owner_required")
+        request.state.owner_session = token
+        return await call_next(request)
 
     @app.post(LOGIN[1])
     async def login(request: Request) -> Response:
-        browser, url = control.owner.begin(_cookie(request, FLOW_COOKIE))
+        return begin_login(request, "legacy-json")
+
+    def begin_login(request: Request, channel: str) -> Response:
+        browser, url = control.owner.begin(_cookie(request, FLOW_COOKIE), channel=channel)
         control.catalog.audit("login_started")
         response = RedirectResponse(url, status_code=303)
         response.set_cookie(FLOW_COOKIE, browser, max_age=FLOW_TTL, secure=True, httponly=True, samesite="lax")
         return response
 
+    if live is not None:
+
+        @app.post(STEP_UP[1])
+        async def step_up(request: Request) -> Response:
+            """Reauthenticate the signed-in owner; the callback then grants one short-lived, one-shot elevation."""
+            browser, url = control.owner.begin_step_up(request.state.owner_session, _cookie(request, FLOW_COOKIE))
+            control.catalog.audit("step_up_started")
+            response = RedirectResponse(url, status_code=303)
+            response.set_cookie(FLOW_COOKIE, browser, max_age=FLOW_TTL, secure=True, httponly=True, samesite="lax")
+            return response
+
     @app.get(CALLBACK[1])
     async def callback(request: Request) -> Response:
         if len(request.scope["query_string"]) > 2048 or len(request.query_params.multi_items()) != 2:
             raise RefreshRejected(401, "login_rejected")
-        await control.owner.complete(
+        pending = control.owner.flows.get(_cookie(request, FLOW_COOKIE))
+        if pending is not None and pending.purpose == "step-up":
+            await control.owner.complete_step_up(
+                _cookie(request, FLOW_COOKIE),
+                request.query_params.get("state", ""),
+                request.query_params.get("code", ""),
+                request.state.owner_session,
+            )
+            control.catalog.audit("step_up_succeeded")
+            granted = JSONResponse({"step_up": "granted", "expires_in": control.owner.identity.step_up_ttl_s})
+            granted.delete_cookie(FLOW_COOKIE, secure=True, httponly=True, samesite="lax")
+            return granted
+        channel = await control.owner.complete(
             _cookie(request, FLOW_COOKIE),
             request.query_params.get("state", ""),
             request.query_params.get("code", ""),
         )
+        if channel == "browser-shell" and browser_assets is None:
+            raise RefreshRejected(401, "login_rejected")
         previous = request.state.owner_session
         token, session = control.owner.create_session(previous)
         if control.work is not None and control.work.session == previous:
             await cancel(control.work, "authorization_revoked")
+        if control.owner.session(token) is None:
+            raise RefreshRejected(401, "login_rejected")
         control.catalog.audit("login_succeeded")
-        response = JSONResponse({"csrf_token": session.csrf})
+        response = (
+            RedirectResponse("/beta/app/", status_code=303)
+            if channel == "browser-shell"
+            else JSONResponse({"csrf_token": session.csrf})
+        )
         response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_ABSOLUTE, secure=True, httponly=True, samesite="lax")
         response.delete_cookie(FLOW_COOKIE, secure=True, httponly=True, samesite="lax")
         return response
+
+    if browser_assets is not None:
+
+        @app.post(BROWSER_LOGIN)
+        async def browser_login(request: Request) -> Response:
+            return begin_login(request, "browser-shell")
+
+        @app.get(SESSION_ROUTE)
+        async def browser_session(request: Request) -> JSONResponse:
+            session = control.owner.session(request.state.owner_session)
+            if session is None:
+                raise RefreshRejected(401, "owner_required")
+            return JSONResponse(session_view(session, control.catalog.clock()))
+
+        @app.get(PATIENTS_ROUTE)
+        async def browser_patients(request: Request) -> JSONResponse:
+            if control.owner.session(request.state.owner_session) is None:
+                raise RefreshRejected(401, "owner_required")
+            return JSONResponse(patient_view(control.catalog))
+
+    def touch(request: Request) -> None:
+        if control.owner.session(request.state.owner_session, touch=True) is None:
+            raise RefreshRejected(401, "owner_required")
 
     @app.post("/beta/auth/logout")
     async def logout(request: Request) -> Response:
@@ -253,20 +437,104 @@ def create_mock_beta_app(
             raise RefreshRejected(404, "patient_unavailable")
         return patient
 
+    def resolve(request: Request, alias: str) -> tuple[str, bool]:
+        """Patient id and whether it is a LIVE alias. Only refresh, status, revoke and erase use this."""
+        if control.owner.session(request.state.owner_session) is None:
+            raise RefreshRejected(401, "owner_required")
+        if control.staging is not None:
+            control.staging.purge()  # retention and revocation are applied on every LIVE-capable request
+        if control.live_generations is not None:
+            control.live_generations.purge()
+        patient = MOCK_PATIENTS.get(alias)
+        is_live = False
+        if patient is None and live is not None:
+            patient = live.allowlist.get(alias)
+            is_live = patient is not None
+        if patient is None or control.catalog.revoked(alias):
+            raise RefreshRejected(404, "patient_unavailable")
+        return patient, is_live
+
     @app.get(PATIENT_ROUTE + "/status")
     async def status(request: Request, alias: str) -> JSONResponse:
-        patient_id(request, alias)
+        _, is_live = resolve(request, alias)
+        if is_live:
+            assert control.staging is not None and control.live_generations is not None
+            return JSONResponse(
+                {
+                    **control.catalog.status(alias, live=True),
+                    "candidate": control.staging.view(alias),
+                    "generation": control.live_generations.view(alias),
+                }
+            )
         return JSONResponse(
             control.generations.status(alias) if control.generations is not None else control.catalog.status(alias)
         )
 
     @app.post(PATIENT_ROUTE + "/revoke")
     async def revoke_patient(request: Request, alias: str) -> Response:
-        patient_id(request, alias)
+        _, is_live = resolve(request, alias)
         control.catalog.revoke(alias)
         if control.work is not None and control.work.alias == alias:
             await cancel(control.work, "authorization_revoked")
+        if is_live and control.staging is not None:
+            # After the cancel, so an in-flight LIVE attempt cannot stage a candidate behind the erase.
+            control.staging.erase_alias(alias, "revoked")
+            if control.live_generations is not None:
+                control.live_generations.erase_alias(alias, "revoked")
         return Response(status_code=204)
+
+    @app.post(PATIENT_ROUTE + "/candidate/erase")
+    async def erase_candidate(request: Request, alias: str) -> Response:
+        """Owner-requested erasure of a LIVE alias's staged candidate; also stops an in-flight LIVE attempt."""
+        _, is_live = resolve(request, alias)
+        if not is_live or control.staging is None:
+            raise RefreshRejected(404, "patient_unavailable")
+        if control.work is not None and control.work.alias == alias:
+            await cancel(control.work, "owner_erase")
+        control.staging.erase_alias(alias, "owner_requested")
+        return Response(status_code=204)
+
+    @app.post(PATIENT_ROUTE + "/generation/erase")
+    async def erase_generation(request: Request, alias: str) -> Response:
+        """Owner-requested erasure of a LIVE alias's approved generation."""
+        _, is_live = resolve(request, alias)
+        if not is_live or control.live_generations is None:
+            raise RefreshRejected(404, "patient_unavailable")
+        control.live_generations.erase_alias(alias, "owner_requested")
+        return Response(status_code=204)
+
+    @app.post(PATIENT_ROUTE + "/candidate/{attempt}/approve")
+    async def approve_candidate(request: Request, alias: str, attempt: str) -> JSONResponse:
+        """Data-governance approval of one staged candidate, bound to its attempt id and manifest hash.
+
+        Not a clinical review. The recent-login check is a local/offline safeguard, not reauthentication; real
+        LIVE data cannot be promoted until genuine owner authentication exists (``real_promotion`` is False).
+        """
+        _, is_live = resolve(request, alias)
+        if not is_live or control.live_generations is None:
+            raise RefreshRejected(404, "patient_unavailable")
+        if (
+            control.work is not None
+            and control.work.alias == alias
+            and not (control.work.task is None or control.work.task.done())
+        ):
+            raise RefreshRejected(409, "refresh_busy")
+        token = request.state.owner_session
+
+        def authorized() -> bool:
+            return control.owner.session(token) is not None and not control.catalog.revoked(alias)
+
+        csrf = _single_header(request, "x-csrf-token")
+
+        def fresh() -> bool:
+            # One-shot step-up elevation bound to this session and CSRF token; consumed here, used or not.
+            return control.owner.consume_elevation(token, csrf)
+
+        result = control.live_generations.approve(
+            alias, attempt, _single_header(request, "x-beta-candidate-hash"), authorized, fresh
+        )
+        touch(request)
+        return JSONResponse(result, status_code=201)
 
     async def acquire(item: Work, patient: str, deadline: float) -> None:
         def authorized() -> bool:
@@ -299,13 +567,61 @@ def create_mock_beta_app(
         else:
             control.catalog.finish(item.attempt, "succeeded", operations=attempt.operations)
 
+    async def acquire_live(item: Work) -> None:
+        """Staging only: run the LIVE adapter, record content-free counts and codes, stage the candidate privately.
+
+        The validated candidate is written to private staging (24-hour maximum, erased on revocation or owner
+        request) and nothing else: no generation, no publication, so nothing can be served, selected or cited.
+        """
+        assert live is not None and control.staging is not None
+        staging = control.staging
+
+        def authorized() -> bool:
+            return control.owner.session(item.session) is not None and not control.catalog.revoked(item.alias)
+
+        adapter: LiveAcquisition | None = None
+
+        def operations() -> dict[str, dict[str, object]] | None:
+            return adapter.report() if adapter is not None else None
+
+        try:
+            control.catalog.start(item.attempt)
+            adapter = LiveAcquisition(
+                control.catalog,
+                item.attempt,
+                item.alias,
+                live.key,
+                live.config,
+                allowlist=live.allowlist,
+                enabled=True,
+                authorized=authorized,
+                limits=limits,
+                transport=live.transport,
+            )
+            await adapter.run()
+            if adapter.candidate is None:
+                raise AcquisitionError("internal_error")
+            manifest, bundle = adapter.candidate
+            # No await from here to the end of staging: a revocation cannot interleave with the write.
+            staging.stage(item.attempt, item.alias, encoded(manifest), bundle, authorized)
+            adapter.candidate = None
+        except asyncio.CancelledError:
+            control.catalog.finish(item.attempt, "interrupted", item.cancel_code, operations())
+        except (AcquisitionError, RefreshRejected) as exc:
+            state = "interrupted" if exc.code == "authorization_revoked" else "failed"
+            control.catalog.finish(item.attempt, state, exc.code, operations())
+        except Exception:
+            control.catalog.finish(item.attempt, "failed", "internal_error", operations())
+        else:
+            control.catalog.finish(item.attempt, "succeeded", operations=operations())
+
     @app.post(PATIENT_ROUTE + "/refresh")
     async def refresh(request: Request, alias: str) -> JSONResponse:
-        patient = patient_id(request, alias)
+        patient, is_live = resolve(request, alias)
         key = _single_header(request, "idempotency-key")
         if not IDEMPOTENCY_KEY.fullmatch(key):
             raise RefreshRejected(400, "idempotency_key_required")
-        if control.generations is not None and control.catalog.existing_attempt(alias, key) is None:
+        if not is_live and control.generations is not None and control.catalog.existing_attempt(alias, key) is None:
             control.generations.quota()
         deadline = time.monotonic() + limits.deadline_s
         attempt, created = control.catalog.admit(
@@ -315,10 +631,14 @@ def create_mock_beta_app(
             patient_limit=limits.patient_per_hour,
             global_limit=limits.global_per_hour,
             request_limit=limits.global_requests_per_hour,
+            policy=beta_catalog.LIVE_POLICY_VERSION if is_live else beta_catalog.POLICY_VERSION,
         )
         if created:
+            touch(request)
             control.work = Work(attempt, alias, request.state.owner_session)
-            control.work.task = asyncio.create_task(acquire(control.work, patient, deadline))
+            control.work.task = asyncio.create_task(
+                acquire_live(control.work) if is_live else acquire(control.work, patient, deadline)
+            )
         return JSONResponse({"attempt_id": attempt}, status_code=202)
 
     def generation_store(request: Request, alias: str) -> Generations:
@@ -332,7 +652,9 @@ def create_mock_beta_app(
     @app.post(generation_route + "/select")
     async def select_generation(request: Request, alias: str, gid: str) -> JSONResponse:
         store = generation_store(request, alias)
-        return JSONResponse(store.select(alias, gid, _single_header(request, "x-beta-cache-ack") == "1", explicit=True))
+        result = store.select(alias, gid, _single_header(request, "x-beta-cache-ack") == "1", explicit=True)
+        touch(request)
+        return JSONResponse(result)
 
     @app.post(generation_route + "/rollback")
     async def rollback(request: Request, alias: str, gid: str) -> JSONResponse:
@@ -346,6 +668,8 @@ def create_mock_beta_app(
             lambda: control.owner.session(request.state.owner_session) is not None
             and not control.catalog.revoked(alias),
         )
+        patient_id(request, alias)
+        touch(request)
         return JSONResponse(result)
 
     @app.post(generation_route + "/runs")
@@ -382,6 +706,7 @@ def create_mock_beta_app(
             raise RefreshRejected(403, "patient_scope")
         patient_id(request, alias)
         runtime, manifest, identifier = store.pin_run(alias, gid, _single_header(request, "x-beta-cache-ack") == "1")
+        touch(request)
         try:
             result = await asyncio.to_thread(store.execute, runtime, manifest, identifier, question)
         except Exception:
@@ -399,14 +724,21 @@ def create_mock_beta_app(
 
     @app.post(generation_route + "/runs/{identifier}/review")
     async def submit_review(request: Request, alias: str, gid: str, identifier: str) -> JSONResponse:
-        return JSONResponse(
-            generation_store(request, alias).submit_review(
-                alias,
-                gid,
-                identifier,
-                _single_header(request, "x-beta-cache-ack") == "1",
-            )
+        store = generation_store(request, alias)
+        acknowledgement = _single_header(request, "x-beta-cache-ack") == "1"
+        # Preserve the original clinical-use boundary before inspecting a persisted run.
+        store.select(alias, gid, acknowledgement)
+        runtime, _ = store.pinned(alias, gid, identifier, "run")
+        existing = runtime.db.one("SELECT review_id FROM review WHERE artifact_id = ? LIMIT 1", (identifier,))
+        result = store.submit_review(
+            alias,
+            gid,
+            identifier,
+            acknowledgement,
         )
+        if existing is None:
+            touch(request)
+        return JSONResponse(result)
 
     @app.get(generation_route + "/reviews/{identifier}")
     async def get_review(request: Request, alias: str, gid: str, identifier: str) -> JSONResponse:
