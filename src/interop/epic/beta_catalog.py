@@ -1,4 +1,4 @@
-"""Durable, content-free control catalog for the single MOCK refresh worker."""
+"""Durable, content-free acquisition control catalog; browser refresh remains MOCK-only."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ import secrets
 import sqlite3
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any, Callable
 
 MOCK_PATIENTS = MappingProxyType({"mock-alpha": "invented-patient-alpha", "mock-bravo": "invented-patient-bravo"})
-LIVE_PATIENTS: Mapping[str, str] = MappingProxyType({})
 POLICY_VERSION = "mock-initial-r4-v1"
+LIVE_POLICY_VERSION = "live-initial-r4-v1"
 HOUR = 3600
 
 
@@ -115,8 +115,18 @@ class Catalog:
         return None
 
     def admit(
-        self, alias: str, key: str, *, cooldown_s: int, patient_limit: int, global_limit: int, request_limit: int
+        self,
+        alias: str,
+        key: str,
+        *,
+        cooldown_s: int,
+        patient_limit: int,
+        global_limit: int,
+        request_limit: int,
+        policy: str = POLICY_VERSION,
     ) -> tuple[str, bool]:
+        if policy not in {POLICY_VERSION, LIVE_POLICY_VERSION}:
+            raise RefreshRejected(400, "policy_scope")
         existing = self.existing_attempt(alias, key)
         if existing is not None:
             return existing, False
@@ -141,7 +151,7 @@ class Catalog:
             self.db.execute(
                 "INSERT INTO attempt (attempt_id, key_digest, alias, state, policy, admitted_at) "
                 "VALUES (?, ?, ?, 'queued', ?, ?)",
-                (attempt, key_digest, alias, POLICY_VERSION, now),
+                (attempt, key_digest, alias, policy, now),
             )
             self.db.execute(
                 "INSERT INTO attempt_fence SELECT ?, epoch, revision FROM patient_head WHERE alias = ?",
@@ -179,7 +189,7 @@ class Catalog:
             if result.rowcount:
                 self._audit(code or state, attempt)
 
-    def status(self, alias: str) -> dict[str, Any]:
+    def status(self, alias: str, *, live: bool = False) -> dict[str, Any]:
         row = self.db.execute(
             "SELECT attempt_id, state, policy, admitted_at, started_at, finished_at, error_code, operations, "
             "(SELECT COUNT(*) FROM dispatch WHERE dispatch.attempt_id = attempt.attempt_id) AS requests "
@@ -191,4 +201,13 @@ class Catalog:
             attempt["operations"] = json.loads(attempt["operations"]) if attempt["operations"] else {}
             attempt["note_bodies"] = "not_imported"
             attempt["note_body_reason"] = "outside_initial_policy"
+        if live:
+            # LIVE staging only: no generation exists, so nothing is ever served and publication stays denied.
+            return {
+                "mode": "LIVE",
+                "source": "epic-fhir-sandbox-r4",
+                "serving": "unavailable",
+                "publication": "disabled",
+                "attempt": attempt,
+            }
         return {"mode": "MOCK", "source": "epic-sandbox-mock", "serving": "unavailable", "attempt": attempt}

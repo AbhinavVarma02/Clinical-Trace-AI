@@ -1,4 +1,4 @@
-"""Strict, bounded acquisition of the initial Epic R4 profile via in-process MOCK only."""
+"""Strict, bounded initial Epic R4 acquisition; MOCK by default, with backend transport hooks."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from src.interop.epic.auth import (
     build_client_assertion,
     parse_access_token,
 )
-from src.interop.epic.beta_catalog import Catalog, RefreshRejected
+from src.interop.epic.beta_catalog import POLICY_VERSION, Catalog, RefreshRejected
 from src.interop.epic.client import (
     EpicFHIRError,
     EpicSandboxClient,
@@ -74,9 +74,9 @@ class Limits:
         for name, field in self.__dataclass_fields__.items():
             value = getattr(self, name)
             if not math.isfinite(value) or value > field.default or value < 0:
-                raise ValueError("MOCK budget overrides may only tighten defaults")
+                raise ValueError("acquisition budget overrides may only tighten defaults")
             if name not in {"cooldown_s", "retry_delay_s"} and value == 0:
-                raise ValueError("MOCK budget must be positive")
+                raise ValueError("acquisition budget must be positive")
 
 
 class AcquisitionError(Exception):
@@ -85,7 +85,7 @@ class AcquisitionError(Exception):
         super().__init__(code)
 
 
-def require_mock(transport: httpx.MockTransport) -> None:
+def require_mock(transport: object) -> None:
     if type(transport) is not httpx.MockTransport:
         raise TypeError("an in-process httpx.MockTransport is required")
 
@@ -109,15 +109,16 @@ def object_json(content: bytes) -> dict[str, Any]:
     return body
 
 
-async def mock_response(
-    transport: httpx.MockTransport,
+async def bounded_response(
+    transport: httpx.AsyncBaseTransport,
     request: httpx.Request,
     *,
     seconds: float,
     limit: int,
     consume: Callable[[int], None] | None = None,
 ) -> tuple[int, httpx.Headers, bytes]:
-    """One bounded call without httpx client URL logging, proxies, redirects or DNS."""
+    """One streamed call without client URL logging or automatic redirects/retries."""
+    end = time.monotonic() + seconds
     try:
         async with asyncio.timeout(seconds):
             response = await transport.handle_async_request(request)
@@ -136,11 +137,27 @@ async def mock_response(
                     body.extend(chunk)
                 return status, response.headers, bytes(body)
             finally:
-                await response.aclose()
+                # A slow close must not extend the request's wall-clock budget,
+                # including when the body read has already timed out/cancelled.
+                async with asyncio.timeout(max(0, end - time.monotonic())):
+                    await response.aclose()
     except (TimeoutError, httpx.TimeoutException):
         raise AcquisitionError("timeout") from None
     except httpx.HTTPError:
         raise AcquisitionError("network") from None
+
+
+async def mock_response(
+    transport: httpx.MockTransport,
+    request: httpx.Request,
+    *,
+    seconds: float,
+    limit: int,
+    consume: Callable[[int], None] | None = None,
+) -> tuple[int, httpx.Headers, bytes]:
+    """Preserve the existing MOCK-only entry point and its in-process guarantee."""
+    require_mock(transport)
+    return await bounded_response(transport, request, seconds=seconds, limit=limit, consume=consume)
 
 
 def continuation(url: str, initial: str) -> str:
@@ -171,19 +188,26 @@ def _matches_category(resource: dict[str, Any], category: str, system: str) -> b
 
 
 class Acquisition:
+    mode = "MOCK"
+    source = "epic-sandbox-mock"
+    policy = POLICY_VERSION
+    manifest_version = "mock-generation/1"
+
     def __init__(
         self,
         catalog: Catalog,
         attempt: str,
         patient: str,
         key: rsa.RSAPrivateKey,
-        transport: httpx.MockTransport,
+        transport: httpx.AsyncBaseTransport | None,
         limits: Limits,
         deadline: float,
         authorized: Callable[[], bool],
         *,
         retain: bool = False,
     ) -> None:
+        if type(self) is Acquisition:
+            require_mock(transport)
         self.catalog, self.attempt, self.patient, self.key = catalog, attempt, patient, key
         self.transport, self.limits, self.deadline, self.authorized = transport, limits, deadline, authorized
         self.bytes = 0
@@ -302,7 +326,7 @@ class Acquisition:
                 return
             if len(targets) != 1 or not isinstance(targets[0], str):
                 raise AcquisitionError("pagination_scope")
-            url = continuation(targets[0], initial)
+            url = self.continuation(targets[0], initial)
 
     def accept(self, entry: Any, kind: str, category: str | None, name: str) -> str:
         if not isinstance(entry, dict) or not isinstance(entry.get("resource"), dict):
@@ -385,26 +409,43 @@ class Acquisition:
             raise AcquisitionError("malformed_token") from None
         if token is None or not math.isfinite(token.expires_at) or not BEARER_VALUE.fullmatch(token.value):
             raise AcquisitionError("malformed_token")
-        if not set(token.scopes) <= MOCK_SCOPES:
-            raise AcquisitionError("unapproved_grant")
+        self.check_grant(token)
         self.token = token
         return token
 
-    async def request(self, method: str, url: str) -> tuple[int, httpx.Headers, bytes]:
+    def check_grant(self, token: AccessToken) -> None:
+        if not set(token.scopes) <= MOCK_SCOPES:
+            raise AcquisitionError("unapproved_grant")
+
+    def continuation(self, url: str, initial: str) -> str:
+        return continuation(url, initial)
+
+    def check_request(self, method: str, url: str) -> None:
         if method == "GET":
             initial, separator, _ = url.partition("&_cursor=")
             if url != self.patient_url and initial not in self.search_urls.values():
                 raise AcquisitionError("operation_scope")
             if separator:
-                continuation(url, initial)
+                self.continuation(url, initial)
         elif (method, url) != ("POST", settings.TOKEN_URL):
             raise AcquisitionError("operation_scope")
+
+    def client_assertion(self) -> str:
+        return build_client_assertion(self.key, MOCK_CLIENT, now=self.catalog.clock())
+
+    async def response(self, request: httpx.Request, *, seconds: float, limit: int) -> tuple[int, httpx.Headers, bytes]:
+        require_mock(self.transport)
+        assert isinstance(self.transport, httpx.MockTransport)
+        return await mock_response(self.transport, request, seconds=seconds, limit=limit, consume=self.consume)
+
+    async def request(self, method: str, url: str) -> tuple[int, httpx.Headers, bytes]:
+        self.check_request(method, url)
         headers = {"Accept-Encoding": "identity", "User-Agent": settings.USER_AGENT}
         retry_available = True
         while True:
             self.checkpoint()
             if method == "POST":
-                assertion = build_client_assertion(self.key, MOCK_CLIENT, now=self.catalog.clock())
+                assertion = self.client_assertion()
                 request = httpx.Request(
                     "POST",
                     settings.TOKEN_URL,
@@ -422,12 +463,10 @@ class Acquisition:
             self.catalog.charge(self.attempt, self.limits.requests_per_attempt, self.limits.global_requests_per_hour)
             remaining = self.checkpoint()
             try:
-                result = await mock_response(
-                    self.transport,
+                result = await self.response(
                     request,
                     seconds=min(remaining, self.limits.per_request_s),
                     limit=MAX_TOKEN_RESPONSE_BYTES if method == "POST" else self.limits.response_bytes,
-                    consume=self.consume,
                 )
             except AcquisitionError as exc:
                 self.checkpoint()

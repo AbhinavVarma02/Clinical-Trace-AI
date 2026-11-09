@@ -10,7 +10,6 @@ from typing import Any
 
 from src.clinical.fhir_models import parse_timestamp, validate_resource
 from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError
-from src.interop.epic.beta_catalog import POLICY_VERSION
 from src.interop.epic.mapping import EpicMapper, MAPPING_VERSION, MappingReport, content_sha256
 from src.interop.epic.workspace import count_dangling_references
 from src.safety.guards import flag_content
@@ -171,13 +170,13 @@ def normalize(acquisition: Acquisition, alias: str, gid: str) -> tuple[dict[str,
         "SELECT started_at FROM attempt WHERE attempt_id = ?", (acquisition.attempt,)
     ).fetchone()[0]
     manifest = {
-        "manifest_version": MANIFEST_VERSION,
+        "manifest_version": acquisition.manifest_version,
         "generation_id": gid,
         "alias": alias,
-        "source": SOURCE,
-        "mode": "MOCK",
+        "source": acquisition.source,
+        "mode": acquisition.mode,
         "attempt_id": acquisition.attempt,
-        "policy": POLICY_VERSION,
+        "policy": acquisition.policy,
         "mapping_version": MAPPING_VERSION,
         "patient_id": mapper.patient_id,
         "acquisition_started_at": started,

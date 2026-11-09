@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from src.errors import NotFoundError
 from src.governance.review import artifact_content_from_run, artifact_hash
 from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError, object_json
-from src.interop.epic.beta_catalog import MOCK_PATIENTS, Catalog, RefreshRejected
+from src.interop.epic.beta_catalog import MOCK_PATIENTS, POLICY_VERSION, Catalog, RefreshRejected
 from src.interop.epic.beta_staging import MANIFEST_VERSION, SOURCE, encoded, normalize
 from src.interop.epic.mapping import MAPPING_VERSION, content_sha256, internal_id
 from src.persistence.db import dumps
@@ -243,6 +243,9 @@ class Generations:
         return row["epoch"], row["revision"]
 
     async def publish(self, acquisition: Acquisition, alias: str) -> str:
+        # This store and its browser readers remain exclusively MOCK in Increment 1.
+        if type(acquisition) is not Acquisition or acquisition.mode != "MOCK" or acquisition.policy != POLICY_VERSION:
+            raise AcquisitionError("live_publication_disabled")
         epoch, revision = self._fence(acquisition, alias)
         self.quota()
         gid = uuid.uuid4().hex
