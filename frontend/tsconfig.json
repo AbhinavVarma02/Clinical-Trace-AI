@@ -27,7 +27,9 @@
   "include": [
     "src",
     "workspace",
+    "beta",
     "vite.config.ts",
-    "vite.workspace.config.ts"
+    "vite.workspace.config.ts",
+    "vite.beta.config.ts"
   ]
 }
