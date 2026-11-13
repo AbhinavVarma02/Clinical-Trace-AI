@@ -76,6 +76,7 @@ export function Shell({ children }: { children: ReactNode }) {
               </button>
             );
           })}
+          <a className="btn sm" href="https://owner.clinical-trace.localhost:8443/beta/app/" rel="noreferrer">Beta</a>
         </nav>
         <div className="sidebar-footer">
           <Icons.alert size={14} />

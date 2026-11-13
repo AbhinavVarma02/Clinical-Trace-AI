@@ -282,6 +282,7 @@ describe("App shell", () => {
     expect(await screen.findByText("Evaluation gate passed")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Understand patient records. See the evidence." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try a guided case" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "https://owner.clinical-trace.localhost:8443/beta/app/");
     expect(screen.getAllByText("Deterministic mode").length).toBeGreaterThan(0);
     // Safety statement stays visible on the first screen; the long measurements stay behind a disclosure.
     expect(screen.getByText(/Not clinically validated\. Not for medical use\./, { selector: "span" })).toBeInTheDocument();
