@@ -1,8 +1,52 @@
 # Epic on FHIR sandbox adapter (read-only, isolated)
 
-This adapter connects Clinical-Trace AI to the **Epic on FHIR public R4 sandbox**, which contains only Epic-provided test patients. It is read-only and currently runs from a local command line. It is not production Epic connectivity, not an Epic certification, and not a clinical validation. The synthetic demonstration, the public deployment and the user interface do not use it. M2.3 adds a mandatory owner-only live-refresh target; that backend/UI integration is not implemented or deployed (see [M2.3](#m23-mandatory-controlled-real-time-retrieval)).
+The M1 adapter connects Clinical-Trace AI to the **Epic on FHIR public R4 sandbox** using Epic-provided synthetic patients. Historical real authentication and retrieval/import succeeded November 6, 2026. M1/M2 OAuth, FHIR mapping/validation, provenance and deterministic evidence foundations are implemented; M2.3 synthetic MOCK refresh/generation/pinning/rollback/backend functionality is accepted. The public deployment does not use the sandbox adapter. On November 13, 2026 the real Epic-to-browser workflow was accepted **locally for one synthetic patient**: an owner-attended acquisition, review, promotion and read-only serving to the local Beta, protected by genuine Windows Hello. It is not hosted or deployed. This is not production Epic connectivity, Epic certification or clinical validation.
 
 Design decision: [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md).
+
+**Current checkpoint — November 13, 2026: local single-patient milestone accepted.**
+
+**What ran.** The owner separately approved each of these steps, and each ran exactly once on a loopback-only HTTPS origin:
+1. One bounded real sandbox acquisition for Epic's official synthetic test patient (Warren McGinnis), through the [LIVE Increment 1](EPIC_LIVE_INCREMENT_1.md) adapter.
+2. A review of the actual candidate.
+3. Promotion to an evidence-only LIVE generation.
+4. Read-only serving to the local Beta.
+
+The owner authenticated with a genuine Windows Hello platform credential. Every protected read needed a fresh proof and no session was created.
+
+**What the Beta showed.** The existing eight-page Beta interface showed:
+- the verified identity;
+- the supported resources;
+- source provenance, including both generation hashes;
+- per-operation coverage;
+- the limitation banners.
+
+Clinical AI, publication and the other workflows stayed disabled.
+
+**What Epic returned.** The token and all eight searches answered HTTP 200 (9 requests). They returned:
+- Patient 1;
+- Encounter 1;
+- Condition 2 (problem list);
+- DiagnosticReport 2;
+- Observation 74 (1 laboratory, 73 vital signs);
+- 33 clinical-note DocumentReference metadata entries.
+
+The encounter-diagnosis search returned none, with Epic informational code 4101.
+
+**Limitations kept.**
+- Completeness is **unconfirmed**. HTTP 200 is not proof of a complete record.
+- Note bodies, MedicationRequest and Binary were not retrieved.
+- One DiagnosticReport result reference is unresolved, as in the November 6 import. It is counted, not repaired.
+- `meta.lastUpdated` was absent for 74 resources and is filled from the retrieval time as record metadata only, never as a clinical time.
+- DocumentReference counts vary between sandbox retrievals.
+
+**Boundaries.**
+- Each further acquisition, promotion or serving run needs new owner approval.
+- There is no hosted owner sign-in, hosting or publication.
+- Stable is unchanged apart from the Beta navigation link.
+- Historical M1 setup and CLI commands below do not authorize new calls, credential access or registration changes.
+
+[Current project state](PROJECT_STATUS.md).
 
 ## Status
 
@@ -15,6 +59,9 @@ Design decision: [ADR 0008](ADR/0008-epic-sandbox-source-adapter.md).
 | G3 import (LIVE) | One test patient mapped, validated, stored and verified in an isolated snapshot | **Passed** 2026-11-06 |
 | G3b re-import (LIVE) | The same test patient re-imported under note selection policy `epic-note-select/1` | **Passed** 2026-11-06 |
 | Offline agent review | The deterministic agent on the imported patient: verified claims, citations traced to Epic, no retrieval-time dates, isolation, human review | **Passed** 2026-11-06 (G3b snapshot) |
+| M2.3 synthetic MOCK backend | Owner refresh, coverage, generations/pinning/cache/rollback/workflow | **Accepted** within MOCK scope at `dedafd0` |
+| Local genuine owner Beta (M2.4) | Windows Hello owner proofs; LIVE acquisition, review, promotion and read-only serving; eight-page browser rendering | **Accepted locally** 2026-11-13 for one synthetic patient |
+| Epic LIVE Increment 1 | Default-disabled backend adapter (eight initial profiles) | **Real bounded sandbox acquisition verified** 2026-11-13 (9 requests, 80 resources, 33 note metadata entries) |
 
 **Mock vs live.** A passing MOCK test is never reported as Epic access. LIVE results are recorded in [Evidence (LIVE)](#evidence-live) only after the corresponding approved run, as sanitised counts, statuses and scopes.
 
@@ -33,7 +80,7 @@ Developer terminal ── python -m src.interop.epic.cli ...
 **What the adapter never does:**
 - The agent never calls Epic. Import is a separate, earlier step.
 - Requests never leave the sandbox host. The FHIR base and token endpoint are code constants, redirects are refused, and proxy variables are ignored.
-- Nothing in `api/`, `frontend/`, `deploy/` or the default runtime database (`var/clinical_trace.db`) is used or changed.
+- The original M1 CLI does not use the Beta browser APIs or modify Stable deployment/default runtime storage. Later MOCK backend work and the disabled LIVE adapter have separate, explicit boundaries.
 - Snapshots are never shown in the user interface. The API serves a snapshot only on a local server whose `CLINICAL_TRACE_DATA_SOURCES` names it (M2-S1, off by default, not deployed; see [Future work](#future-work-each-needs-separate-approval)).
 
 ## One-time setup on the existing Epic app
@@ -338,6 +385,18 @@ Each run below was approved separately by the owner and run from the owner's ter
 - **Isolation:** the snapshot holds one patient, and a run for another patient is refused.
 - **Human review:** a submitted run is pending review. Self-approval is refused, a stale artifact hash is refused, and a rejection without a comment is refused. A reviewer's approval with the current hash is valid.
 - **Check citations:** a documentation-gap claim cites its check, and the check points at the resource it ran on. These G3b figures predate M2.2-b: they included "No medication orders are recorded", whose check points at the Patient. It was counted as resolved to Epic, but it is not evidence that orders are absent. Since M2.2-b that claim is no longer made for snapshots that did not import orders (see A1 below).
+
+**Local Beta acquisition, promotion and serving (2026-11-13).**
+- **Approvals:** the owner approved the acquisition, the promotion and the read-only serving separately. Each step ran once, attended, on a loopback-only HTTPS origin. Every protected action needed a fresh Windows Hello proof.
+- **Acquisition:** one attempt, 9 requests. The token and all eight initial-profile searches answered HTTP 200. Informational code 4101 came only on the empty encounter-diagnosis search, and no 59100 code appeared.
+- **Candidate review (read-only):**
+  - 80 resources, each bound to the approved patient and carrying Epic source lineage and a content hash, with one retrieval instant;
+  - the retrieval time substituted only for record metadata;
+  - no narrative;
+  - 33 note metadata entries, without bodies or attachments;
+  - one unresolved DiagnosticReport result reference.
+- **Promotion and serving:** the promoted generation's manifest and bundle hashes matched the reviewed candidate, and the staged copy was erased after commit. The local Beta then rendered the record and its provenance after verified reads. Forged or out-of-phase requests were refused, and each view cleared after 30 seconds.
+- **Where the records are kept:** identifiers, hashes and receipts stay in the owner's private local records, not in Git.
 
 ## Limitations and pending decisions
 

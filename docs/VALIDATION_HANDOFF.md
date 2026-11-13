@@ -1,3 +1,21 @@
+# Current handoff pointer - 2026-11-13 America/New_York
+
+This document keeps the historical Stable deployment/validation handoff below. Continue on `feature/beta` (local HEAD `790e9dd`, 5 commits ahead of the stored remote, unpushed). Use:
+- [PROJECT_STATUS.md](PROJECT_STATUS.md);
+- the top resume point of the local `.project-state/HANDOFF.md`;
+- [the Increment 1 report](EPIC_LIVE_INCREMENT_1.md).
+
+**Milestone.** The local Epic Beta is accepted for one synthetic patient (2026-11-13). The owner separately approved the real sandbox acquisition, candidate review, promotion and read-only serving. The existing eight-page Beta rendered the verified record behind genuine Windows Hello. The full test suite runs in the standard environment with 0 collection errors.
+
+**Open items.**
+- The hosted Beta (owner sign-in, storage and secret custody, publication policy, hosting, CI including the optional `fido2` dependency, rollback) is open.
+- The remaining roadmap upgrades are open.
+- Each step needs separate owner approval.
+
+Older Stable commands below are historical reference, not current deployment or execution authority.
+
+---
+
 # Reviewer-ready deployment and validation handoff
 
 **Updated 2026-10-18.** Branch `feature/clinical-trace-2.0`; pin `git rev-parse HEAD` before validating.
