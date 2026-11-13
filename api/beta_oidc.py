@@ -20,6 +20,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from api.beta_oidc_keys import JwksKeys, ProviderMetadata
 from src.interop.epic.beta_acquisition import AcquisitionError, mock_response, object_json
 from src.interop.epic.beta_catalog import Catalog, RefreshRejected
 
@@ -125,11 +126,29 @@ class OwnerAuth:
     def __init__(
         self,
         catalog: Catalog,
-        key: rsa.RSAPublicKey,
+        key: rsa.RSAPublicKey | None,
         transport: httpx.MockTransport,
         identity: OwnerIdentity = INVENTED_IDENTITY,
+        *,
+        provider: ProviderMetadata | None = None,
+        keys: JwksKeys | None = None,
     ) -> None:
+        """Without ``provider`` the invented in-process identity is used: ``{issuer}/authorize``, ``{issuer}/token`` and
+        the one static ``key``. With ``provider`` and ``keys`` (both, and no static key) the endpoints come from the
+        pinned provider metadata and id_tokens are verified against the rotating JWKS by ``kid``."""
+        if (provider is None) != (keys is None):
+            raise ValueError("provider metadata and a key source go together")
+        if provider is None:
+            if key is None:
+                raise ValueError("a signing key is required")
+            self.authorize_url, self.token_url = f"{identity.issuer}/authorize", f"{identity.issuer}/token"
+        else:
+            assert keys is not None
+            if key is not None or provider.issuer != identity.issuer or keys.jwks_uri != provider.jwks_uri:
+                raise ValueError("provider metadata must match the owner identity and replace the static key")
+            self.authorize_url, self.token_url = provider.authorization_endpoint, provider.token_endpoint
         self.catalog, self.key, self.transport, self.identity = catalog, key, transport, identity
+        self.keys = keys
         self.pending_auth = AuthClaims()  # set by a successful ordinary login, taken by create_session
         self.clock: Callable[[], float] = catalog.clock
         self.sessions: dict[str, Session] = {}
@@ -168,7 +187,7 @@ class OwnerAuth:
         }
         if purpose == "step-up":
             parameters |= {"prompt": "login", "max_age": "0"}
-        return browser, f"{self.identity.issuer}/authorize?{urlencode(parameters)}"
+        return browser, f"{self.authorize_url}?{urlencode(parameters)}"
 
     async def complete(self, browser: str, state: str, code: str) -> str:
         self.pending_auth = AuthClaims()
@@ -244,7 +263,7 @@ class OwnerAuth:
     async def _exchange(self, flow: Flow, code: str, *, rejection: str = "login_rejected") -> AuthClaims:
         request = httpx.Request(
             "POST",
-            f"{self.identity.issuer}/token",
+            self.token_url,
             headers={"Accept-Encoding": "identity", "Accept": "application/json"},
             data={
                 "grant_type": "authorization_code",
@@ -259,21 +278,39 @@ class OwnerAuth:
             if status != 200:
                 raise ValueError
             body = object_json(raw)
-            auth = self._verify(body.get("id_token"), flow.nonce)
+            token = body.get("id_token")
+            auth = self._verify(token, flow.nonce, await self._signing_key(token))
             if self.catalog.revoked("owner") or flow.expires <= self.clock():
                 raise ValueError
         except (ValueError, InvalidSignature, AcquisitionError):
             raise RefreshRejected(401, rejection) from None
         return auth
 
-    def _verify(self, token: object, nonce: str) -> AuthClaims:
+    @staticmethod
+    def _header(token: object) -> dict[str, object]:
+        """The protected header of a compact JWS, only if it names RS256 and nothing that could redirect key lookup."""
         if not isinstance(token, str) or len(token) > 8192:
             raise ValueError
-        header, payload, signature = token.split(".")
+        header, _, _ = token.split(".")
         algorithm = object_json(_decode(header))
         if algorithm.get("alg") != "RS256" or set(algorithm) - {"alg", "typ", "kid"}:
             raise ValueError
-        self.key.verify(_decode(signature), f"{header}.{payload}".encode("ascii"), padding.PKCS1v15(), hashes.SHA256())
+        return algorithm
+
+    async def _signing_key(self, token: object) -> rsa.RSAPublicKey:
+        if self.keys is None:
+            assert self.key is not None
+            return self.key
+        kid = self._header(token).get("kid")  # algorithm and header shape are checked before any key lookup
+        if not isinstance(kid, str):
+            raise ValueError
+        return await self.keys.key_for(kid)
+
+    def _verify(self, token: object, nonce: str, key: rsa.RSAPublicKey) -> AuthClaims:
+        self._header(token)
+        assert isinstance(token, str)
+        header, payload, signature = token.split(".")
+        key.verify(_decode(signature), f"{header}.{payload}".encode("ascii"), padding.PKCS1v15(), hashes.SHA256())
         claims = object_json(_decode(payload))
         now = self.clock()
         issued, expires = claims.get("iat"), claims.get("exp")

@@ -580,9 +580,11 @@ def test_unreferenced_directory_never_served_and_revocation_fences_publish(gener
 
     h = generations
     ready = threading.Event()
+    candidates = []
 
     async def hold(point, gid):
         if point == "before_publish":
+            candidates.append(gid)
             ready.set()
             await asyncio.Event().wait()
 
@@ -593,8 +595,10 @@ def test_unreferenced_directory_never_served_and_revocation_fences_publish(gener
         assert ready.wait(5)
         assert h.post(client, ALPHA + "/revoke").status_code == 204
         assert client.get(ALPHA + "/status").status_code == 404
-        orphan = next((h.generation_root / "objects").iterdir()).name
-        assert h.select_generation(client, orphan, BRAVO, ack=True).status_code == 404
+        assert not any((h.generation_root / "objects").iterdir())
+        assert not any((h.generation_root / "staging").iterdir())
+        assert not any((h.generation_root / "state").iterdir())
+        assert h.select_generation(client, candidates[0], BRAVO, ack=True).status_code == 404
     h.hook = None
     with h.generation_client() as client:
         h.login(client)
@@ -624,6 +628,7 @@ def test_runtime_state_tampered_before_publication_is_never_active(generations):
         if phase == "before_publish":
             with sqlite3.connect(h.generation_root / "state" / gid / "clinical.sqlite") as db:
                 db.execute("UPDATE fhir_resource SET payload = '{}' WHERE resource_type = 'Observation'")
+            db.close()  # sqlite's transaction context does not close the handle; cleanup now erases this candidate.
 
     with h.generation_client() as client:
         original = h.refresh_generation(client)["active"]["generation_id"]
@@ -633,6 +638,8 @@ def test_runtime_state_tampered_before_publication_is_never_active(generations):
         assert failed["active"]["generation_id"] == original
         assert failed["attempt"]["state"] == "failed"
         assert failed["attempt"]["error_code"] == "generation_integrity"
+        assert {path.name for path in (h.generation_root / "objects").iterdir()} == {original}
+        assert {path.name for path in (h.generation_root / "state").iterdir()} == {original}
 
 
 def test_inflight_answer_stays_pinned_while_refresh_publishes(generations, monkeypatch):
@@ -674,9 +681,11 @@ def test_rollback_fences_competing_candidate_and_never_serves_orphan(generations
 
     h = generations
     ready, released = threading.Event(), threading.Event()
+    candidates = []
 
     async def pause(phase, gid):
         if phase == "before_publish":
+            candidates.append(gid)
             ready.set()
             while not released.is_set():
                 await asyncio.sleep(0.005)
@@ -697,8 +706,10 @@ def test_rollback_fences_competing_candidate_and_never_serves_orphan(generations
         status = h.wait(client).json()
         assert status["attempt"]["error_code"] == "publication_fenced"
         assert status["active"]["generation_id"] == first
-        orphan = next(path.name for path in (h.generation_root / "objects").iterdir() if path.name != first)
-        assert h.select_generation(client, orphan, ack=True).status_code == 404
+        assert {path.name for path in (h.generation_root / "objects").iterdir()} == {first}
+        assert {path.name for path in (h.generation_root / "state").iterdir()} == {first}
+        assert not any((h.generation_root / "staging").iterdir())
+        assert h.select_generation(client, candidates[0], ack=True).status_code == 404
 
 
 def test_disk_full_leaves_old_complete_generation(generations, monkeypatch):

@@ -80,9 +80,18 @@ class LiveGenerations:
         *,
         hook: Hook | None = None,
         real_promotion: bool = False,
+        initialize: bool = True,
     ) -> None:
         self.catalog, self.allowlist, self.staging, self.hook = catalog, allowlist, staging, hook
         self.real_promotion = real_promotion  # False until genuine owner authentication exists; never set in code
+        if not initialize:
+            for path in (root, root / "objects", root / "tmp"):
+                if not path.is_dir() or files._is_link(path.lstat()):
+                    raise ValueError("LIVE generation storage must be a plain directory")
+                files.verify_private_path(path)
+            self.root = root
+            self.catalog.db.execute("SELECT 1 FROM live_generation LIMIT 1").fetchone()
+            return
         self.root = files.private_root(root)
         for name in ("objects", "tmp"):
             path = self.root / name
@@ -112,10 +121,12 @@ class LiveGenerations:
 
     # -- verification and queries --------------------------------------------------------------------------
 
-    def _evidence(self, row: Any) -> dict[str, Any]:
-        """Manifest of an approved generation, re-verified against this tier and its stored hash."""
+    def _read_evidence(self, row: Any) -> tuple[dict[str, Any], bytes]:
+        """Return the manifest and the exact bundle bytes verified together against this tier and stored hash."""
         gid, alias = row["generation_id"], row["alias"]
         try:
+            if not GENERATION_ID.fullmatch(str(gid)):
+                raise ValueError
             directory = self.root / "objects" / gid
             for path in (self.root, self.root / "objects", directory):
                 if files._is_link(path.lstat()):
@@ -130,9 +141,65 @@ class LiveGenerations:
             check_tier(manifest, alias, self.allowlist.get(alias), bundle_bytes)
             if manifest.get("generation_id") != gid:
                 raise ValueError
-            return manifest
+            return manifest, bundle_bytes
         except (OSError, ValueError, TypeError, KeyError, AcquisitionError):
             raise RefreshRejected(409, "generation_integrity") from None
+
+    def _evidence(self, row: Any) -> dict[str, Any]:
+        return self._read_evidence(row)[0]
+
+    def project_active(
+        self,
+        alias: str,
+        authorized: Callable[[], bool],
+        project: Callable[[dict[str, Any], bytes, dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Internal, synchronous projection of one approved active generation; never mounted as a route.
+
+        No runtime, pins or persistence. Authorization, retention and the active pointer are rechecked before
+        returning. A projection cannot read a staged, superseded or other-patient generation, or enable promotion.
+        """
+        self._admit(alias, authorized)
+        if self.allowlist.get(alias) is None:
+            raise RefreshRejected(404, "patient_unavailable")
+
+        def current() -> dict[str, Any] | None:
+            row = self.catalog.db.execute(
+                "SELECT g.* FROM live_generation g JOIN patient_head h "
+                "ON h.alias = g.alias AND h.active = g.generation_id WHERE g.alias = ? AND g.state = 'approved'",
+                (alias,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+        def usable(row: dict[str, Any]) -> None:
+            now = self.catalog.clock()
+            if row["expires_at"] <= now:
+                raise RefreshRejected(410, "generation_expired")
+            if not 0 <= now - row["retrieved_at"] <= CONTINUED_S:
+                raise RefreshRejected(409, "generation_unavailable")
+
+        row = current()
+        if row is None:
+            raise RefreshRejected(404, "generation_unavailable")
+        usable(row)
+        if not GENERATION_ID.fullmatch(str(row["generation_id"])):
+            raise RefreshRejected(409, "generation_integrity")
+        try:
+            files.verify_private_path(self.root)
+            files.verify_private_path(self.root / "objects" / row["generation_id"])
+        except AcquisitionError as exc:
+            raise _refusal(exc) from None
+        manifest, bundle = self._read_evidence(row)
+        if manifest.get("attempt_id") != row["attempt_id"] or manifest.get("retrieved_at") != row["retrieved_at"]:
+            raise RefreshRejected(409, "generation_integrity")
+        if not manifest["synthetic_transport"] and not self.real_promotion:
+            raise RefreshRejected(409, "real_promotion_disabled")
+        result = project(manifest, bundle, row)
+        self._admit(alias, authorized)
+        if current() != row:
+            raise RefreshRejected(409, "publication_fenced")
+        usable(row)
+        return result
 
     def view(self, alias: str) -> dict[str, Any] | None:
         """Content-free description of the alias's generation, or None."""

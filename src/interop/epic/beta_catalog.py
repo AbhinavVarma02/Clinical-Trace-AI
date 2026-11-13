@@ -26,14 +26,26 @@ class RefreshRejected(Exception):
 class Catalog:
     """All methods run on the app loop, without awaiting inside a transaction."""
 
-    def __init__(self, path: Path, clock: Callable[[], float]) -> None:
+    def __init__(
+        self, path: Path, clock: Callable[[], float], *, initialize: bool = True, readonly: bool = False
+    ) -> None:
         self.clock = clock
-        self.db = sqlite3.connect(path, timeout=0.1)
+        if initialize and readonly:
+            raise ValueError("initializing a catalog requires write access")
+        self.db = (
+            sqlite3.connect(path, timeout=0.1)
+            if initialize
+            else sqlite3.connect(path.as_uri() + ("?mode=ro" if readonly else "?mode=rw"), uri=True, timeout=0.1)
+        )
         self.db.row_factory = sqlite3.Row
         try:
             # Keep the file exclusively locked for this app's lifetime. A competing
             # worker must fail startup instead of recovering a worker that's still live.
             self.db.execute("PRAGMA locking_mode=EXCLUSIVE")
+            if not initialize:
+                # Reopening a selected scope must not perform DDL, recover abandoned attempts or create a file.
+                self.db.execute("SELECT 1 FROM attempt LIMIT 1").fetchone()
+                return
             self.db.executescript(
                 """
                 BEGIN EXCLUSIVE;

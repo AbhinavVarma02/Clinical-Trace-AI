@@ -65,8 +65,15 @@ def static_namespace(path: str) -> bool:
     return path == SHELL[:-1] or path.startswith(SHELL)
 
 
+RECORD_PATH = re.compile(re.escape(PATIENTS_ROUTE) + r"/[a-z0-9-]{1,32}/record\Z")
+
+
 def browser_path(path: str) -> bool:
-    return static_namespace(path) or path in {SESSION_ROUTE, PATIENTS_ROUTE, BROWSER_LOGIN}
+    return (
+        static_namespace(path)
+        or path in {SESSION_ROUTE, PATIENTS_ROUTE, BROWSER_LOGIN}
+        or bool(RECORD_PATH.match(path))
+    )
 
 
 def _one(request: Request, name: str) -> str:

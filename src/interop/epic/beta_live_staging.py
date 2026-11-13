@@ -329,8 +329,15 @@ class LiveStaging:
     """Candidate lifecycle: stage, expire, supersede, erase. All methods are synchronous (no awaits), so a
     revocation handler on the same loop can never interleave with a write."""
 
-    def __init__(self, catalog: Catalog, root: Path) -> None:
+    def __init__(self, catalog: Catalog, root: Path, *, initialize: bool = True) -> None:
         self.catalog = catalog
+        if not initialize:
+            if not root.is_dir() or _is_link(root.lstat()):
+                raise ValueError("LIVE staging must be a plain directory")
+            verify_private_path(root)
+            self.root = root
+            self.catalog.db.execute("SELECT 1 FROM live_candidate LIMIT 1").fetchone()
+            return
         self.root = private_root(root)
         with self.catalog.db:
             self.catalog.db.execute(

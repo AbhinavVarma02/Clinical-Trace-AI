@@ -4,6 +4,9 @@ An optional ``live`` argument adds a staging-only LIVE refresh for the aliases i
 allowlist (empty approves nothing): refresh, status, revoke and candidate erasure recognise such an alias;
 every other route stays MOCK-only. A LIVE attempt never publishes a generation. Its validated candidate is
 kept privately for at most 24 hours (see ``beta_live_staging``) and is erased on revocation or owner request.
+An additional constructor-only ``synthetic_live_records`` opt-in connects approved synthetic evidence to the
+record GET and patient discovery contracts for offline verification only. It defaults off and refuses real
+transports/evidence. The normal launcher never enables it.
 """
 
 from __future__ import annotations
@@ -48,6 +51,8 @@ from api.beta_oidc import (
     OwnerAuth,
     OwnerIdentity,
 )
+from api.beta_oidc_keys import JwksKeys, ProviderMetadata
+from api.beta_record import record_view
 from src.interop.epic import beta_catalog
 from src.interop.epic.beta_acquisition import Acquisition, AcquisitionError, Limits, require_mock
 from src.interop.epic.beta_catalog import MOCK_PATIENTS, Catalog, RefreshRejected
@@ -143,7 +148,7 @@ class Control:
 def create_mock_beta_app(
     catalog_path: Path,
     *,
-    oidc_key: rsa.RSAPublicKey,
+    oidc_key: rsa.RSAPublicKey | None,
     epic_key: rsa.RSAPrivateKey,
     oidc_transport: httpx.MockTransport,
     epic_transport: httpx.MockTransport,
@@ -154,11 +159,20 @@ def create_mock_beta_app(
     browser_assets_root: Path | None = None,
     live: LiveRefresh | None = None,
     identity: OwnerIdentity = INVENTED_IDENTITY,
+    provider: ProviderMetadata | None = None,
+    jwks: JwksKeys | None = None,
+    synthetic_live_records: bool = False,
 ) -> FastAPI:
     """Build an isolated Beta origin with an invented owner and two invented patients."""
     require_mock(oidc_transport)
     require_mock(epic_transport)
-    if min(oidc_key.key_size, epic_key.key_size) < 2048:
+    if type(synthetic_live_records) is not bool:
+        raise ValueError("synthetic LIVE record opt-in must be a boolean")
+    if synthetic_live_records and (
+        live is None or not isinstance(live.transport, httpx.MockTransport) or browser_assets_root is None
+    ):
+        raise ValueError("synthetic LIVE record reads require an offline LIVE transport and browser assets")
+    if min(oidc_key.key_size if oidc_key is not None else 2048, epic_key.key_size) < 2048:
         raise ValueError("MOCK signing keys must be at least 2048 bits")
     browser_assets = BrowserAssets.load(browser_assets_root) if browser_assets_root is not None else None
     control = Control()
@@ -200,7 +214,7 @@ def create_mock_beta_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         control.catalog = Catalog(catalog_path.resolve(), clock)
-        control.owner = OwnerAuth(control.catalog, oidc_key, oidc_transport, identity)
+        control.owner = OwnerAuth(control.catalog, oidc_key, oidc_transport, identity, provider=provider, keys=jwks)
         control.work = None
         control.generations = None
         control.staging = None
@@ -412,7 +426,56 @@ def create_mock_beta_app(
         async def browser_patients(request: Request) -> JSONResponse:
             if control.owner.session(request.state.owner_session) is None:
                 raise RefreshRejected(401, "owner_required")
-            return JSONResponse(patient_view(control.catalog))
+            result = patient_view(control.catalog)
+            if synthetic_live_records and live is not None:
+                # Discovery passes the SAME synthetic marker, integrity and return-time authorization fences
+                # as a record read. Never advertise an allowlisted but unapproved/real/expired generation.
+                result.update(mode="SYNTHETIC", source="offline-synthetic-preview")
+                for alias in live.allowlist.patients:
+                    try:
+                        view = synthetic_record(request, alias)
+                    except RefreshRejected as exc:
+                        if exc.status == 401:
+                            raise
+                        continue
+                    result["patients"].append(
+                        {"alias": alias, "label": view["label"], "mode": "LIVE", "data_origin": view["data_origin"]}
+                    )
+            if control.owner.session(request.state.owner_session) is None:
+                raise RefreshRejected(401, "owner_required")
+            return JSONResponse(result)
+
+        def synthetic_record(request: Request, alias: str) -> dict:
+            from api.beta_live_record import live_record_view
+
+            resolve(request, alias)
+            if control.live_generations is None:
+                raise RefreshRejected(404, "patient_unavailable")
+            token = request.state.owner_session
+
+            def authorized() -> bool:
+                return control.owner.session(token) is not None and not control.catalog.revoked(alias)
+
+            return live_record_view(control.live_generations, alias, authorized=authorized, synthetic_only=True)
+
+        @app.get(PATIENTS_ROUTE + "/{alias}/record")
+        async def browser_record(request: Request, alias: str) -> JSONResponse:
+            """Passive owner read of one MOCK patient's active generation, or an explicitly enabled synthetic preview.
+
+            LIVE aliases stay 404 by default. The offline opt-in cannot read real evidence or start acquisition."""
+            if control.owner.session(request.state.owner_session) is None:
+                raise RefreshRejected(401, "owner_required")
+            if synthetic_live_records and live is not None and live.allowlist.get(alias) is not None:
+                # Constructor-only, synthetic-only seam; no environment/header/query switch or launcher enables it.
+                return JSONResponse(synthetic_record(request, alias))
+            if alias not in MOCK_PATIENTS or control.catalog.revoked(alias):
+                raise RefreshRejected(404, "patient_unavailable")
+            generations = control.generations
+            state = generations.status(alias) if generations is not None else control.catalog.status(alias)
+            runtime = manifest = None
+            if generations is not None and state.get("active") and "evidence_error" not in state:
+                runtime, manifest = generations.runtime(alias, state["active"]["generation_id"])
+            return JSONResponse(record_view(alias, state, runtime, manifest))
 
     def touch(request: Request) -> None:
         if control.owner.session(request.state.owner_session, touch=True) is None:

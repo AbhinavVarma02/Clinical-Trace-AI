@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import stat
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
@@ -104,11 +107,15 @@ class Generations:
     def quota(self) -> None:
         total = 0
         for path in self.root.rglob("*"):
-            _plain(path)
-            if path.is_file():
-                total += path.stat().st_size
-                if total + 20 * 1024 * 1024 > STORAGE_BYTES:
-                    raise RefreshRejected(429, "storage_quota")
+            try:
+                _plain(path)
+                if path.is_file():
+                    total += path.stat().st_size
+                    if total + 20 * 1024 * 1024 > STORAGE_BYTES:
+                        raise RefreshRejected(429, "storage_quota")
+            except FileNotFoundError:
+                # A preparation worker can close/remove a transient SQLite WAL while admission scans it.
+                continue
 
     async def phase(self, point: str, gid: str) -> None:
         if self.hook is not None:
@@ -242,23 +249,28 @@ class Generations:
             raise AcquisitionError("publication_fenced")
         return row["epoch"], row["revision"]
 
-    async def publish(self, acquisition: Acquisition, alias: str) -> str:
-        # This store and its browser readers remain exclusively MOCK in Increment 1.
-        if type(acquisition) is not Acquisition or acquisition.mode != "MOCK" or acquisition.policy != POLICY_VERSION:
-            raise AcquisitionError("live_publication_disabled")
-        epoch, revision = self._fence(acquisition, alias)
-        self.quota()
-        gid = uuid.uuid4().hex
-        staging = self.root / "staging" / gid
-        final = self.root / "objects" / gid
-        state = self.root / "state" / gid
-        staging.mkdir(mode=0o700)
-        await self.phase("staging", gid)
-        manifest, bundle = normalize(acquisition, alias, gid)
+    def _discard_unpublished(self, gid: str) -> None:
+        # Catalog ownership is checked on its loop. Never erase an activated generation, including after a hook fails.
+        if self.catalog.db.execute("SELECT 1 FROM generation WHERE generation_id = ?", (gid,)).fetchone():
+            return
+        _plain(self.root)
+        for name in ("staging", "objects", "state"):
+            parent = self.root / name
+            _plain(parent)
+            candidate = parent / gid
+            if candidate.exists():
+                _plain(candidate)
+                if candidate.resolve().parent != parent.resolve():
+                    raise RefreshRejected(409, "generation_integrity")
+                shutil.rmtree(candidate)
+
+    @staticmethod
+    def _prepare(staging: Path, state: Path, manifest: dict[str, Any], bundle: bytes, manifest_bytes: bytes) -> None:
+        """Blocking preparation only: this worker owns and closes its temporary runtime/SQLite connection.
+
+        No acquisition, catalog, session, authorization callback or activation is passed into this thread.
+        """
         _write(staging / "normalized_bundle.json", bundle)
-        manifest_bytes = encoded(manifest)
-        if len(bundle) + len(manifest_bytes) > 20 * 1024 * 1024:
-            raise AcquisitionError("byte_limit")
         _write(staging / "manifest.json", manifest_bytes)
         _sync_directory(staging)
         state.mkdir(mode=0o700)
@@ -271,15 +283,60 @@ class Generations:
             state / "clinical.sqlite", fixture=staging / "normalized_bundle.json", provider=None, enable_model=False
         )
         try:
-            self._check_runtime(runtime, staging / "normalized_bundle.json", manifest["patient_id"])
-            runtime.records.source_coverage = self.source_coverage(manifest)
+            Generations._check_runtime(runtime, staging / "normalized_bundle.json", manifest["patient_id"])
+            runtime.records.source_coverage = Generations.source_coverage(manifest)
             runtime.index.search(manifest["patient_id"], "record", k=1)
         finally:
-            runtime.close()
-        # Flush the closed SQLite state before the catalog can name the generation.
+            if not runtime.close():
+                raise AcquisitionError("runtime_not_drained")
         with (state / "clinical.sqlite").open("r+b") as stream:
             os.fsync(stream.fileno())
         _sync_directory(state)
+
+    async def _prepare_in_worker(
+        self, staging: Path, state: Path, manifest: dict[str, Any], bundle: bytes, manifest_bytes: bytes
+    ) -> None:
+        worker = asyncio.create_task(asyncio.to_thread(self._prepare, staging, state, manifest, bundle, manifest_bytes))
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Cancelling an await does not stop a thread. Drain it, even under repeated cancellation, before cleanup
+            # or catalog shutdown; otherwise it could recreate files after revocation removed them.
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not worker.cancelled():
+                worker.exception()  # retrieve a worker failure without replacing the cancellation
+            raise
+
+    async def publish(self, acquisition: Acquisition, alias: str) -> str:
+        gid = uuid.uuid4().hex
+        try:
+            return await self._publish(acquisition, alias, gid)
+        except BaseException:
+            self._discard_unpublished(gid)
+            raise
+
+    async def _publish(self, acquisition: Acquisition, alias: str, gid: str) -> str:
+        # This store and its browser readers remain exclusively MOCK in Increment 1.
+        if type(acquisition) is not Acquisition or acquisition.mode != "MOCK" or acquisition.policy != POLICY_VERSION:
+            raise AcquisitionError("live_publication_disabled")
+        epoch, revision = self._fence(acquisition, alias)
+        self.quota()
+        staging = self.root / "staging" / gid
+        final = self.root / "objects" / gid
+        state = self.root / "state" / gid
+        staging.mkdir(mode=0o700)
+        await self.phase("staging", gid)
+        manifest, bundle = normalize(acquisition, alias, gid)
+        manifest_bytes = encoded(manifest)
+        if len(bundle) + len(manifest_bytes) > 20 * 1024 * 1024:
+            raise AcquisitionError("byte_limit")
+        await self._prepare_in_worker(staging, state, manifest, bundle, manifest_bytes)
         await self.phase("before_finalize", gid)
         self._fence(acquisition, alias)
         if content_sha256((staging / "normalized_bundle.json").read_bytes()) != manifest["bundle_sha256"]:
@@ -300,7 +357,7 @@ class Generations:
         _plain(state)
         _plain(state / "clinical.sqlite")
         try:
-            with sqlite3.connect((state / "clinical.sqlite").as_uri() + "?mode=ro", uri=True) as connection:
+            with closing(sqlite3.connect((state / "clinical.sqlite").as_uri() + "?mode=ro", uri=True)) as connection:
                 connection.row_factory = sqlite3.Row
                 self._check_rows(
                     connection.execute("SELECT * FROM fhir_resource").fetchall(),

@@ -125,6 +125,7 @@ class LiveAcquisition(Acquisition):
         self.candidate: tuple[dict[str, Any], bytes] | None = None
         self.outcome_codes: list[str] = []  # informational search-outcome codes only
         self.operation_codes: dict[str, list[str]] = {}  # the same codes, attributed to the operation
+        self.http_outcomes: dict[str, list[int]] = {}
         self._current: str | None = None
         self._ran = False
         limits = limits or Limits()
@@ -235,6 +236,8 @@ class LiveAcquisition(Acquisition):
         request.extensions["timeout"] = dict.fromkeys(("connect", "read", "write", "pool"), seconds)
         result = await bounded_response(self.transport, request, seconds=seconds, limit=limit, consume=self.consume)
         status, headers, _ = result
+        operation = "OAuth token" if request.method == "POST" else (self._current or "Patient")
+        self.http_outcomes.setdefault(operation, []).append(status)
         if request.method == "POST" and status == 200:
             if headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
                 raise AcquisitionError("malformed_token")
@@ -320,6 +323,7 @@ class LiveAcquisition(Acquisition):
                 manifest = self.candidate[0]
                 manifest["completeness"] = COMPLETENESS
                 manifest["synthetic_transport"] = self.injected_transport
+                manifest["coverage"]["http_outcomes"] = self.http_outcomes
                 for name, codes in self.operation_codes.items():
                     manifest["coverage"]["operations"][name]["informational_codes"] = sorted(set(codes))
                 if len(encoded(self.candidate[0])) + len(self.candidate[1]) > 20 * 1024 * 1024:

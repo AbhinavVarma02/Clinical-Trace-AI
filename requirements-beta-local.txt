@@ -1,0 +1,4 @@
+# Optional local-owner WebAuthn verifier; not part of Stable's runtime requirements.
+# Install after the base requirements, with --no-deps; Stable does not load this optional file.
+-c requirements-constraints.txt
+fido2==2.2.1 --hash=sha256:ed397da981b9ab133da6ead7309e41f924b566b749956129efe286fae097749f
