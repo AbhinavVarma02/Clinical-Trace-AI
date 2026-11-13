@@ -1,21 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icons } from "./icons";
-import { Badge, Card, EmptyState, Skeleton, Tabs, formatDate, humanize, type Tone } from "./ui";
-import type { CoverageState, FixtureRecord, FixtureStatus, Serving } from "./fixtures";
-import { useBeta, useLoad } from "./state";
+import { Card, EmptyState, Skeleton, SignIn } from "./ui";
+import type { PatientChoice } from "./contract";
+import { BetaApiError } from "./client";
+import { useBeta, useLoad, usePatientView } from "./state";
+import { DataOrigin, Provenance, RecordTabs, RefreshStatus, WarningList } from "./PatientRecord";
 
-const SERVING_TONE: Record<Serving, Tone> = { fresh: "success", cached: "info", stale: "warning", rolled_back: "warning", unavailable: "danger" };
-const COVERAGE_TONE: Record<CoverageState, Tone> = { returned: "success", returned_none: "neutral", not_imported: "warning" };
-const COVERAGE_TEXT: Record<CoverageState, string> = {
-  returned: "Returned",
-  returned_none: "Returned none",
-  not_imported: "Not imported",
-};
-
-function PatientPicker({ patients }: { patients: { alias: string; label: string }[] }) {
+export function PatientPicker({ patients }: { patients: PatientChoice[] }) {
   const { alias, selectAlias } = useBeta();
   return (
-    <Card title="Approved MOCK patients" subtitle="Fixed local policy; no search and no identifiers" flush>
+    <Card title={patients.some((p) => p.data_origin === "synthetic_live_fixture") ? "Approved synthetic patients" : "Approved MOCK patients"} subtitle="Fixed local policy; no search and no identifiers" flush>
       <div className="list">
         {patients.map((patient) => (
           <button
@@ -28,7 +22,7 @@ function PatientPicker({ patients }: { patients: { alias: string; label: string 
             <span className="avatar" aria-hidden="true">{patient.label.slice(-1)}</span>
             <div style={{ minWidth: 0 }}>
               <div className="item-title">{patient.label}</div>
-              <div className="item-meta">Synthetic fixture</div>
+              <div className="item-meta">{patient.data_origin === "synthetic_live_fixture" ? "Synthetic LIVE-shaped fixture · read only" : "Synthetic MOCK patient"}</div>
             </div>
           </button>
         ))}
@@ -37,200 +31,168 @@ function PatientPicker({ patients }: { patients: { alias: string; label: string 
   );
 }
 
-export function RefreshStatus({ status }: { status: FixtureStatus }) {
-  const attempt = status.attempt;
-  return (
-    <Card
-      title="Refresh and coverage"
-      subtitle="What the last MOCK acquisition returned, and what it did not"
-      actions={
-        <button type="button" className="btn sm" disabled title="Refresh is not wired in this MOCK slice">
-          <Icons.refresh size={15} /> Refresh unavailable
-        </button>
-      }
-    >
-      <div className="stack">
-        <div className="row">
-          <Badge tone={SERVING_TONE[status.serving]} dot>Serving: {humanize(status.serving)}</Badge>
-          {attempt && <Badge tone="neutral">Last attempt: {humanize(attempt.state)} · {attempt.requests} requests</Badge>}
-          {status.active && <Badge tone="outline">Retrieved {formatDate(status.active.retrieved_at, true)}</Badge>}
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <caption className="sr-only">Source coverage</caption>
-            <thead>
-              <tr><th scope="col">Source</th><th scope="col">Coverage</th></tr>
-            </thead>
-            <tbody>
-              {Object.entries(status.coverage).map(([source, state]) => (
-                <tr key={source}>
-                  <td className="mono">{source}</td>
-                  <td><Badge tone={COVERAGE_TONE[state]}>{COVERAGE_TEXT[state]}</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {attempt && (
-          <div className="table-wrap">
-            <table className="table">
-              <caption className="sr-only">Per-operation counts</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Operation</th><th scope="col" className="num">Matches</th><th scope="col" className="num">Imported</th><th scope="col">Execution</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(attempt.operations).map(([name, counts]) => (
-                  <tr key={name}>
-                    <td className="mono">{name}</td>
-                    <td className="num">{counts.matches}</td>
-                    <td className="num">{counts.imported}</td>
-                    <td>{humanize(counts.execution)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <div className="banner warning">
-          <Icons.alert size={16} />
-          <div>
-            <strong>Note bodies are not imported.</strong> Only note metadata is shown (reason: {humanize(attempt?.note_body_reason ?? "outside_initial_policy")}). Medications are not imported, so absence here is not evidence of absence.
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 export function EvidencePlaceholder({ generationId }: { generationId?: string }) {
   return (
-    <Card title="Evidence" subtitle="Placeholder: no answer has been run in this slice">
+    <Card title="Evidence" subtitle="Evidence is available only for a returned answer">
       <div className="stack">
         <div className="banner info">
           <Icons.evidence size={16} />
           <div>
-            Citations and evidence pins appear here after a verified answer from a pinned generation. Nothing on this page is cited evidence, and no clinical answer is produced here.
+            Ask a question on the Case Review Agent page, then open Evidence Explorer to inspect its returned citations. This record page does not create an answer or cited evidence.
           </div>
         </div>
         <dl className="kv">
           <dt>Pinned generation</dt>
-          <dd className="mono">{generationId ?? "—"} (fixture)</dd>
-          <dt>Citations</dt>
-          <dd>None yet</dd>
+          <dd className="mono">{generationId ?? "—"}</dd>
+          <dt>Answer evidence</dt>
+          <dd><a href="#/evidence">Open Evidence Explorer</a></dd>
           <dt>Independent review</dt>
-          <dd>Pending: not requested in this slice</dd>
+          <dd>No review decision is available on this page</dd>
         </dl>
       </div>
     </Card>
   );
 }
 
-type Tab = "conditions" | "encounters" | "labs" | "notes";
+const SETTLED = new Set(["succeeded", "failed", "interrupted"]);
+const MAX_POLLS = 120;
 
-function RecordTabs({ record }: { record: FixtureRecord }) {
-  const [tab, setTab] = useState<Tab>("conditions");
+function refreshNotice(error: unknown): string {
+  if (error instanceof BetaApiError) {
+    if (error.code === "refresh_busy") return "A refresh is already running. Wait for it to finish.";
+    if (error.code === "quota_exhausted") {
+      return error.retryAfter
+        ? `Refresh limit reached. Try again in ${error.retryAfter >= 120 ? `${Math.ceil(error.retryAfter / 60)} minutes` : `${error.retryAfter} seconds`}.`
+        : "Refresh limit reached. Try again later.";
+    }
+    if (error.code === "owner_required") return "Your session ended. Sign in again to refresh.";
+    return `The refresh could not be started (${error.code.replace(/_/g, " ")}).`;
+  }
+  return "The refresh could not be started.";
+}
+
+function RevokeControl({ alias, onRevoked, onAccessLost }: { alias: string; onRevoked: () => void; onAccessLost: (error: string) => void }) {
+  const { client } = useBeta();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  if (!client.revoke) return null;
+  const revoke = async () => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await client.revoke!(alias);
+      onRevoked();
+    } catch (error) {
+      if (error instanceof BetaApiError && [401, 403, 404].includes(error.status)) onAccessLost(error.code);
+      setNotice(error instanceof BetaApiError && error.code === "owner_required" ? "Your session ended. Sign in again." : "The patient could not be revoked.");
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
   return (
-    <Card
-      title="Clinical record"
-      subtitle="Synthetic fixture content; the Beta API has no record route yet"
-      actions={<Badge tone="warning" dot>Synthetic record</Badge>}
-    >
-      <Tabs<Tab>
-        label="Record sections"
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: "conditions", label: "Conditions", count: record.conditions.length },
-          { value: "encounters", label: "Encounters", count: record.encounters.length },
-          { value: "labs", label: "Labs", count: record.labs.length },
-          { value: "notes", label: "Note metadata", count: record.notes.length },
-        ]}
-      />
-      <div role="tabpanel" style={{ paddingTop: "var(--space-3)" }}>
-        {tab === "conditions" &&
-          (record.conditions.length === 0 ? <EmptyState title="No conditions returned" /> : (
-            <ul className="stack">
-              {record.conditions.map((c) => (
-                <li key={c.display} className="row-between">
-                  <span>{c.display}</span>
-                  <span className="row muted"><Badge tone="outline">{humanize(c.category)}</Badge>{formatDate(c.recorded)}</span>
-                </li>
-              ))}
-            </ul>
-          ))}
-        {tab === "encounters" &&
-          (record.encounters.length === 0 ? <EmptyState title="No encounters returned" /> : (
-            <ul className="stack">
-              {record.encounters.map((e) => (
-                <li key={e.id} className="row-between">
-                  <span>{e.reason}</span>
-                  <span className="row muted"><Badge tone="outline">{e.class}</Badge>{formatDate(e.start)}</span>
-                </li>
-              ))}
-            </ul>
-          ))}
-        {tab === "labs" &&
-          (record.labs.length === 0 ? <EmptyState title="No laboratory results returned" /> : (
-            <ul className="stack">
-              {record.labs.map((l) => (
-                <li key={`${l.name}:${l.date}`} className="row-between">
-                  <span>{l.name}</span>
-                  <span className="row"><strong>{l.value} {l.unit}</strong><span className="muted">{formatDate(l.date)}</span></span>
-                </li>
-              ))}
-            </ul>
-          ))}
-        {tab === "notes" &&
-          (record.notes.length === 0 ? (
-            <EmptyState title="No note metadata returned">Coverage reports this source as returned none; note bodies are never imported in this policy.</EmptyState>
-          ) : (
-            <ul className="stack">
-              {record.notes.map((n) => (
-                <li key={n.title} className="row-between">
-                  <span>{n.title}</span>
-                  <span className="row muted"><Badge tone="outline">{n.type}</Badge>{formatDate(n.date)}</span>
-                </li>
-              ))}
-            </ul>
-          ))}
+    <Card title="Owner controls" subtitle="Authorization for this patient">
+      <div className="stack">
+        <p className="muted">
+          Revoking removes this patient from the approved list and makes its record, refreshes and questions unavailable in this owner store.
+          It cannot be undone from the browser.
+        </p>
+        {notice && <div className="banner warning" role="status"><Icons.alert size={16} /><div>{notice}</div></div>}
+        {confirming ? (
+          <div className="row">
+            <button type="button" className="btn danger" disabled={busy} onClick={() => void revoke()}>{busy ? "Revoking…" : "Confirm: revoke this patient"}</button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
+          </div>
+        ) : (
+          <div><button type="button" className="btn danger" onClick={() => setConfirming(true)}>Revoke access…</button></div>
+        )}
       </div>
     </Card>
   );
 }
 
-function PatientDetail({ alias }: { alias: string }) {
-  const { client } = useBeta();
-  const record = useLoad(() => client.getRecord(alias), alias);
-  const status = useLoad(() => client.getStatus(alias), alias);
-  if (record.error || status.error) {
+function PatientDetail({ alias, onRevoked }: { alias: string; onRevoked: () => void }) {
+  const { client, pollMs } = useBeta();
+  const view = usePatientView(alias);
+  const [running, setRunning] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const start = client.refresh && view.data?.mode !== "LIVE"
+    ? async () => {
+        setRunning(true);
+        setNotice(null);
+        try {
+          await client.refresh!(alias);
+          for (let polls = 0; polls < MAX_POLLS && mounted.current; polls += 1) {
+            await new Promise((resolve) => setTimeout(resolve, pollMs));
+            const next = await view.reload();
+            if (!mounted.current) return;
+            if (!next) break;
+            if (next.attempt && SETTLED.has(next.attempt.state)) break;
+          }
+        } catch (error) {
+          if (mounted.current && error instanceof BetaApiError && [401, 403, 404].includes(error.status)) view.invalidate(error.code);
+          if (mounted.current) setNotice(refreshNotice(error));
+        } finally {
+          if (mounted.current) setRunning(false);
+        }
+      }
+    : undefined;
+
+  if (view.error) {
+    if (view.error === "owner_required") return <SignIn expired />;
     return <EmptyState title="Patient unavailable">This patient is not available for the current session.</EmptyState>;
   }
-  if (!record.data || !status.data) return <Card><Skeleton lines={5} /></Card>;
+  const data = view.data;
+  if (!data) return <Card><Skeleton lines={5} /></Card>;
   return (
     <div className="stack" style={{ gap: "var(--space-4)" }}>
-      <RefreshStatus status={status.data} />
-      <RecordTabs record={record.data} />
-      <EvidencePlaceholder generationId={status.data.active?.generation_id} />
+      <WarningList warnings={data.warnings} />
+      {data.record ? (
+        <RecordTabs record={data.record} view={data} />
+      ) : (
+        <Card title="Clinical record" actions={<DataOrigin view={data} />}>
+          <EmptyState title="No verified record yet">No active generation exists for this patient, so no clinical content is shown.</EmptyState>
+        </Card>
+      )}
+      <RefreshStatus view={data} refresh={{ start, running, notice }} />
+      <Provenance view={data} />
+      {data.mode === "LIVE" ? <Card title="Read-only synthetic preview"><p>Clinical AI and answer evidence are unavailable for this record. No claims or citations have been created.</p></Card> : <EvidencePlaceholder generationId={data.active?.generation_id} />}
+      <RevokeControl alias={alias} onRevoked={onRevoked} onAccessLost={view.invalidate} />
     </div>
   );
 }
 
 export function PatientsPage() {
-  const { client, alias } = useBeta();
-  const patients = useLoad(() => client.listPatients(), "patients");
+  const { client, alias, selectAlias } = useBeta();
+  const [version, setVersion] = useState(0); // bumped after a revoke so the approved list is read again
+  const patients = useLoad(() => client.listPatients(), `patients:${version}`);
   return (
     <div className="stack" style={{ gap: "var(--space-4)" }}>
       <div className="page-header">
         <div>
           <h1 className="page-title">Patients</h1>
-          <p className="muted">Epic Beta · MOCK fixtures only</p>
+          <p className="muted">Epic Beta · synthetic data only</p>
         </div>
       </div>
-      <div className="grid cols-2" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(0, 3fr)" }}>
-        {patients.data ? <PatientPicker patients={patients.data} /> : <Card><Skeleton /></Card>}
-        {alias ? <PatientDetail key={alias} alias={alias} /> : <EmptyState title="Select a patient">Choose an approved MOCK patient to see the record, refresh status and coverage.</EmptyState>}
+      <div className="grid patients-grid">
+        {patients.error === "owner_required" ? (
+          <SignIn />
+        ) : patients.error ? (
+          <EmptyState title="Patients unavailable">The approved patient list could not be read.</EmptyState>
+        ) : patients.data ? (
+          <PatientPicker patients={patients.data} />
+        ) : (
+          <Card><Skeleton /></Card>
+        )}
+        {alias ? <PatientDetail key={alias} alias={alias} onRevoked={() => { selectAlias(null); setVersion((v) => v + 1); }} /> : <EmptyState title="Select a patient">Choose an approved synthetic patient to see the record, refresh status and coverage.</EmptyState>}
       </div>
     </div>
   );

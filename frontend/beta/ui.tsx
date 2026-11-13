@@ -1,77 +1,5 @@
-// Beta's own presentational primitives. Visually matches the Stable workspace but shares no code,
-// client, provider or storage with it. All state comes from props; nothing here fetches.
-import type { ReactNode } from "react";
-
-export type Tone = "neutral" | "info" | "success" | "warning" | "danger" | "teal" | "violet" | "outline";
-
-export function Badge({ tone = "neutral", children, dot = false, title }: { tone?: Tone; children: ReactNode; dot?: boolean; title?: string }) {
-  return (
-    <span className={`badge ${tone === "neutral" ? "" : tone}`} title={title}>
-      {dot && <span className="dot" aria-hidden="true" />}
-      {children}
-    </span>
-  );
-}
-
-export function Card({ title, subtitle, actions, children, flush = false }: {
-  title?: ReactNode;
-  subtitle?: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-  flush?: boolean;
-}) {
-  return (
-    <section className="card">
-      {(title || actions) && (
-        <header className="card-header">
-          <div>
-            {title && <h2 className="card-title">{title}</h2>}
-            {subtitle && <p className="card-subtitle">{subtitle}</p>}
-          </div>
-          {actions && <div className="row">{actions}</div>}
-        </header>
-      )}
-      <div className={`card-body ${flush ? "flush" : ""}`}>{children}</div>
-    </section>
-  );
-}
-
-export function Skeleton({ lines = 3 }: { lines?: number }) {
-  return (
-    <div className="stack" aria-hidden="true">
-      {Array.from({ length: lines }, (_, i) => (
-        <div key={i} className="skeleton" style={{ height: 14, width: `${92 - i * 14}%` }} />
-      ))}
-    </div>
-  );
-}
-
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="empty">
-      <div className="empty-title">{title}</div>
-      {children && <div>{children}</div>}
-    </div>
-  );
-}
-
-export function Tabs<T extends string>({ value, tabs, onChange, label }: {
-  value: T;
-  tabs: { value: T; label: string; count?: number }[];
-  onChange: (value: T) => void;
-  label: string;
-}) {
-  return (
-    <div className="tabs" role="tablist" aria-label={label}>
-      {tabs.map((tab) => (
-        <button key={tab.value} role="tab" type="button" className="tab" aria-selected={tab.value === value} onClick={() => onChange(tab.value)}>
-          {tab.label}
-          {tab.count !== undefined && <span className="count">{tab.count}</span>}
-        </button>
-      ))}
-    </div>
-  );
-}
+import { Card } from "../workspace/components/ui";
+export { Badge, Card, Disclosure, EmptyState, Skeleton, Tabs, type Tone } from "../workspace/components/ui";
 
 export function formatDate(value: string | null | undefined, withTime = false): string {
   if (!value) return "—";
@@ -80,6 +8,27 @@ export function formatDate(value: string | null | undefined, withTime = false): 
   return date.toLocaleString(undefined, withTime
     ? { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }
     : { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+export function formatUnix(value: number | null | undefined, withTime = true): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return formatDate(new Date(value * 1000).toISOString(), withTime);
+}
+
+/** Sign-in is a top-level form POST (the browser must follow the redirect to the identity provider itself). */
+export function SignIn({ expired = false, signedOut = false }: { expired?: boolean; signedOut?: boolean }) {
+  return (
+    <Card title={signedOut ? "Signed out" : expired ? "Session ended" : "Owner sign-in required"} subtitle="Beta is single-owner; there is no demo persona">
+      <form method="post" action="/beta/auth/browser-login" className="stack">
+        <p className="muted">
+          {expired ? "Your session expired or was revoked. " : ""}Sign in to read the approved MOCK patients. Nothing is shown until the owner session is valid.
+        </p>
+        <div>
+          <button type="submit" className="btn primary">Sign in as owner</button>
+        </div>
+      </form>
+    </Card>
+  );
 }
 
 export function humanize(value: string): string {

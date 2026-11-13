@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The server sends Referrer-Policy: no-referrer, under which a browser sends "Origin: null" on the sign-in form
+         POST and the strict Origin check rightly refuses it. same-origin keeps every cross-origin request (including the
+         redirect to the identity provider) referrer-free and lets the same-origin POST carry its real Origin. -->
+    <meta name="referrer" content="same-origin" />
     <title>Clinical-Trace AI · Epic Beta</title>
   </head>
   <body>
