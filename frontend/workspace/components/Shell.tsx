@@ -76,7 +76,10 @@ export function Shell({ children }: { children: ReactNode }) {
               </button>
             );
           })}
-          <a className="btn sm" href="https://owner.clinical-trace.localhost:8443/beta/app/" rel="noreferrer">Beta</a>
+          {/* Local owner Beta only: shown when the build sets VITE_ENABLE_BETA_LINK=true (never in public releases). */}
+          {import.meta.env.VITE_ENABLE_BETA_LINK === "true" && (
+            <a className="btn sm" href="https://owner.clinical-trace.localhost:8443/beta/app/" rel="noreferrer">Beta</a>
+          )}
         </nav>
         <div className="sidebar-footer">
           <Icons.alert size={14} />
