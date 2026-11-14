@@ -1,48 +1,55 @@
-.env
-.env.local
-.env.production
-*.pem
-*.key
-*.p8
-*.p12
-*.pfx
-.env.epic
-epic.env
-epic-keys/
-secrets/
-venv/
-.venv/
-__pycache__/
-*.pyc
-.vscode/
-.idea/
-.git/
-.agents/
-.codex/
-data/raw/
-data/processed/
-mlruns/
-mlartifacts/
-.uv-cache/
-.uv-python/
-.pytest_cache/
-.tmp/
-*.log
-.ipynb_checkpoints/
-.pytest_tmp/
-.pytest_run_tmp/
-clinical-trace-ai-guide.md
-frontend/node_modules/
+# Build context for the Stable image: api.main plus the two static frontends that stage 1 builds.
+# Allowlist: only the paths the image needs are sent. Untracked or private files anywhere else
+# (owner guides and packages, AGENTS.md, deploy secrets and receipts, private state, tests, docs) never
+# enter the context or the image. Later lines win, so every exclusion below also applies inside them.
+*
+!api/
+!src/
+!prompts/
+!data/fhir/
+!evaluation/
+!models/
+!frontend/
+!requirements.txt
+!requirements-constraints.txt
+!LICENSE
+
+# Secrets, keys, environment files and private state, at any depth. Vite reads VITE_* from
+# frontend/workspace/.env* files, so excluding them also keeps local flags out of the stage-1 build.
+**/.env
+**/.env.*
+**/.dev.vars*
+**/.prod-secrets*
+**/*.pem
+**/*.key
+**/*.p8
+**/*.p12
+**/*.pfx
+**/epic.env
+**/epic-keys/
+**/secrets/
+**/.project-state/
+**/.claude/
+**/*.zip
+evaluation/annotations/
+
+# Caches and generated output (stage 1 builds its own frontends).
+**/__pycache__/
+**/*.pyc
+**/*.log
+**/*.db
+**/.pytest_cache/
+**/.mypy_cache/
+**/node_modules/
 frontend/dist/
 frontend/dist-workspace/
-var/
-.project-state/
-.claude/
-.github/
-PROJECT_*.md
-PROJECT_*.pdf
-*.db
-
-.mypy_cache/
+frontend/dist-beta/
 frontend/test-results/
 frontend/playwright-report/
+
+# Local owner Beta (Windows Hello, Epic LIVE): never part of the Stable image, which imports none of it.
+# The owner scripts and requirements-beta-local.txt are already outside the allowlist.
+api/beta*.py
+src/interop/epic/beta_*.py
+frontend/beta/
+frontend/vite.beta.config.ts
