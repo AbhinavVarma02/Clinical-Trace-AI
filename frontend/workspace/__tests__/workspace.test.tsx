@@ -269,7 +269,7 @@ describe("App shell", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
-  it("shows the local owner Beta link only when the build enables it", async () => {
+  it("shows the hosted Beta link only when the build enables it", async () => {
     vi.stubEnv("VITE_ENABLE_BETA_LINK", "true");
     try {
       mockFetch((url) => {
@@ -282,7 +282,7 @@ describe("App shell", () => {
       });
       render(<AppProvider><App /></AppProvider>);
       expect(await screen.findByText("Evaluation gate passed")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "https://owner.clinical-trace.localhost:8443/beta/app/");
+      expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "https://clinical-trace-ai-beta.vathadiabhinav.workers.dev/beta/app/");
     } finally {
       vi.unstubAllEnvs();
     }
@@ -301,7 +301,7 @@ describe("App shell", () => {
     expect(await screen.findByText("Evaluation gate passed")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Understand patient records. See the evidence." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try a guided case" })).toBeEnabled();
-    // Public builds never render the local owner Beta link.
+    // Default builds never render the Beta link.
     expect(screen.queryByRole("link", { name: "Beta" })).toBeNull();
     expect(screen.getAllByText("Deterministic mode").length).toBeGreaterThan(0);
     // Safety statement stays visible on the first screen; the long measurements stay behind a disclosure.

@@ -76,9 +76,9 @@ export function Shell({ children }: { children: ReactNode }) {
               </button>
             );
           })}
-          {/* Local owner Beta only: shown when the build sets VITE_ENABLE_BETA_LINK=true (never in public releases). */}
+          {/* Hosted read-only Epic Beta: shown only when the build sets VITE_ENABLE_BETA_LINK=true. */}
           {import.meta.env.VITE_ENABLE_BETA_LINK === "true" && (
-            <a className="btn sm" href="https://owner.clinical-trace.localhost:8443/beta/app/" rel="noreferrer">Beta</a>
+            <a className="btn sm" href="https://clinical-trace-ai-beta.vathadiabhinav.workers.dev/beta/app/" rel="noreferrer">Beta</a>
           )}
         </nav>
         <div className="sidebar-footer">

@@ -3,18 +3,18 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { betaLinkSources, loopbackReferences, pinnedAccount, readTree, release } from "../scripts/release.mjs";
+import { BETA_PUBLIC_URL, betaLinkSources, loopbackReferences, pinnedAccount, readTree, release } from "../scripts/release.mjs";
 
 const previous = "12345678-1234-1234-1234-123456789abc";
 const account = "00f876c0ebbf368d25feabe3e49cbc0b";
 const head = "abc1234def5678abc1234def5678abc1234def56";
 const localBeta = "https://owner.clinical-trace.localhost:8443/beta/app/";
 function rig({ deployments = [{ created_on: "2026-10-17", versions: [{ version_id: previous }] }], fail = () => false,
-  visible = [account], listFails = false, firstDeploy = false, branch = "main", tip = head, lsRemote = null, betaLink = [],
+  visible = [account], listFails = false, firstDeploy = false, branch = "main", tip = head, lsRemote = null, betaLink = [], withBetaLink = false,
   published = [{ path: "app/index.html", text: '<a href="https://clinical-trace-ai.vathadiabhinav.workers.dev/app/">' }] } = {}) {
-  const commands = [], receipts = [], remote = [];
-  return { commands, receipts, remote, options: {
-    full: true, firstDeploy, account, betaLink: () => betaLink, published: () => published,
+  const commands = [], receipts = [], remote = [], envs = [];
+  return { commands, receipts, remote, envs, options: {
+    full: true, firstDeploy, account, withBetaLink, betaLink: () => betaLink, published: () => published,
     sh(cmd) {
       if (cmd.includes("branch --show-current")) return branch;
       if (cmd.includes("status")) return "";
@@ -26,7 +26,7 @@ function rig({ deployments = [{ created_on: "2026-10-17", versions: [{ version_i
       if (listFails) throw new Error("Worker not found");
       return JSON.stringify(deployments);
     },
-    run(cmd) { commands.push(cmd); if (fail(cmd)) throw new Error(`Failed: ${cmd}`); },
+    run(cmd, cwd, env) { commands.push(cmd); envs.push(env); if (fail(cmd)) throw new Error(`Failed: ${cmd}`); },
     record(name, value) { receipts.push({ name, ...value }); }, delay: async () => {},
   } };
 }
@@ -66,7 +66,7 @@ test("only the exact release branch ref counts as its published tip", async () =
 
 test("a release with the local Beta link flag set stops before any build or remote step", async () => {
   const r = rig({ betaLink: ["frontend/workspace/.env.local"] });
-  await assert.rejects(release(r.options), /set in frontend\/workspace\/\.env\.local; the local Beta link never ships publicly/);
+  await assert.rejects(release(r.options), /set in frontend\/workspace\/\.env\.local; use --with-beta-link instead/);
   assert.deepEqual(r.commands, []);
   assert.deepEqual(r.receipts, []);
 });
@@ -88,6 +88,24 @@ test("a built workspace that still carries the local Beta link stops before any 
   assert.deepEqual(r.commands, ["npm run build:workspace", "npm run check", "npm run build:assets"]);
   assert.deepEqual(r.remote, []);
   assert.deepEqual(r.receipts, []);
+});
+
+test("the hosted Beta link ships only when the release asks for it, and then must be in the build", async () => {
+  const withLink = [{ path: "app/assets/index.js", text: `href:\`${BETA_PUBLIC_URL}\`` }];
+  const asked = rig({ withBetaLink: true, published: withLink });
+  await release(asked.options);
+  assert.deepEqual(asked.envs[0], { VITE_ENABLE_BETA_LINK: "true" });
+  assert.equal(asked.receipts.at(-1).state, "passed");
+  const plain = rig();
+  await release(plain.options);
+  assert.deepEqual(plain.envs[0], { VITE_ENABLE_BETA_LINK: "false" });
+  for (const [options, message] of [[{ withBetaLink: true }, /lacks the hosted Beta link/], [{ published: withLink }, /did not ask for it/]]) {
+    const r = rig(options);
+    await assert.rejects(release(r.options), message);
+    assert.deepEqual(r.commands, ["npm run build:workspace", "npm run check", "npm run build:assets"]);
+    assert.deepEqual(r.remote, []);
+    assert.deepEqual(r.receipts, []);
+  }
 });
 
 test("loopback and *.localhost addresses are found, public ones are not", () => {
