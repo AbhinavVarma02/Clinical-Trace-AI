@@ -58,7 +58,36 @@ jobs:
         run: |
           $tests = Get-ChildItem tests -File | Where-Object Name -Match '^(test_beta_.+|test_owner_.+|test_provision_owner_genuine)\.py$'
           if (-not $tests) { throw "No Beta or genuine-owner test modules found" }
-          pytest $tests.FullName -q --basetemp="$env:USERPROFILE\ct-pytest"
+          pytest $tests.FullName -q -rfE --junitxml="$env:RUNNER_TEMP\beta-owner-junit.xml" --basetemp="$env:USERPROFILE\ct-pytest"
+      - name: Report failing Beta tests as annotations
+        # Job logs need a GitHub sign-in; check-run annotations are readable through the public API. No secrets exist here.
+        if: failure()
+        shell: python
+        run: |
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          def text(value):  # workflow-command message escaping
+              return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+          def prop(value):  # property escaping also covers the separators
+              return text(value).replace(":", "%3A").replace(",", "%2C")
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "beta-owner-junit.xml"
+          if not report.is_file():
+              print("::error title=Beta tests::pytest wrote no JUnit report; the run stopped before or during collection")
+              raise SystemExit(0)
+          failed = []
+          for case in ET.parse(report).getroot().iter("testcase"):
+              for kind in ("failure", "error"):
+                  node = case.find(kind)
+                  if node is not None:
+                      failed.append((f"{case.get('classname', '')}::{case.get('name', '')}", kind, node))
+          print(f"::error title=Beta tests::{len(failed)} failing: " + text("; ".join(name for name, _, _ in failed))[:3500])
+          for name, kind, node in failed[:8]:  # GitHub keeps at most 10 error annotations per step
+              detail = ((node.get("message") or "") + "\n" + (node.text or "")[-1500:]).strip()
+              print(f"::error title={prop(kind + ' ' + name)[:200]}::{text(detail)[:3500]}")
 
   frontend:
     name: Frontend typecheck, tests, builds
@@ -120,6 +149,18 @@ jobs:
       - name: Bundle and validate bindings without publishing
         working-directory: deploy/cloudflare
         run: npm run deploy:dry-run
+      - name: Hosted Beta release orchestration tests (no network, no deploy)
+        working-directory: deploy/cloudflare
+        run: node --test test/release-beta.mjs
+      - name: Build the published Beta (fixtures refused) and check it carries no owner or loopback code
+        working-directory: frontend
+        run: |
+          VITE_BETA_CLIENT=published VITE_BETA_ALLOW_FIXTURE=false npx vite build --config vite.beta.config.ts --outDir ../../deploy/cloudflare/beta/public/beta/app --emptyOutDir
+          cd ../deploy/cloudflare
+          node --input-type=module -e "import { forbiddenReferences } from './scripts/release-beta.mjs'; import { readTree } from './scripts/release.mjs'; const found = forbiddenReferences(readTree('beta/public')); if (found.length) { console.error(found); process.exit(1); } console.log('published Beta build: no owner or loopback code');"
+      - name: Validate the assets-only Beta Worker without publishing
+        working-directory: deploy/cloudflare
+        run: npx wrangler deploy --dry-run --config beta/wrangler.jsonc --outdir .wrangler/beta-dry-run
       - name: Edge dependency audit (high severity)
         working-directory: deploy/cloudflare
         run: npm audit --audit-level=high
