@@ -377,16 +377,6 @@ def map_icd9_to_category(value: Any) -> str:
     return "other"
 
 
-def _blank_to_nan(series: pd.Series) -> pd.Series:
-    """Map the raw "?" and empty-string markers to NaN.
-
-    ``Series.replace`` silently downcasts in pandas 2.x and emits a FutureWarning.
-    Inferring dtypes explicitly keeps the identical result without the warning.
-    """
-    with pd.option_context("future.no_silent_downcasting", True):
-        return series.replace({"?": np.nan, "": np.nan}).infer_objects(copy=False)
-
-
 def _frame_from_records(records: dict[str, Any] | list[dict[str, Any]] | pd.DataFrame) -> pd.DataFrame:
     if isinstance(records, pd.DataFrame):
         return records.copy()
@@ -430,7 +420,7 @@ def prepare_inference_features(
     for source_col, indicator_col in MISSINGNESS_INDICATOR_SOURCES.items():
         if source_col not in features.columns:
             features[source_col] = np.nan
-        features[source_col] = _blank_to_nan(features[source_col])
+        features[source_col] = features[source_col].replace({"?": np.nan, "": np.nan})
         features[indicator_col] = features[source_col].isna().astype(int)
 
     # "Measured" flags: A1Cresult / max_glu_serum use the literal "None" to mean
@@ -613,7 +603,7 @@ class TopNCategoryGrouper(BaseEstimator, TransformerMixin):
         self.columns_ = list(frame.columns)
         self.top_categories_: dict[str, list[str]] = {}
         for column in self.columns_:
-            counts = _blank_to_nan(frame[column]).dropna().value_counts()
+            counts = frame[column].replace({"?": np.nan, "": np.nan}).dropna().value_counts()
             self.top_categories_[column] = list(counts.head(self.top_n).index)
         return self
 
@@ -621,7 +611,7 @@ class TopNCategoryGrouper(BaseEstimator, TransformerMixin):
         frame = self._to_frame(X)
         output = pd.DataFrame(index=frame.index)
         for column in self.columns_:
-            series = _blank_to_nan(frame[column])
+            series = frame[column].replace({"?": np.nan, "": np.nan})
             top = set(self.top_categories_[column])
             grouped = series.where(series.isin(top), other=self.other_label)
             grouped = grouped.mask(series.isna(), self.missing_label)

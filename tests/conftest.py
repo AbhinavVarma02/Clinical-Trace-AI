@@ -62,7 +62,7 @@ def make_raw_diabetes_frame(rows: int = 36) -> pd.DataFrame:
                 "diag_2": "786" if index % 5 == 0 else "401",
                 "diag_3": "530" if index % 6 == 0 else "250",
                 "number_diagnoses": 4 + (index % 6),
-                "max_glu_serum": ">200" if index % 7 == 0 else "None",
+                "max_glu_serum": "None",
                 "A1Cresult": ">7" if index % 4 == 0 else "None",
                 "metformin": "No",
                 "repaglinide": "No",
