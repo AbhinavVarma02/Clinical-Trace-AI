@@ -1,0 +1,15 @@
+// Clinical-Trace AI hosted Epic Beta: a separate, static, assets-only Worker. No script, Workers AI, D1,
+// rate limits, secrets, cron or preview URLs, so it cannot use or affect the Stable edge's bindings or budgets.
+// It is published only by scripts/release-beta.mjs, after the owner separately approves publishing the copy.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "clinical-trace-ai-beta",
+  // The dedicated Clinical-Trace AI account, pinned so a session on another account fails instead of deploying.
+  "account_id": "00f876c0ebbf368d25feabe3e49cbc0b",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public"
+  }
+}
