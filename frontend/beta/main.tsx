@@ -11,6 +11,8 @@ if (root) {
   // Keep the builds isolated, including the module initializers and fixture data in their imports.
   const page = import.meta.env.VITE_BETA_CLIENT === "genuine-owner"
     ? import("./GenuineBetaApp").then(({ GenuineBetaApp }) => <GenuineBetaApp />)
+    : import.meta.env.VITE_BETA_CLIENT === "published"
+    ? import("./PublishedBetaApp").then(({ PublishedBetaApp }) => <PublishedBetaApp />)
     : Promise.all([import("./BetaApp"), import("./client"), import("./state")]).then(
       ([{ BetaApp }, { fixtureClient, httpClient }, { BetaProvider }]) => (
         <BetaProvider client={import.meta.env.VITE_BETA_CLIENT === "fixture" ? fixtureClient : httpClient}>

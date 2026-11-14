@@ -151,7 +151,7 @@ export interface BetaView {
   label: string;
   serving: Serving;
   freshness?: "fresh" | "cached" | "stale";
-  publication?: "disabled";
+  publication?: "disabled" | "published_snapshot";
   completeness?: "unconfirmed";
   active: { generation_id: string; retrieved_at: number; promoted_at: number } | null;
   attempt: Attempt | null;
