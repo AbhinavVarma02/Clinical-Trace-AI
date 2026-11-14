@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 os.environ.setdefault("CLINICAL_TRACE_SKIP_DOTENV", "1")
@@ -14,6 +15,23 @@ import pytest
 
 for _name in ("CLINICAL_TRACE_LLM_BASE_URL", "CLINICAL_TRACE_LLM_API_KEY"):
     os.environ.pop(_name, None)
+
+# The genuine-owner Beta path is Windows-only by design (Windows Hello, NTFS custody, attended console), needs
+# Python 3.13 (os.path.isreserved) and the optional fido2 verifier (requirements-beta-local.txt). These modules run
+# in CI's dedicated Windows job; other platforms and versions do not collect them.
+WINDOWS_OWNER_TESTS = (
+    "test_beta_owner_console_diagnostics.py",
+    "test_beta_owner_coordinator.py",
+    "test_beta_owner_custody.py",
+    "test_beta_owner_genuine.py",
+    "test_beta_owner_https.py",
+    "test_beta_owner_origin.py",
+    "test_beta_webauthn.py",
+    "test_beta_webauthn_store.py",
+    "test_owner_https_diagnostic_launcher.py",
+    "test_provision_owner_genuine.py",
+)
+collect_ignore = [] if sys.platform == "win32" and sys.version_info >= (3, 13) else list(WINDOWS_OWNER_TESTS)
 
 
 def make_raw_diabetes_frame(rows: int = 36) -> pd.DataFrame:

@@ -35,6 +35,27 @@ jobs:
       - name: Offline agent evaluation report
         run: python -m evaluation.run_eval --no-write
 
+  beta-owner-windows:
+    # The genuine-owner Beta path is Windows-only (Windows Hello, NTFS custody, attended console) and needs
+    # Python 3.13 plus the optional fido2 verifier. tests/conftest.py skips these modules elsewhere.
+    name: Beta genuine-owner tests (Windows, Python 3.13)
+    runs-on: windows-latest
+    env:
+      CLINICAL_TRACE_SKIP_DOTENV: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies and the optional local-owner WebAuthn verifier
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install --no-deps -r requirements-beta-local.txt
+      - name: Beta and genuine-owner tests
+        # The temp root sits under the runner's own profile, as the private-path custody checks expect.
+        run: pytest tests/test_beta_*.py tests/test_owner_*.py tests/test_provision_owner_genuine.py -q --basetemp="$env:USERPROFILE\ct-pytest"
+
   frontend:
     name: Frontend typecheck, tests, builds
     runs-on: ubuntu-latest
