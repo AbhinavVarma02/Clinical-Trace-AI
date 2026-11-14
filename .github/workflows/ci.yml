@@ -53,8 +53,12 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
           pip install --no-deps -r requirements-beta-local.txt
       - name: Beta and genuine-owner tests
-        # The temp root sits under the runner's own profile, as the private-path custody checks expect.
-        run: pytest tests/test_beta_*.py tests/test_owner_*.py tests/test_provision_owner_genuine.py -q --basetemp="$env:USERPROFILE\ct-pytest"
+        # PowerShell passes wildcards to native commands unexpanded, so list the modules explicitly and refuse an
+        # empty selection. The temp root sits under the runner's own profile, as the private-path custody checks expect.
+        run: |
+          $tests = Get-ChildItem tests -File | Where-Object Name -Match '^(test_beta_.+|test_owner_.+|test_provision_owner_genuine)\.py$'
+          if (-not $tests) { throw "No Beta or genuine-owner test modules found" }
+          pytest $tests.FullName -q --basetemp="$env:USERPROFILE\ct-pytest"
 
   frontend:
     name: Frontend typecheck, tests, builds
