@@ -519,7 +519,8 @@ def test_review_matches_the_owner_coordinator(world, monkeypatch):
     with client(world) as c:
         candidate = world.post(c, "/beta/api/refresh").json()["candidate"]
         staging = world.app.state.hosted.staging
-        _, raw, bundle = staging.read_candidate(candidate["attempt_id"], LIVE_ALIAS)
+        # The catalog's SQLite connection belongs to the app's thread; read through it, not the test thread.
+        _, raw, bundle = c.portal.call(staging.read_candidate, candidate["attempt_id"], LIVE_ALIAS)
     manifest = json.loads(raw)
     assert hosted.review_candidate(manifest, bundle, LIVE_PATIENT) == beta_owner_coordinator._review_candidate(
         manifest, bundle, LIVE_PATIENT
