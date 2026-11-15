@@ -3,13 +3,15 @@ import { Icons } from "./icons";
 import { BETA_ROUTES, navigateBeta, type BetaRouteName } from "./routing";
 import { Badge } from "./ui";
 
-export function BetaShell({ children, controls, route, owner = false, published = false, onNavigate }: {
+export function BetaShell({ children, controls, route, owner = false, published = false, live = false, onNavigate }: {
   children: ReactNode;
   controls?: ReactNode;
   route: BetaRouteName;
   owner?: boolean;
   /** The hosted read-only copy: no owner functions, nothing live. */
   published?: boolean;
+  /** The hosted owner-only LIVE Beta: fresh Epic sandbox retrieval behind Cloudflare Access. */
+  live?: boolean;
   onNavigate?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -30,7 +32,7 @@ export function BetaShell({ children, controls, route, owner = false, published 
         <div className="brand">
           <div>
             <div className="brand-name">Clinical-Trace AI</div>
-            <div className="brand-sub">{published ? "Epic Beta · read-only demonstration" : owner ? "Epic Beta · local owner" : "Epic Beta · offline synthetic"}</div>
+            <div className="brand-sub">{live ? "Epic Beta · hosted live (owner)" : published ? "Epic Beta · read-only demonstration" : owner ? "Epic Beta · local owner" : "Epic Beta · offline synthetic"}</div>
           </div>
         </div>
         <nav className="nav">
@@ -48,7 +50,7 @@ export function BetaShell({ children, controls, route, owner = false, published 
                   if (route !== item.name) onNavigate?.();
                   navigateBeta(item.name);
                 }}
-                title={owner || published ? undefined : item.description}
+                title={owner || published || live ? undefined : item.description}
               >
                 <Icon size={18} />
                 {item.label}
@@ -69,13 +71,15 @@ export function BetaShell({ children, controls, route, owner = false, published 
           </button>
           <div className="topbar-title"><span className="topbar-page">{current?.label}</span></div>
           <div className="topbar-spacer" />
-          <Badge tone="warning" dot>{published ? "Read-only copy" : owner ? "Epic sandbox" : "Synthetic data"}</Badge>
+          <Badge tone="warning" dot>{live ? "Epic sandbox · live" : published ? "Read-only copy" : owner ? "Epic sandbox" : "Synthetic data"}</Badge>
           {controls}
         </header>
         <main id="main" className="content" tabIndex={-1}>
           <div className="banner warning">
             <Icons.alert size={16} />
-            {published ? (
+            {live ? (
+              <div><strong>Epic Beta, hosted live.</strong> Owner-only. Each retrieval is a fresh, read-only request to the Epic FHIR R4 sandbox for one approved synthetic test patient. Not a real patient and not for clinical use. Clinical AI and publication are disabled.</div>
+            ) : published ? (
               <div><strong>Epic Beta demonstration.</strong> A published, read-only copy of one approved synthetic patient record. Not a real patient and not for clinical use. It is never refreshed, and clinical AI and all owner operations are disabled.</div>
             ) : owner ? (
               <div><strong>Epic Beta.</strong> Approved Epic sandbox synthetic data only. Clinical AI and publication are disabled.</div>

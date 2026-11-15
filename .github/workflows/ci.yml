@@ -214,3 +214,45 @@ jobs:
             -d '{"patient_id":"synthetic_p001","question":"Why was metformin stopped?"}' | grep -q '"outcome":"answered"'
           test "$(docker inspect -f '{{.Config.User}}' ct)" = "appuser"
           docker logs ct | tail -20
+
+  beta-live:
+    # Hosted LIVE Beta (owner-only, behind Cloudflare Access): Worker gate and release tests, the live UI build
+    # guard, the backend image built from its staged allowlist, the hosted backend tests inside that image (Linux,
+    # hosted-only dependencies), and a Worker dry run. Offline: no secrets, no Epic or Cloudflare calls, no deploy.
+    name: Hosted LIVE Beta (Worker, live UI, backend image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            deploy/cloudflare/package-lock.json
+      - name: Install tooling
+        run: |
+          (cd frontend && npm ci)
+          (cd deploy/cloudflare && npm ci)
+      - name: Worker gate and release tests
+        working-directory: deploy/cloudflare
+        run: node --test test/beta-live-gate.mjs
+      - name: Build the live UI and check it carries only the live client
+        working-directory: frontend
+        run: |
+          VITE_BETA_CLIENT=live VITE_BETA_ALLOW_FIXTURE=false npx vite build --config vite.beta.config.ts --outDir ../../deploy/cloudflare/beta-live/public/beta/app --emptyOutDir
+          cd ../deploy/cloudflare
+          node --input-type=module -e "import { assemble } from './scripts/release-beta.mjs'; import { checkLiveBuild } from './scripts/release-beta-live.mjs'; import { readTree } from './scripts/release.mjs'; assemble('beta-live/public', null); checkLiveBuild(readTree('beta-live/public')); console.log('live Beta build: live client only');"
+      - name: Stage the backend context from its allowlist and build the image
+        working-directory: deploy/cloudflare
+        run: |
+          node --input-type=module -e "import { backendFiles, stageBackend } from './scripts/release-beta-live.mjs'; stageBackend(backendFiles());"
+          docker build -f beta-live/backend/Dockerfile -t ct-beta-live:ci beta-live/.build/context
+          test "$(docker inspect -f '{{.Config.User}}' ct-beta-live:ci)" = "appuser"
+      - name: Hosted backend tests inside the image
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" -w /repo -e HOME=/tmp/home -e PYTHONPATH=/repo -e PYTHONDONTWRITEBYTECODE=1 \
+            ct-beta-live:ci sh -c "pip install --user --quiet pytest==9.1.1 && python -m pytest --noconftest -p no:cacheprovider -q tests/test_beta_hosted.py --basetemp=/tmp/pt"
+      - name: Validate the live Worker without publishing
+        working-directory: deploy/cloudflare
+        run: npx wrangler deploy --dry-run --config beta-live/wrangler.jsonc --outdir .wrangler/dry-run  # resolved from beta-live/

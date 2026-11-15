@@ -1,6 +1,8 @@
 # Hosted live Epic FHIR R4 integration: final objective and next phase
 
-Recorded 2026-11-15 (America/New_York). This is a planning document; nothing here is implemented or authorized yet.
+Recorded 2026-11-15 (America/New_York). Planning document. **Update 2026-11-15:** the minimal path (L2, L5 and the
+hosting configuration for L3) is implemented offline. See `docs/EPIC_LIVE_HOSTED.md`. The package is `api/beta_hosted/`,
+because a package named `api/beta` would shadow the existing `api/beta.py` module.
 Every implementation step, hosting choice, credential action, live Epic call and deployment needs its own owner
 approval.
 
@@ -99,9 +101,9 @@ with a shared secret, rate limits and a route allowlist.
 
 ## Minimum new work
 
-**Backend.** Add a new `api/beta/` package for new hosted functionality. Existing tested modules are not moved, because
+**Backend.** Add a new `api/beta_hosted/` package (a package named `api/beta` would shadow `api/beta.py`) for new hosted functionality. Existing tested modules are not moved, because
 their paths are hash-pinned by the private runners and their evidence.
-- `api/beta/hosted.py`: a factory composing the existing pieces, namely the browser API, real OIDC provider metadata,
+- `api/beta_hosted/hosted.py`: a factory composing the existing pieces, namely the browser API, real OIDC provider metadata,
   `LiveRefresh`, staging, generations, `genuine_only` projection and the allowlist. It is configured from environment
   and secrets, fails closed, and keeps clinical AI disabled.
 - **Secret key loading:** a bytes or PEM-from-secret variant beside `keys.load_private_key(path, …)`.
@@ -179,7 +181,7 @@ no redesign; the eight pages stay as they are.
 | Step | Scope |
 |---|---|
 | L1 | Owner decisions: host, identity provider and MFA, reviewer model, key strategy, storage, promotion policy, Epic terms |
-| L2 | Offline `api/beta/hosted.py` factory, secret key loading and storage adapter, with tests (no live calls) |
+| L2 | Offline `api/beta_hosted/hosted.py` factory, secret key loading and storage adapter, with tests (no live calls) |
 | L3 | Hosting and secrets provisioned, with no Epic key and the backend answering health checks only |
 | L4 | Hosted authentication live with the subject allowlist; negative tests from an independent device |
 | L5 | Frontend `live` client mode against the hosted backend, still with the fake Epic transport |

@@ -1,0 +1,45 @@
+// Clinical-Trace AI hosted LIVE Epic Beta: a separate Worker from both Stable (clinical-trace-ai) and the invented-data
+// demo (clinical-trace-ai-beta), so neither changes and the demo stays the rollback. Owner-only: Cloudflare Access is
+// enabled on this Worker's workers.dev hostname, and the Worker and the backend each verify the Access token again.
+// Published only by scripts/release-beta-live.mjs. Every secret is set in the Worker's secret store, never here:
+//   BETA_ACCESS_TEAM_DOMAIN, BETA_ACCESS_AUD, BETA_OWNER_EMAIL, BETA_PATIENT_ID,
+//   EPIC_CLIENT_ID, EPIC_KEY_ID, EPIC_PRIVATE_KEY_PEM, EPIC_JKU (optional)
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "clinical-trace-ai-beta-live",
+  // The dedicated Clinical-Trace AI account, pinned so a session on another account fails instead of deploying.
+  "account_id": "00f876c0ebbf368d25feabe3e49cbc0b",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/beta/api/*"]
+  },
+  "containers": [
+    {
+      "class_name": "BetaBackend",
+      "image": "./backend/Dockerfile",
+      // Staged by the release script from an explicit allowlist of tracked files; never the repository itself.
+      "image_build_context": "./.build/context",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "BACKEND", "class_name": "BetaBackend" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BetaBackend"] }],
+  "ratelimits": [
+    { "name": "API_LIMITER", "namespace_id": "4301", "simple": { "limit": 30, "period": 60 } }
+  ],
+  "vars": {
+    // Kill switch. "0" refuses every Refresh in the Worker and the backend; the release script sets it explicitly.
+    "EPIC_SANDBOX_ENABLED": "0",
+    "BETA_ORIGIN": "https://clinical-trace-ai-beta-live.vathadiabhinav.workers.dev",
+    "BETA_PATIENT_ALIAS": "warren-mcginnis"
+  },
+  "observability": { "enabled": false }
+}

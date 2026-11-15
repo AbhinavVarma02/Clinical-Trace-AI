@@ -38,6 +38,9 @@ export interface RefreshControl {
   start?: () => void;
   running: boolean;
   notice: string | null;
+  /** Button text and tooltip; the defaults describe the MOCK refresh. */
+  label?: string;
+  title?: string;
 }
 
 export function RefreshStatus({ view, refresh }: { view: BetaView; refresh?: RefreshControl }) {
@@ -50,8 +53,8 @@ export function RefreshStatus({ view, refresh }: { view: BetaView; refresh?: Ref
       actions={
         refresh?.start ? (
           <button type="button" className="btn sm" disabled={refresh.running} aria-busy={refresh.running} onClick={refresh.start}
-            title="Re-read this patient's synthetic MOCK data and publish a new generation">
-            <Icons.refresh size={15} /> {refresh.running ? "Refreshing…" : "Refresh MOCK data"}
+            title={refresh.title ?? "Re-read this patient's synthetic MOCK data and publish a new generation"}>
+            <Icons.refresh size={15} /> {refresh.running ? "Refreshing…" : refresh.label ?? "Refresh MOCK data"}
           </button>
         ) : (
           <button type="button" className="btn sm" disabled title="Refresh is not available with this client">
