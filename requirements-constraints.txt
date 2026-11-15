@@ -94,10 +94,10 @@ narwhals==2.23.0
 numba==0.66.0
 numpy==2.4.6
 openai==2.44.0
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
 opentelemetry-proto==1.45.1
-opentelemetry-sdk==1.45.1
-opentelemetry-semantic-conventions==0.66b1
+opentelemetry-sdk==1.45.2
+opentelemetry-semantic-conventions==0.66b2
 orjson==3.11.9
 ormsgpack==1.12.2
 packageurl-python==0.17.6
