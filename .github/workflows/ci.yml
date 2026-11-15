@@ -161,6 +161,12 @@ jobs:
       - name: Validate the assets-only Beta Worker without publishing
         working-directory: deploy/cloudflare
         run: npx wrangler deploy --dry-run --config beta/wrangler.jsonc --outdir .wrangler/beta-dry-run
+      - name: Build the invented-data demo and check it carries the invented fixtures and no record, loader or owner code
+        working-directory: frontend
+        run: |
+          VITE_BETA_CLIENT=fixture VITE_BETA_ALLOW_FIXTURE=false npx vite build --config vite.beta.config.ts --outDir "$RUNNER_TEMP/beta-demo/beta/app" --emptyOutDir
+          cd ../deploy/cloudflare
+          node --input-type=module -e "import { assemble, checkDemoBuild, forbiddenReferences } from './scripts/release-beta.mjs'; import { readTree } from './scripts/release.mjs'; const site = process.env.RUNNER_TEMP + '/beta-demo'; assemble(site, null); const files = readTree(site); const found = forbiddenReferences(files); if (found.length) { console.error(found); process.exit(1); } checkDemoBuild(files); console.log('invented-data demo build: fixtures and label present; no record, loader or owner code');"
       - name: Edge dependency audit (high severity)
         working-directory: deploy/cloudflare
         run: npm audit --audit-level=high

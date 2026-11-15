@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assemble, BETA_URL, checkCopy, forbiddenReferences, releaseBeta, smoke } from "../scripts/release-beta.mjs";
+import { assemble, BETA_URL, checkCopy, checkDemoBuild, forbiddenReferences, releaseBeta, smoke, smokeDemo } from "../scripts/release-beta.mjs";
 
 // Every value below is invented; no Epic data is involved, and nothing is written to the real deploy folder.
 const account = "00f876c0ebbf368d25feabe3e49cbc0b";
@@ -157,4 +157,67 @@ test("smoke requires the app, its security headers and exactly the approved copy
   await smoke(BETA_URL, sha256, site(secure));
   await assert.rejects(smoke(BETA_URL, sha256, site({})), /security headers/);
   await assert.rejects(smoke(BETA_URL, sha256, site(secure, Buffer.from("{}"))), /differs from the approved copy/);
+});
+
+// -- invented demo: the existing MOCK fixture build, no copy and no Epic data --------------------------------------
+const demoApp = [{ path: "beta/app/index.html", text: '<div id="root"></div>' },
+  { path: "beta/app/assets/index.js", text: "banner: Offline synthetic data only. MOCK Alpha (synthetic)" }];
+function demoRig(options = {}) {
+  const r = rig({ files: demoApp, ...options });
+  Object.assign(r.options, { demo: true, copy: undefined, sha256: undefined });
+  return r;
+}
+
+test("the invented demo refuses any copy before any build or remote step", async () => {
+  for (const extra of [{ copy: "copy.json" }, { sha256: "a".repeat(64) }]) {
+    const r = demoRig();
+    Object.assign(r.options, extra);
+    await assert.rejects(releaseBeta(r.options), /invented demo publishes no copy/);
+    assert.deepEqual([r.commands, r.remote, r.receipts], [[], [], []]);
+  }
+});
+
+test("the invented demo builds the fixture client, publishes no record and deploys only the Beta Worker", async () => {
+  const r = demoRig({ listFails: true, firstDeploy: true });
+  await releaseBeta(r.options);
+  assert.deepEqual(r.commands[0].env, { VITE_BETA_CLIENT: "fixture", VITE_BETA_ALLOW_FIXTURE: "false" });
+  assert.deepEqual(r.commands.slice(1).map(c => c.cmd), ["npx wrangler deploy --config beta/wrangler.jsonc"]);
+  assert(!existsSync(join(r.site, "beta", "app", "published")));
+  assert(readFileSync(join(r.site, "_headers"), "utf8").includes("X-Robots-Tag: noindex"));
+  assert.deepEqual(r.probes, [[BETA_URL, undefined]]);
+  assert.deepEqual([r.receipts.at(-1).state, r.receipts[0].mode, r.receipts[0].copy_sha256], ["passed", "invented-demo", null]);
+});
+
+test("the invented demo refuses a build with the publication loader, a record or no synthetic label", async () => {
+  for (const files of [
+    [...demoApp, { path: "beta/app/assets/x.js", text: "fetch(BASE+'published/record.json')" }],
+    [...demoApp, { path: "beta/app/published/record.json", text: "{}" }],
+    [{ path: "beta/app/index.html", text: '<div id="root"></div>' }, { path: "beta/app/assets/index.js", text: "no label here" }],
+    // Both the synthetic banner and the invented fixtures must be present; the banner alone is refused.
+    [{ path: "beta/app/index.html", text: '<div id="root"></div>' }, { path: "beta/app/assets/index.js", text: "Offline synthetic data only" }],
+    [...demoApp, { path: "beta/app/assets/owner.js", text: "navigator.credentials.get(x)" }],
+  ]) {
+    const r = demoRig({ files });
+    await assert.rejects(releaseBeta(r.options), /invented demo|owner code/);
+    assert.deepEqual([r.remote, r.receipts], [[], []]);
+  }
+  assert.throws(() => checkDemoBuild([{ path: "beta/app/assets/a.js", text: "clinical-trace-epic-beta-publication/1 Offline synthetic data only" }]),
+    /publication loader/);
+});
+
+test("the invented demo keeps the branch and published-tip rules", async () => {
+  for (const options of [{ branch: "main" }, { tip: "0".repeat(40) }]) {
+    const r = demoRig(options);
+    await assert.rejects(releaseBeta(r.options), /released only from feature\/beta|not the published tip/);
+    assert.deepEqual([r.commands, r.remote, r.receipts], [[], [], []]);
+  }
+});
+
+test("the invented demo's smoke requires the app, its headers and no served record", async () => {
+  const secure = { "content-security-policy": "default-src 'self'", "x-robots-tag": "noindex" };
+  const site = recordStatus => async url => url.endsWith("/beta/app/")
+    ? { status: 200, text: async () => '<div id="root"></div>', headers: new Headers(secure) }
+    : { status: recordStatus, headers: new Headers() };
+  await smokeDemo(BETA_URL, undefined, site(404));
+  await assert.rejects(smokeDemo(BETA_URL, undefined, site(200)), /serves a record/);
 });

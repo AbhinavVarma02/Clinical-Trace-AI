@@ -76,11 +76,38 @@ state or private evidence are part of the copy or the site.
    It always builds with invented fixtures refused. Next it deploys, then smoke-tests the app, its headers and the
    served copy's hash, with retries. A failed later release rolls back automatically; a failed first deployment is
    left for an operator.
-4. **Link from Stable.** The Stable Beta entry is built only with `VITE_ENABLE_BETA_LINK=true`, and it currently points
-   to the local owner origin. Pointing it at the hosted URL is a reviewed change to `main` followed by a normal Stable
-   release (`npm run release`, with automatic rollback).
+4. **Link from Stable.** The Stable Beta entry renders only with `VITE_ENABLE_BETA_LINK=true`.
+   - Draft PR #5 into `main` points it at the hosted URL and adds the release option `--with-beta-link`.
+   - After PR #5 merges, a Stable release with that option, which keeps automatic rollback, ships the link.
+   - Default Stable releases refuse the link.
 5. **Remove.** From `deploy/cloudflare`, run `npx wrangler delete --config beta/wrangler.jsonc`, then revert the
    Stable link with a normal Stable release.
+
+## Invented-data fallback (while Epic's permission is pending)
+
+If Epic's confirmation is delayed, the same Worker can publish the existing **invented MOCK fixture** build of the
+Beta, with no Epic data at all:
+
+```
+node scripts/release-beta.mjs --invented-demo --first-deploy
+```
+
+- **What it shows.** The eight-page Beta with two invented patients, "MOCK Alpha/Bravo (synthetic)", from
+  `frontend/beta/fixtures.ts`. It is labelled throughout ("Epic Beta preview. Offline synthetic data only…", "Synthetic
+  data", "Synthetic MOCK patient"). Questions are unavailable. At runtime it makes no data requests and uses no cookies
+  or storage; the bundle still contains the unused HTTP client.
+- **Guards.**
+  - The same branch and published-tip rules, account check, code scan, headers, smoke retries and rollback apply.
+  - It refuses any copy and writes no record.
+  - The build must carry both the synthetic banner and the invented fixtures, and no publication loader. CI checks the
+    real fixture build the same way.
+  - Its smoke test requires the record path to return 404.
+- **Epic-copy path unchanged.** Every check on the Epic-copy path stays the same.
+- **Later swap.** Publishing the approved Epic copy later is a normal release to the same Worker, with automatic
+  rollback to the demo.
+- **Not a takedown.** A failed demo release rolls back automatically to whatever was live before it, which could be an
+  Epic copy. To remove an Epic copy (for example if Epic withdraws permission), use step 5, `wrangler delete`, not the
+  demo.
 
 ## Verification (offline)
 
