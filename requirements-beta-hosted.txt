@@ -1,0 +1,17 @@
+# Hosted LIVE Beta backend (deploy/cloudflare/beta-live/backend/Dockerfile) only; Stable never loads this file.
+# The Epic adapter, FHIR validation and projection, plus what LiveGenerations' promotion check needs to build the
+# throwaway clinical runtime (retrieval index, agent graph and checkpoints). No model training, UI or LLM provider
+# SDKs: clinical AI stays disabled, and src.llm_explainer imports LangChain only optionally.
+-c requirements-constraints.txt
+fastapi==0.139.0
+uvicorn==0.49.0
+pydantic==2.13.4
+httpx==0.28.1
+python-dotenv==1.2.2
+cryptography==50.0.0
+numpy==2.4.6
+scikit-learn==1.8.0
+langgraph==1.2.7
+langgraph-checkpoint-sqlite==3.1.1
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2

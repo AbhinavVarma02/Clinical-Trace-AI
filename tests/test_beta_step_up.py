@@ -351,10 +351,17 @@ def test_no_code_path_sets_real_promotion():
 
     assert inspect.signature(LiveGenerations).parameters["real_promotion"].default is False
     root = Path(__file__).resolve().parent.parent
+    # The one owner-approved exception (2026-11-15): the hosted LIVE Beta promotes only an Access-verified owner's
+    # exact, reviewed, genuine candidate. It is pinned to those gates below so a copy elsewhere still fails here.
+    hosted = "api/beta_hosted/hosted.py"
     offenders = [
-        str(path.relative_to(root))
+        path.relative_to(root).as_posix()
         for folder in ("api", "src")
         for path in (root / folder).rglob("*.py")
         if re.search(r"real_promotion\s*(=|:\s*bool\s*=)\s*True", path.read_text(encoding="utf-8"))
     ]
-    assert offenders == []
+    assert [path for path in offenders if path != hosted] == []
+    source = (root / hosted).read_text(encoding="utf-8")
+    assert source.count("real_promotion=True") == 1
+    for gate in ("await hosted.verifier.verify(", "_require_genuine(manifest)", "genuine_only=True", "secrets.compare_digest("):
+        assert gate in source, gate
