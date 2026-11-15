@@ -165,5 +165,6 @@ test("the Worker configuration pins the account, keeps Epic off and carries no s
   assert.match(config, /"account_id": "00f876c0ebbf368d25feabe3e49cbc0b"/);
   assert.match(config, /"EPIC_SANDBOX_ENABLED": "0"/);
   assert.match(config, /"max_instances": 1/);
+  assert.match(config, /"instance_type": "lite"/);
   assert.doesNotMatch(config, /PRIVATE KEY|cloudflareaccess\.com"|@[a-z0-9-]+\.[a-z]/i);
 });

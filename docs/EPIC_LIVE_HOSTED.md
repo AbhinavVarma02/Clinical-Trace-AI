@@ -32,9 +32,9 @@ The invented-data demo Worker `clinical-trace-ai-beta` and Stable are unchanged.
      wake the container), plus the exact `Origin` on POST;
    - applies a rate limit, and refuses Refresh while the kill switch is off;
    - forwards only four headers to the single Durable Object `owner`.
-3. **Durable Object** starts the one container instance (`max_instances: 1`, `basic`: ¼ vCPU, 1 GiB, 4 GB disk).
+3. **Durable Object** starts the one container instance (`max_instances: 1`, `lite`: 1/16 vCPU, 256 MiB, 2 GB disk).
    Configuration and secrets are passed only at start. A configuration change restarts the container. It sleeps after
-   20 idle minutes.
+   10 idle minutes (each request resets the timer).
 4. **Backend** (`api/beta_hosted/hosted.py`) verifies the Access token a third time. Then:
    - **`POST /beta/api/refresh`:** Catalog admission (5-minute cooldown, 2 per patient per hour, 6 per hour in total,
      240 requests per hour), then `LiveAcquisition`. That is RS384 `private_key_jwt` OAuth, followed by the eight
@@ -87,8 +87,23 @@ No critical or high findings. All six findings were fixed and tested:
 - **Plan.** Cloudflare Containers needs the Workers Paid plan: USD 5/month.
 - **Included usage.** The plan includes 25 GiB-hours of memory, 375 vCPU-minutes and 200 GB-hours of disk per
   month. Memory and disk are billed only while the instance is awake.
-- **Expected use.** A `basic` instance used for a few short sessions a month stays inside the included usage.
+- **Expected use.** A `lite` instance (0.25 GiB) used for a few short sessions a month stays far inside the included usage: 25 GiB-hours is about 100 awake hours.
 - **Access.** Cloudflare Access (Zero Trust Free) covers up to 50 users.
+
+## Cost controls
+
+- **One small instance.** `max_instances: 1`, `lite` instance type, and a 10-minute idle sleep.
+- **No anonymous starts.** Anonymous or misconfigured requests never start the container: the Access check and the
+  configuration check both run before the Durable Object is called.
+- **Bounded traffic.** The Worker rate limit is 30/min. The Catalog's Epic budgets and the kill switch stay mandatory.
+- **Minimal paid testing.** No load or stress tests and no monitoring loops run against paid infrastructure. The real
+  hosted tests are limited to auth refusals, one Fetch → Review → Approve, and the final browser check.
+- **Billing controls** (checked 2026-11-15):
+  - Budget alerts (Billing → Billable Usage) only notify.
+  - Spend policies with `usage_block` exist for the `workers` and `durable_objects` products. They block further
+    usage until the period ends.
+  - Containers are not a listed spend-policy product. Because a container can only be started through its Durable
+    Object, a `durable_objects` usage block should also stop new container starts. That is inferred, not documented.
 
 ## Runbook (each step needs the owner approval named in AGENTS.md)
 

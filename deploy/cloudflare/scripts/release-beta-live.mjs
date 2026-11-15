@@ -80,7 +80,7 @@ export async function smokeLive(base, { requireAccess = true, get = fetch } = {}
   const html = await page.text();
   if (page.status !== 200 || !html.includes('<div id="root">')) throw new Error("Live Beta smoke: app page failed");
   // Without Access the API must still refuse: no token means no container and no Epic call.
-  const api = await get(`${base}/beta/api/session`, { redirect: "manual" });
+  const api = await get(`${base}/beta/api/session`, { redirect: "manual", headers: { "X-Beta-Client": "live" } });
   if (![401, 503].includes(api.status)) throw new Error(`Live Beta smoke: unauthenticated API answered ${api.status}`);
   return "unguarded";
 }

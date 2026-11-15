@@ -24,7 +24,8 @@
       "image": "./backend/Dockerfile",
       // Staged by the release script from an explicit allowlist of tracked files; never the repository itself.
       "image_build_context": "./.build/context",
-      "instance_type": "basic",
+      // Smallest instance (1/16 vCPU, 256 MiB, 2 GB): measured offline at 187 MiB peak for Fetch → Approve.
+      "instance_type": "lite",
       "max_instances": 1
     }
   ],

@@ -7,7 +7,8 @@ import { AccessKeys, GateError, admit, backendEnv, configDigest, forwardHeaders,
 
 const PORT = 8080;
 const READY_MS = 90_000;
-const IDLE_MS = 20 * 60 * 1000;
+// Each request resets this, so a pause between Fetch and Approve keeps the staged candidate; then it sleeps.
+const IDLE_MS = 10 * 60 * 1000;
 let accessKeys = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
