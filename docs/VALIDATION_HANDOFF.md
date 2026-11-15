@@ -1,4 +1,18 @@
-# Current handoff pointer - 2026-11-13 America/New_York
+# Current handoff pointer - 2026-11-15 America/New_York
+
+Continue on `feature/beta` at `636079b`, which is pushed, in sync with GitHub, and passing all six CI jobs. Use:
+- [PROJECT_STATUS.md](PROJECT_STATUS.md);
+- [EPIC_LIVE_HOSTED_PLAN.md](EPIC_LIVE_HOSTED_PLAN.md), the final objective and the next phase;
+- [EPIC_BETA_HOSTED.md](EPIC_BETA_HOSTED.md), the hosted Beta Worker and its invented-data demo;
+- the top resume point of the local `.project-state/HANDOFF.md`.
+
+**State.**
+- The separate Beta Worker serves the invented-data demo, and no Epic data is published.
+- PR #4 is merged into `main`; PR #5 (the Stable Beta link) is a draft.
+- Stable production is unchanged.
+- The final objective, a hosted live Epic integration, is not started.
+
+# Earlier handoff pointer - 2026-11-13 America/New_York
 
 This document keeps the historical Stable deployment/validation handoff below. Continue on `feature/beta` (local HEAD `790e9dd`, 5 commits ahead of the stored remote, unpushed). Use:
 - [PROJECT_STATUS.md](PROJECT_STATUS.md);

@@ -1,8 +1,34 @@
 # Hosted Epic Beta: read-only published copy
 
-**Status (2026-11-14): implemented and tested offline only. Nothing is published.** The owner is holding publication
-until Epic confirms that its developer-sandbox test-patient data may be shown on a public demonstration site. Every
-deployment step below needs its own explicit owner approval.
+**Status (2026-11-15): the Beta Worker is deployed with the invented-data demo, not with Epic data.**
+- **Live:** <https://clinical-trace-ai-beta.vathadiabhinav.workers.dev/beta/app/>, Worker `clinical-trace-ai-beta`,
+  version `5809e6dc-850a-4764-aaac-bbeca6ff201b`.
+- **How:** first deployed by the owner-approved `node scripts/release-beta.mjs --invented-demo --first-deploy` from
+  `636079b`, after CI run 43746264935 passed all six jobs.
+- **Contents:** only the invented MOCK fixtures, clearly labelled. No Epic-acquired record is published.
+- **Publication copy:** still held until Epic confirms that its developer-sandbox test-patient data may be shown on a
+  public demonstration site.
+- **Not the final objective.** Neither the demo nor a published copy is the final objective, which is a hosted, live
+  Epic integration; see [EPIC_LIVE_HOSTED_PLAN.md](EPIC_LIVE_HOSTED_PLAN.md).
+- Every further deployment step needs its own explicit owner approval.
+
+*Earlier status (2026-11-14): implemented and tested offline only; nothing was published.*
+
+## Live verification of the invented-data demo (2026-11-15)
+
+- **Release:** exit 0, 6 files uploaded, the built-in demo smoke test passed. The receipt records `invented-demo`, no
+  copy, first deploy, passed.
+- **Routing:** `/`, `/beta` and `/beta/app` redirect to `/beta/app/`.
+- **Headers:** strict `'self'` CSP, `X-Robots-Tag: noindex, nofollow, noarchive`, `Referrer-Policy: no-referrer`,
+  framing denied, `nosniff`, HSTS, and a Permissions-Policy that denies WebAuthn. No cookies are set.
+- **404s:** the published-record path, the build manifest, owner endpoints, the Beta API and the Stable API.
+- **Integrity:** every served file is byte-identical to the local build.
+- **Content scan:** no Epic-acquired identifiers, acquisition IDs or hashes, private paths, publication loader, owner or
+  WebAuthn code, and no secret patterns. The invented fixtures and synthetic labels are present.
+- **Browser:** all eight pages render with the synthetic banner on desktop and at phone width (375 px), with no
+  horizontal overflow. Only 5 same-origin asset requests are made; no other origins, no storage and no console errors.
+- **Independent network:** a remote fetch loaded the page, and the record path returned 404 there too.
+- **Stable unchanged:** no new Stable edge deployment since 2026-10-18, and the Hugging Face Space is unchanged.
 
 ## Design
 

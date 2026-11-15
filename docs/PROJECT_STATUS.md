@@ -1,8 +1,32 @@
 # Project Status
 
-**Updated:** 2026-11-13 (America/New_York) · **Stable:** `main` (2.0 public demo; last recorded release 2026-10-18) · **Beta development:** branch `feature/beta` (local and test-only; not deployed) · **Epic M1:** Draft PR #2, unmerged.
+**Updated:** 2026-11-15 (America/New_York) · **Stable:** `main` (2.0 public demo; last edge release 2026-10-18; production unchanged by the Beta work) · **Beta development:** branch `feature/beta` at `636079b` (pushed, CI 6/6 green) · **Hosted Beta:** separate Worker serving the invented-data demo only; live Epic retrieval not hosted · **PRs:** #4 merged (OpenTelemetry fix); #5 Stable Beta link, draft; Epic M1 #2, draft, unmerged.
+
+*Earlier header (2026-11-13): Beta development local and test-only, not deployed.*
 
 This page is the portable, version-controlled handoff. It contains no credentials, private Epic snapshot content or machine-specific evidence. Detailed private checkpoints stay in the git-ignored `.project-state/` folder of the working copy that produced them; a fresh clone does not have them. The Stable section further down is kept unchanged as the record of 2026-10-18.
+
+**Update (2026-11-15).**
+- **Hosted Beta Worker.** `clinical-trace-ai-beta`, a separate assets-only Cloudflare Worker on the dedicated account,
+  with no bindings or secrets.
+  - It was first deployed with owner approval from `636079b`, after CI run 43746264935 passed all six jobs.
+  - It serves the **invented-data demo** (invented MOCK fixtures, clearly labelled) at
+    <https://clinical-trace-ai-beta.vathadiabhinav.workers.dev/beta/app/>, version
+    `5809e6dc-850a-4764-aaac-bbeca6ff201b`.
+  - Live checks passed: security headers, a 404 for the record path, no Epic data or secrets, all eight pages on
+    desktop and mobile, and an independent-network fetch.
+- **Epic publication copy.** The path is built and tested but held for Epic's permission.
+- **Final objective.** The owner defines it as a hosted, live Epic FHIR R4 integration (hosted browser → authenticated
+  backend → real Epic OAuth → fresh sandbox requests → validation, mapping and provenance → hosted UI), independent of
+  the owner's laptop and Windows Hello.
+  - The invented-data demo and any static Epic snapshot are not completion.
+  - See [EPIC_LIVE_HOSTED_PLAN.md](EPIC_LIVE_HOSTED_PLAN.md).
+- **Since 2026-11-13.**
+  - CI covers the Windows genuine-owner tests and the hosted Beta: release tests, the published-build scan, the
+    demo-build check and the Worker dry-run.
+  - On `feature/beta`, and in draft PR #5 but not yet on `main`, the Stable release script refuses loopback Beta links
+    and releases only the published `main` tip, and Docker build contexts are limited to runtime paths.
+  - OpenTelemetry was updated to 1.45.2 (PR #4 merged; `main` CI green; no deployment).
 
 **Milestone (2026-11-13):** the local Epic Beta is accepted for one synthetic patient. The owner separately approved a real sandbox acquisition, the candidate review, promotion and read-only serving. The existing eight-page Beta then rendered the verified record behind genuine Windows Hello. Hosting, publication and every later upgrade still need separate approval. [Evidence summary](EPIC_SANDBOX.md#evidence-live).
 

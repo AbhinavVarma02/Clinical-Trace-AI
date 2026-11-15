@@ -55,6 +55,21 @@ Clinical-Trace AI 2.0 is a **modular monolith**: one FastAPI process serves the 
 
 See [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) for request flows and data models, and [SAFETY_AND_PRIVACY.md](SAFETY_AND_PRIVACY.md) for controls.
 
+## Beta deployment boundary (2026-11-15)
+
+```
+Stable  : Cloudflare Worker clinical-trace-ai ──proxy──> Hugging Face Space (FastAPI + v1 dashboard)   [unchanged]
+Beta    : Cloudflare Worker clinical-trace-ai-beta (assets only, no bindings/secrets) ── invented-data demo
+Local   : owner machine ── loopback HTTPS + Windows Hello ── Beta backend ── Epic OAuth + FHIR R4 sandbox
+Target  : hosted Beta UI ── authenticated hosted Beta backend ── Epic OAuth + fresh FHIR R4 sandbox requests
+```
+
+- **Separate Workers.** The two Workers share only the Cloudflare account. The Beta Worker has no script, AI, D1 or
+  secrets.
+- **Stable link.** Stable shows a Beta link only in a release run with `--with-beta-link`. That option lives in draft
+  PR #5.
+- **Final objective.** The target row: no hosted backend exists yet. See [EPIC_LIVE_HOSTED_PLAN.md](EPIC_LIVE_HOSTED_PLAN.md).
+
 ## Beta M2.3 target: owner-only live sandbox refresh
 
 Approved product requirement, 2026-11-06 (America/New_York); **not implemented or deployed**. The Stable architecture above remains the deployed reference. [ADR 0009](ADR/0009-beta-channel-and-data-sources.md) records the Beta amendment.

@@ -5,7 +5,20 @@ Evidence references point to files, tests, or result artifacts. The original P0-
 
 ## Beta roadmap: mandatory real-time Epic sandbox retrieval
 
-**Current checkpoint, November 13, 2026: the local Epic Beta milestone is accepted for one synthetic patient.** The owner approved each step separately: a real sandbox acquisition, a review of the actual candidate, promotion and read-only serving. The existing eight-page Beta then rendered the verified identity, resources, provenance, hashes and coverage behind genuine Windows Hello. [Epic sandbox record](EPIC_SANDBOX.md#evidence-live) and [Increment 1 report](EPIC_LIVE_INCREMENT_1.md).
+**Current checkpoint, November 15, 2026.**
+- **What is hosted.** The separate Beta Worker serves an **invented-data demo** at
+  <https://clinical-trace-ai-beta.vathadiabhinav.workers.dev/beta/app/>. It was deployed from `636079b` after a 6/6 CI
+  run, contains no Epic data, and is clearly labelled.
+- **What is not hosted.** Live Epic retrieval is still local only.
+- **Final objective, owner-defined.** A fully hosted, live Epic FHIR R4 integration: hosted browser → authenticated Beta
+  backend → real Epic OAuth → fresh Epic FHIR sandbox requests → patient-scoped validation → mapping and provenance →
+  hosted UI, without the owner's laptop, a local server or Windows Hello.
+- **Not the objective.** Neither the invented-data demo nor a static Epic snapshot meets it.
+- **Next phase.** [Hosted live Epic plan](EPIC_LIVE_HOSTED_PLAN.md).
+- **Other status.** PR #4 (OpenTelemetry fix) is merged into `main`. PR #5 (the Stable Beta link) is a draft. Stable
+  production is unchanged.
+
+**Checkpoint, November 13, 2026: the local Epic Beta milestone is accepted for one synthetic patient.** The owner approved each step separately: a real sandbox acquisition, a review of the actual candidate, promotion and read-only serving. The existing eight-page Beta then rendered the verified identity, resources, provenance, hashes and coverage behind genuine Windows Hello. [Epic sandbox record](EPIC_SANDBOX.md#evidence-live) and [Increment 1 report](EPIC_LIVE_INCREMENT_1.md).
 
 The full test suite runs in the standard environment with 0 collection errors. The retired private runner's DT-TOOL-005 limitation no longer blocks verification. Hosted Beta (M2.5–M2.7) and every remaining upgrade below are still open.
 
@@ -25,8 +38,8 @@ Owner requirement recorded 2026-11-06 (America/New_York). M2.2-a through M2.2-f 
 | M2.4 | Beta browser workflow, patient selection, refresh, source/cache/generation status and coverage | ACCEPTED LOCALLY for one synthetic patient (2026-11-13). Covers genuine Windows Hello owner proofs, the existing eight-page UI, verified reads, provenance and coverage, and disabled unaccepted workflows. Hosted owner sign-in and the public Beta are not started. |
 | Epic LIVE Increment 1 | Backend-only adapter for eight initial profiles, reusing OAuth/client/mapping and bounded acquisition | REAL BOUNDED ACQUISITION VERIFIED (2026-11-13), owner-approved, one patient. Default-disabled. Publication, MedicationRequest, Binary and document-body retrieval stay disabled. [Report](EPIC_LIVE_INCREMENT_1.md). |
 | LIVE acquisition, promotion and serving | One bounded real retrieval, candidate review, promotion to an evidence-only generation, and read-only local serving | COMPLETED ONCE (2026-11-13), each step separately approved. Any repeat needs new owner approval. |
-| M2.5 | Select and prepare completely isolated Beta hosting, account placement, storage and secret custody; verify access, operational limits and security | IN_PROGRESS (2026-11-14), offline only: a static read-only published copy on a separate assets-only Worker is implemented and tested with invented data. Nothing is exported or deployed; the owner is holding publication until Epic confirms its terms. [Hosted Beta](EPIC_BETA_HOSTED.md). All red-team/security tests stay local MOCK/synthetic only |
-| M2.6 | Deploy only to approved restricted Beta infrastructure; owner-authorised bounded live smoke, observability and rollback drill | NOT_STARTED; independent deployment/live-call approvals; Stable remains separate |
+| M2.5 | Select and prepare completely isolated Beta hosting, account placement, storage and secret custody; verify access, operational limits and security | IN_PROGRESS. **2026-11-15:** the separate assets-only Beta Worker is deployed with the invented-data demo (owner-approved, 6/6 CI, verified live). The Epic publication copy is built but held for Epic's terms. Backend hosting, secret custody, hosted authentication and storage for live Epic calls are not started; see the [hosted live plan](EPIC_LIVE_HOSTED_PLAN.md). *2026-11-14: implemented offline only.* [Hosted Beta](EPIC_BETA_HOSTED.md). All red-team/security tests stay local MOCK/synthetic only |
+| M2.6 | Deploy only to approved restricted Beta infrastructure; owner-authorised bounded live smoke, observability and rollback drill | NOT_STARTED for the live Epic backend (hosted live plan L2–L7). The static invented-data demo deployment (2026-11-15) is infrastructure validation only. Independent deployment and live-call approvals apply; Stable remains separate |
 | M2.7 | Release acceptance: reliability, multi-patient functional coverage, truthful freshness/coverage, isolation, citations/review and rollback evidence | NOT_STARTED; explicit owner acceptance; public access/publication is not implied |
 
 M2.3 synthetic MOCK backend acceptance has been demonstrated and accepted. The local single-patient LIVE-to-browser target was accepted on 2026-11-13. The hosted Beta target remains open. No schedule or continuously running polling service is implied. Fresh requests may return unchanged shared sandbox records.
