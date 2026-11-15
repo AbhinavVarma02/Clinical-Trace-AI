@@ -269,6 +269,25 @@ describe("App shell", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("shows the hosted Beta link only when the build enables it", async () => {
+    vi.stubEnv("VITE_ENABLE_BETA_LINK", "true");
+    try {
+      mockFetch((url) => {
+        if (url.endsWith("/system/status")) return STATUS;
+        if (url.endsWith("/personas")) return [{ persona_id: "clinician.demo", display_name: "Demo Clinician", role: "clinician", panel: [], description: "" }];
+        if (url.includes("/agent/recent")) return [];
+        if (url.endsWith("/patients")) return [];
+        if (url.endsWith("/evaluation/latest")) return new Response(JSON.stringify({ error: { code: "not_found", message: "no evaluation results" } }), { status: 404 });
+        return {};
+      });
+      render(<AppProvider><App /></AppProvider>);
+      expect(await screen.findByText("Evaluation gate passed")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Beta" })).toHaveAttribute("href", "https://clinical-trace-ai-beta.vathadiabhinav.workers.dev/beta/app/");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("renders the overview from live API data and navigates with the sidebar", async () => {
     mockFetch((url) => {
       if (url.endsWith("/system/status")) return STATUS;
@@ -282,6 +301,8 @@ describe("App shell", () => {
     expect(await screen.findByText("Evaluation gate passed")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Understand patient records. See the evidence." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try a guided case" })).toBeEnabled();
+    // Default builds never render the Beta link.
+    expect(screen.queryByRole("link", { name: "Beta" })).toBeNull();
     expect(screen.getAllByText("Deterministic mode").length).toBeGreaterThan(0);
     // Safety statement stays visible on the first screen; the long measurements stay behind a disclosure.
     expect(screen.getByText(/Not clinically validated\. Not for medical use\./, { selector: "span" })).toBeInTheDocument();
