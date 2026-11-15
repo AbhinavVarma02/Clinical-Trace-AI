@@ -343,10 +343,30 @@ def test_process_exit_preserves_committed_revocation_or_refuses_uncertain_state(
     owner, store, key = durable
     enroll(owner, key)
     store.close()
+    # The child installs its own guard: refuse and record every non-loopback connection or DNS lookup.
     script = """
-import os, sys
-import netguard
-netguard.install()
+import ipaddress, os, socket, sys
+ATTEMPTS = []
+def _local(host):
+    text = host.decode() if isinstance(host, bytes) else str(host)
+    if host is None or text in ('', 'localhost'):
+        return True
+    try:
+        return ipaddress.ip_address(text).is_loopback
+    except ValueError:
+        return False
+_connect, _getaddrinfo = socket.socket.connect, socket.getaddrinfo
+def _guarded_connect(self, address):
+    if isinstance(address, tuple) and not _local(address[0]):
+        ATTEMPTS.append(address[0])
+        raise OSError('blocked non-loopback connection')
+    return _connect(self, address)
+def _guarded_getaddrinfo(host, *args, **kwargs):
+    if not _local(host):
+        ATTEMPTS.append(host)
+        raise socket.gaierror('blocked DNS lookup')
+    return _getaddrinfo(host, *args, **kwargs)
+socket.socket.connect, socket.getaddrinfo = _guarded_connect, _guarded_getaddrinfo
 import sqlite3
 from api import beta_webauthn_store as storage
 from api.beta_webauthn import LocalOwnerPolicy
@@ -359,8 +379,8 @@ if sys.argv[2] == 'True':
 try:
     store.revoke(store.load())
 except storage.StoreUnavailable:
-    os._exit(19 if not netguard.ATTEMPTS else 99)
-os._exit(0 if not netguard.ATTEMPTS else 99)
+    os._exit(19 if not ATTEMPTS else 99)
+os._exit(0 if not ATTEMPTS else 99)
 """
     result = subprocess.run(
         [sys.executable, "-c", script, str(store.root), str(interrupted)],

@@ -686,12 +686,15 @@ def test_quota_caps(harness, bucket):
 
 
 def test_absolute_deadline_caps_slow_stream(harness):
-    harness.limits = replace(harness.limits, deadline_s=0.07, per_request_s=1)
+    # The body would take 5 s, five times the absolute deadline, and the per-request limit (the 5 s default) is far
+    # above the deadline, so only the absolute deadline can stop it. The 1 s budget leaves room for the token request
+    # on a slow runner.
+    harness.limits = replace(harness.limits, deadline_s=1.0, per_request_s=5)
 
     class SlowStream(httpx.AsyncByteStream):
         async def __aiter__(self):
             for _ in range(20):
-                await asyncio.sleep(0.025)
+                await asyncio.sleep(0.25)
                 yield b" "
 
     async def slow(request):
