@@ -82,3 +82,43 @@ def test_the_jwks_file_must_be_outside_the_repository(setup):
     with pytest.raises(settings.LocalPathError):
         provision.main(["--jwks-out", str(inside)], reader=setup["reader"], run=setup["run"], transport=setup["transport"])
     assert setup["calls"] == [] and not inside.exists()
+
+
+def test_upload_decodes_wrangler_output_as_utf8():
+    """Regression (2026-11-15): Windows decoded Wrangler's UTF-8 output as cp1252 in subprocess's reader thread."""
+    seen = {}
+
+    def run(args, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    provision.upload({"A": "b"}, run)
+    assert (seen["encoding"], seen["errors"], seen["text"]) == ("utf-8", "replace", True)
+
+
+FAKE_WRANGLER = r"""
+import json, sys
+data = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+banner = "✨ Success! Uploaded │ ✝ ── café\n".encode("utf-8")
+sys.stdout.buffer.write(banner * 50)
+sys.stderr.buffer.write(banner)
+sys.exit(int(sys.argv[1]) if data == {"NAME": "value é"} else 3)
+"""
+
+
+def test_upload_survives_real_non_ascii_wrangler_output(monkeypatch, tmp_path):
+    """A real child process prints Wrangler-like UTF-8, including U+271D whose 0x9D byte cp1252 cannot decode."""
+    import sys
+    import threading
+
+    raised = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: raised.append(args.exc_type))
+    child = tmp_path / "fake_wrangler.py"
+    child.write_text(FAKE_WRANGLER, encoding="utf-8")
+    provision.upload({"NAME": "value é"}, command=[sys.executable, str(child), "0"])
+    assert raised == []
+
+    with pytest.raises(SystemExit) as error:
+        provision.upload({"NAME": "value é"}, command=[sys.executable, str(child), "4"])
+    assert "exit 4" in str(error.value) and raised == []
+

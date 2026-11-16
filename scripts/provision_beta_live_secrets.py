@@ -85,13 +85,25 @@ def build(inputs: dict[str, str], config: settings.EpicConfig, current: dict[str
     return secrets, merged, kid
 
 
-def upload(secrets: dict[str, str], run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> None:
-    npx = "npx.cmd" if os.name == "nt" else "npx"
+def wrangler_bulk_command() -> list[str]:
+    return ["npx.cmd" if os.name == "nt" else "npx", "wrangler", "secret", "bulk", "--config", CONFIG]
+
+
+def upload(
+    secrets: dict[str, str],
+    run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    command: list[str] | None = None,
+) -> None:
     result = run(
-        [npx, "wrangler", "secret", "bulk", "--config", CONFIG],
+        command or wrangler_bulk_command(),
         input=json.dumps(secrets),
         cwd=EDGE,
         text=True,
+        # Wrangler writes UTF-8 (emoji, box drawing). Without an explicit encoding Windows decodes it with the ANSI
+        # code page (cp1252) in subprocess's reader thread and raises UnicodeDecodeError there; the output is only
+        # discarded, so decode it as UTF-8 and never fail on it.
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
     )
