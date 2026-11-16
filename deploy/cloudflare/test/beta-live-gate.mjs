@@ -45,6 +45,9 @@ test("a valid owner Access token passes, and keys are cached", async () => {
 
 test("every malformed, foreign or expired token is refused before the backend", async () => {
   const { privateKey: other } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const REASONS = { missing: "token_missing", garbage: "token_malformed", audience: "token_audience", issuer: "token_issuer",
+    expired: "token_time", future: "token_time", owner: "token_subject", service: "token_type", alg: "token_algorithm",
+    kid: "unknown_key", signature: "token_signature" };
   const cases = {
     missing: null,
     garbage: "a.b.c",
@@ -62,7 +65,7 @@ test("every malformed, foreign or expired token is refused before the backend", 
     const keys = new AccessKeys(TEAM, certs().get, () => NOW * 1000);
     const headers = token ? { "cf-access-jwt-assertion": token } : {};
     await assert.rejects(verifyAccess(request("GET", "/beta/api/record", headers), ENV, keys, NOW),
-      error => error instanceof GateError && error.status === 401, name);
+      error => error instanceof GateError && error.status === 401 && error.code === "owner_required" && error.reason === REASONS[name], name);
   }
 });
 

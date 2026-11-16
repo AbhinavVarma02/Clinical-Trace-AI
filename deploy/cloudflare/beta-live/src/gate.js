@@ -34,10 +34,12 @@ export const SECURITY_HEADERS = {
 };
 
 export class GateError extends Error {
-  constructor(status, code) {
+  /** `reason` is a fixed, content-free code for the owner's logs; the response always carries only `code`. */
+  constructor(status, code, reason = code) {
     super(code);
     this.status = status;
     this.code = code;
+    this.reason = reason;
   }
 }
 
@@ -87,7 +89,8 @@ export class AccessKeys {
       await this.pending;
     }
     const key = this.keys.get(kid);
-    if (!key || this.now() - this.fetched >= 6 * 3600 * 1000) throw new GateError(401, "owner_required");
+    if (!key) throw new GateError(401, "owner_required", this.keys.size ? "unknown_key" : "keys_unavailable");
+    if (this.now() - this.fetched >= 6 * 3600 * 1000) throw new GateError(401, "owner_required", "keys_stale");
     return key;
   }
 
@@ -119,29 +122,30 @@ export function asciiEmailEquals(claim, owner) {
 /** Same rules as api/beta_hosted/access.py: RS256, team issuer, AUD tag, times, app token, the one owner email. */
 export async function verifyAccess(request, env, keys, nowSeconds = Date.now() / 1000) {
   const values = request.headers.get("cf-access-jwt-assertion");
-  if (!values || values.includes(",") || !TOKEN.test(values)) throw new GateError(401, "owner_required");
+  if (!values) throw new GateError(401, "owner_required", "token_missing");
+  if (values.includes(",") || !TOKEN.test(values)) throw new GateError(401, "owner_required", "token_malformed");
   const [head, body, signature] = values.split(".");
   let header, claims;
   try {
     header = JSON.parse(decoder.decode(b64url(head)));
     claims = JSON.parse(decoder.decode(b64url(body)));
   } catch {
-    throw new GateError(401, "owner_required");
+    throw new GateError(401, "owner_required", "token_malformed");
   }
-  if (header?.alg !== "RS256" || "crit" in header || typeof header.kid !== "string") throw new GateError(401, "owner_required");
+  if (header?.alg !== "RS256" || "crit" in header || typeof header.kid !== "string") throw new GateError(401, "owner_required", "token_algorithm");
   const key = await keys.key(header.kid);
   const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64url(signature), new TextEncoder().encode(`${head}.${body}`));
-  if (!valid) throw new GateError(401, "owner_required");
+  if (!valid) throw new GateError(401, "owner_required", "token_signature");
   const audiences = Array.isArray(claims?.aud) ? claims.aud : [claims?.aud];
   const { exp, iat } = claims;
   const nbf = claims.nbf ?? iat;
   const times = [exp, iat, nbf].every(value => typeof value === "number" && Number.isFinite(value));
-  if (!audiences.includes(env.BETA_ACCESS_AUD) || claims.iss !== env.BETA_ACCESS_TEAM_DOMAIN || !times ||
-      !(exp > nowSeconds && nbf <= nowSeconds + SKEW_S && iat <= nowSeconds + SKEW_S && iat < exp) ||
-      (claims.type ?? "app") !== "app" || "common_name" in claims ||
-      !asciiEmailEquals(claims.email, env.BETA_OWNER_EMAIL.trim())) {
-    throw new GateError(401, "owner_required");
-  }
+  const refuse = reason => { throw new GateError(401, "owner_required", reason); };
+  if (!audiences.includes(env.BETA_ACCESS_AUD)) refuse("token_audience");
+  if (claims.iss !== env.BETA_ACCESS_TEAM_DOMAIN) refuse("token_issuer");
+  if (!times || !(exp > nowSeconds && nbf <= nowSeconds + SKEW_S && iat <= nowSeconds + SKEW_S && iat < exp)) refuse("token_time");
+  if ((claims.type ?? "app") !== "app" || "common_name" in claims) refuse("token_type");
+  if (!asciiEmailEquals(claims.email, env.BETA_OWNER_EMAIL.trim())) refuse("token_subject");
   return { expires: exp };
 }
 

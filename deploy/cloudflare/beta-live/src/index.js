@@ -66,7 +66,11 @@ export default {
       const stub = env.BACKEND.get(env.BACKEND.idFromName("owner"));
       return secured(await stub.fetch(forwarded));
     } catch (error) {
-      if (error instanceof GateError) return reject(error.status, error.code, error.status === 429 ? { "Retry-After": "60" } : {});
+      if (error instanceof GateError) {
+        // Fixed reason codes only (never a token, claim, email or header value); visible to the owner via `wrangler tail`.
+        if (error.status === 401 || error.status === 503) console.log(JSON.stringify({ event: "gate_refused", reason: error.reason }));
+        return reject(error.status, error.code, error.status === 429 ? { "Retry-After": "60" } : {});
+      }
       return reject(500, "internal_error");
     }
   },
