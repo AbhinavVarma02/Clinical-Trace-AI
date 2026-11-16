@@ -40,6 +40,24 @@ const certs = () => {
   return { get, calls: () => calls };
 };
 
+test("the default key fetch calls the global fetch with its own receiver, as Workers requires", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  // Workers' fetch throws "Illegal invocation" unless called with the global (or no) receiver.
+  globalThis.fetch = function (url, options) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    calls += 1;
+    return workersFetch(async () => new Response(JSON.stringify({ keys: [JWK] }), { status: 200 }))(url, options);
+  };
+  try {
+    const keys = new AccessKeys(TEAM, undefined, () => NOW * 1000);
+    await verifyAccess(request("GET", "/beta/api/session", { "cf-access-jwt-assertion": mint() }), ENV, keys, NOW);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("the key fetch uses a Workers-supported, non-following redirect mode and reports content-free failures", async () => {
   let seen;
   const ok = workersFetch(async (url, options) => { seen = options; return new Response(JSON.stringify({ keys: [JWK] }), { status: 200 }); });

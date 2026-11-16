@@ -69,7 +69,9 @@ export function backendEnv(env) {
 
 /** Access key cache, per isolate. */
 export class AccessKeys {
-  constructor(team, get = fetch, now = Date.now) {
+  // Never store the global fetch as a method: Workers throws "Illegal invocation" (a TypeError) when it is called
+  // with another `this`, which made every key fetch fail. The arrow keeps the global receiver.
+  constructor(team, get = (url, init) => fetch(url, init), now = Date.now) {
     this.url = `${team}/cdn-cgi/access/certs`;
     this.get = get;
     this.now = now;
