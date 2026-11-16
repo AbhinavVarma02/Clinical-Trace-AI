@@ -3,6 +3,13 @@
 Recorded 2026-11-15 (America/New_York). Planning document. **Update 2026-11-15:** the minimal path (L2, L5 and the
 hosting configuration for L3) is implemented offline. See `docs/EPIC_LIVE_HOSTED.md`. The package is `api/beta_hosted/`,
 because a package named `api/beta` would shadow the existing `api/beta.py` module.
+**Update 2026-11-16:**
+- L1 decisions taken; L2–L5 done.
+- L6: the hosted key is registered. The first live hosted retrieval reached Epic OAuth, which answered HTTP 400;
+  the approved retry after Epic's key sync SUCCEEDED.
+- **The final objective is met:** a genuine hosted Fetch → Review → Approve → patient record.
+- L7 (independent-device acceptance and revocation drill) and L8 (Stable link) remain separate owner decisions.
+- Status and next steps are in `docs/EPIC_LIVE_HOSTED.md`.
 Every implementation step, hosting choice, credential action, live Epic call and deployment needs its own owner
 approval.
 

@@ -6,6 +6,29 @@ runs entirely on Cloudflare, independent of the owner's workstation, a local ser
 **owner-only and private**: it is not linked from Stable, it is not the public demo, and Epic's permission for public
 display remains a separate, open question.
 
+## Status (2026-11-16)
+
+- **Built, deployed, guarded.** Built and tested through `d39c575`, with CI green on all seven jobs. Deployed as an
+  owner-only Worker behind Cloudflare Access, which allows exactly one owner identity. The kill switch is off between
+  tests.
+- **Authentication works end to end.** Cloudflare Access, the Worker gate and the backend container each verify the
+  owner's token.
+- **First genuine hosted test.** The backend made one Epic request, the OAuth token request, and Epic answered
+  HTTP 400. No FHIR request was made and no patient data was staged. The likely cause is that Epic had not yet
+  synchronised the newly published hosted key: the call came about 36 minutes after publication, below this
+  project's 70-minute minimum. One owner-approved retry follows.
+- **Two Workers-runtime defects fixed.** Both were in the gate's Access key fetch, and Node tests could not catch them:
+  - `redirect: "error"` is not supported by Workers' `fetch`;
+  - calling the global `fetch` with a foreign receiver throws "Illegal invocation".
+
+  Both now have tests that mimic Workers' `fetch` behaviour.
+- **Acceptance goal met, 2026-11-16.** One owner-approved retry ran about 72 minutes after the key was published.
+  - Epic accepted the hosted key: OAuth succeeded, then all eight read-only FHIR operations returned HTTP 200.
+  - The owner reviewed the validated candidate, approved it by its exact hashes, and the approved Epic sandbox
+    synthetic patient's record rendered in the hosted Beta with provenance, coverage and freshness.
+  - Everything ran on Cloudflare, independent of the owner's workstation.
+  - Afterwards the hosted data was erased and Epic retrieval switched off again.
+
 ## Components
 
 | Piece | Where | What it reuses |
@@ -121,5 +144,11 @@ No critical or high findings. All six findings were fixed and tested:
 5. **Guarded deploy.** Run `node scripts/release-beta-live.mjs`. The smoke requires the Access redirect.
 6. **Live test.** Run `node scripts/release-beta-live.mjs --enable-epic`. The owner signs in, presses **Fetch from
    Epic**, reviews the candidate, approves it, and the record renders. Record the Epic HTTP outcomes and hashes.
-7. **Afterwards.** Redeploy without `--enable-epic` (kill switch off) and erase the hosted data. Optionally revoke
+7. **If Epic refuses the token (HTTP 400):**
+   - Do not retry, and leave the kill switch off.
+   - In the Epic portal, re-save the app with **Save & Ready for Sandbox** and no field changes.
+   - Wait 70 minutes to 24 hours, then run one newly approved retry.
+   - Error bodies are never captured. Any diagnostic must stay content-free, and it touches hash-pinned code, so it
+     needs review first.
+8. **Afterwards.** Redeploy without `--enable-epic` (kill switch off) and erase the hosted data. Optionally revoke
    the hosted `kid`.

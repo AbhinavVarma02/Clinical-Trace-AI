@@ -1,6 +1,8 @@
 # Project Status
 
-**Updated:** 2026-11-15 (America/New_York) · **Stable:** `main` (2.0 public demo; last edge release 2026-10-18; production unchanged by the Beta work) · **Beta development:** branch `feature/beta` at `636079b` (pushed, CI 6/6 green) · **Hosted Beta:** separate Worker serving the invented-data demo only; live Epic retrieval not hosted · **PRs:** #4 merged (OpenTelemetry fix); #5 Stable Beta link, draft; Epic M1 #2, draft, unmerged.
+**Updated:** 2026-11-16 (America/New_York) · **Stable:** unchanged (last edge release 2026-10-18) · **Beta development:** `feature/beta` at `d39c575` (pushed, CI 7/7 green) · **Hosted LIVE Beta:** owner-only Worker plus container behind Cloudflare Access; authentication verified end to end; first Epic attempt refused at OAuth (HTTP 400, no FHIR data); the approved retry achieved a genuine hosted Epic Fetch → Review → Approve → patient record (final objective met); hosted data erased and retrieval switched off afterwards · **Invented-data demo:** unchanged · **PRs:** #5 Stable Beta link, draft; Epic M1 #2, draft, unmerged.
+
+*Earlier header (2026-11-15): `feature/beta` at `636079b` (CI 6/6); hosted Beta served the invented-data demo only; live Epic retrieval not hosted.*
 
 *Earlier header (2026-11-13): Beta development local and test-only, not deployed.*
 
