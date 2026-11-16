@@ -26,11 +26,37 @@ function mint(claims = {}, header = {}, key = privateKey) {
   return `${signing}.${signature}`;
 }
 
+/** Like Workers' fetch: only "follow" and "manual" redirects exist; anything else throws before any request. */
+function workersFetch(respond) {
+  return async (url, options = {}) => {
+    if (!["follow", "manual", undefined].includes(options.redirect)) throw new TypeError("Invalid redirect value");
+    return respond(url, options);
+  };
+}
+
 const certs = () => {
   let calls = 0;
-  const get = async () => { calls += 1; return new Response(JSON.stringify({ keys: [JWK] }), { status: 200 }); };
+  const get = workersFetch(async () => { calls += 1; return new Response(JSON.stringify({ keys: [JWK] }), { status: 200 }); });
   return { get, calls: () => calls };
 };
+
+test("the key fetch uses a Workers-supported, non-following redirect mode and reports content-free failures", async () => {
+  let seen;
+  const ok = workersFetch(async (url, options) => { seen = options; return new Response(JSON.stringify({ keys: [JWK] }), { status: 200 }); });
+  const token = { "cf-access-jwt-assertion": mint() };
+  await verifyAccess(request("GET", "/beta/api/session", token), ENV, new AccessKeys(TEAM, ok, () => NOW * 1000), NOW);
+  assert.equal(seen.redirect, "manual");
+  const cases = [
+    [workersFetch(async () => new Response("", { status: 302, headers: { location: "https://elsewhere.example/" } })), "keys_unavailable:status_302"],
+    [workersFetch(async () => new Response("", { status: 500 })), "keys_unavailable:status_500"],
+    [workersFetch(async () => new Response(JSON.stringify({ keys: [] }), { status: 200 })), "keys_unavailable:no_usable_keys"],
+    [async () => { throw new TypeError("network detail that must not be logged"); }, "keys_unavailable:TypeError"],
+  ];
+  for (const [get, reason] of cases) {
+    await assert.rejects(verifyAccess(request("GET", "/beta/api/session", token), ENV, new AccessKeys(TEAM, get, () => NOW * 1000), NOW),
+      error => error.reason === reason && !error.reason.includes("detail"), reason);
+  }
+});
 const request = (method, path, headers = {}) => new Request(`${ORIGIN}${path}`, { method, headers });
 
 test("a valid owner Access token passes, and keys are cached", async () => {

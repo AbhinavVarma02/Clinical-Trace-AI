@@ -89,14 +89,18 @@ export class AccessKeys {
       await this.pending;
     }
     const key = this.keys.get(kid);
-    if (!key) throw new GateError(401, "owner_required", this.keys.size ? "unknown_key" : "keys_unavailable");
+    if (!key) throw new GateError(401, "owner_required", this.keys.size ? "unknown_key" : `keys_unavailable:${this.failure ?? "none"}`);
     if (this.now() - this.fetched >= 6 * 3600 * 1000) throw new GateError(401, "owner_required", "keys_stale");
     return key;
   }
 
   async refresh(now) {
+    this.failure = null;
     try {
-      const response = await this.get(this.url, { redirect: "error", headers: { Accept: "application/json" } });
+      // Workers' fetch supports only "follow" and "manual" redirects ("error" throws). "manual" never follows one:
+      // a 3xx is not ok, so no keys are taken from it.
+      const response = await this.get(this.url, { redirect: "manual", headers: { Accept: "application/json" } });
+      if (!response.ok) this.failure = `status_${response.status}`;
       if (response.ok) {
         const body = await response.json();
         const keys = new Map();
@@ -106,9 +110,12 @@ export class AccessKeys {
             { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
           keys.set(jwk.kid, key);
         }
-        if (keys.size) { this.keys = keys; this.fetched = now; }
+        if (keys.size) { this.keys = keys; this.fetched = now; } else this.failure = "no_usable_keys";
       }
-    } catch { /* a recent cached key may still be used */ }
+    } catch (error) {
+      // A fixed error class name only (for example TypeError), never a message; a recent cached key may still be used.
+      this.failure = /^[A-Za-z]{1,40}$/.test(error?.name ?? "") ? error.name : "error";
+    }
   }
 }
 
